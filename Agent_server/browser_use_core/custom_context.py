@@ -9,12 +9,11 @@ import json
 import logging
 import os
 
-from browser_use.browser.browser import Browser, IN_DOCKER
+from browser_use.browser.browser import Browser
 from browser_use.browser.context import BrowserContext, BrowserContextConfig
 from playwright.async_api import Browser as PlaywrightBrowser
 from playwright.async_api import BrowserContext as PlaywrightBrowserContext
 from typing import Optional
-from browser_use.browser.context import BrowserContextState
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +23,6 @@ class CustomBrowserContext(BrowserContext):
             self,
             browser: 'Browser',
             config: BrowserContextConfig | None = None,
-            state: Optional[BrowserContextState] = None,
+            **kwargs
     ):
-        super(CustomBrowserContext, self).__init__(browser=browser, config=config, state=state)
+        super(CustomBrowserContext, self).__init__(browser=browser, config=config, **kwargs)

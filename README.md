@@ -127,11 +127,11 @@ Ai_Test_Agent/
 
 | 组件 | 技术 | 版本 |
 |------|------|------|
-| **Web 框架** | FastAPI | 0.109.0 |
-| **ASGI 服务器** | Uvicorn | ≥0.31.1 |
+| **Web 框架** | FastAPI | 0.115.0 |
+| **ASGI 服务器** | Uvicorn | 0.32.0 |
 | **ORM** | SQLAlchemy | 2.0.25 |
-| **LLM 集成** | OpenAI SDK + LangChain | 1.10.0 |
-| **浏览器自动化** | Browser-Use | ≥0.1.0 |
+| **LLM 集成** | Browser-Use 原生 LLM | - |
+| **浏览器自动化** | Browser-Use | 0.3.3 |
 | **测试框架** | Pytest | 8.0.0 |
 | **数据库驱动** | PyMySQL | 1.1.0 |
 | **缓存** | Redis | 5.0.1 |
@@ -463,13 +463,14 @@ app.include_router(xxx_router)
 
 | 包 | 用途 |
 |-----|------|
-| `fastapi==0.109.0` | Web 框架 |
-| `browser-use>=0.1.0` | 浏览器自动化 + AI 决策 |
-| `openai==1.10.0` | Qwen API 客户端 |
+| `fastapi==0.115.0` | Web 框架 |
+| `browser-use==0.3.3` | 浏览器自动化 + AI 决策（使用原生 LLM） |
+| `playwright==1.49.1` | 浏览器驱动 |
 | `sqlalchemy==2.0.25` | ORM 数据库映射 |
 | `pymysql==1.1.0` | MySQL 驱动 |
-| `mcp==1.23.2` | MCP 工具协议 |
-| `anthropic==0.28.0` | Anthropic SDK（支持） |
+| `redis==5.0.1` | 缓存服务 |
+
+**注意**：本项目使用 browser-use 0.3.3 原生的 LLM 抽象层，**不依赖 LangChain**。
 
 ### 前端依赖
 
@@ -479,6 +480,60 @@ app.include_router(xxx_router)
 | `vite@^5.0.0` | 构建工具 |
 | `element-plus@^2.5.0` | UI 组件库 |
 | `axios@^1.6.0` | HTTP 客户端 |
+
+---
+
+## 🔧 技术难点与解决方案
+
+### 问题 1：Browser-Use 与 LLM 集成兼容性
+
+**问题描述**：
+- 初始尝试使用 LangChain 的 `ChatOpenAI` 与 browser-use 0.3.3 集成
+- 出现多个错误：`items` 错误、消息类型不兼容、`usage` 属性缺失
+
+**根本原因**：
+- browser-use 0.3.3 有自己完整的 LLM 抽象层（`browser_use.llm.base.BaseChatModel`）
+- 不依赖 LangChain，强行适配导致各种兼容性问题
+
+**解决方案**：
+- ✅ 使用 browser-use 0.3.3 原生的 `ChatOpenAI` 类
+- ✅ 移除所有 LangChain 依赖和适配层
+- ✅ 直接使用 browser-use 的 `Agent` 类
+
+**关键代码**：
+```python
+# 使用 browser-use 原生 LLM
+from browser_use.llm.openai.chat import ChatOpenAI
+from browser_use import Agent
+
+llm = ChatOpenAI(
+    model='qwen/qwen3-vl-235b-a22b-instruct',
+    api_key='your_key',
+    base_url='https://api.ppinfra.com/openai',
+    temperature=0.0,
+)
+
+agent = Agent(task="your task", llm=llm)
+```
+
+**参考文档**：
+- [Browser-Use 0.3.3 集成指南](./BROWSER_USE_0.3.3_INTEGRATION.md)
+- [实施指南](./IMPLEMENTATION_GUIDE.md)
+- [最终修复方案](./Agent_server/FINAL_FIX.md)
+
+### 问题 2：Qwen 模型与 Browser-Use 的兼容性
+
+**解决方案**：
+- Qwen 提供 OpenAI 兼容接口，可直接使用 browser-use 的 `ChatOpenAI`
+- 设置正确的 `base_url` 和 `api_key`
+- 调整 `temperature` 参数以提高输出稳定性
+
+### 问题 3：异步编程与 Windows 环境
+
+**解决方案**：
+- 使用 `asyncio.WindowsProactorEventLoopPolicy()` 确保 Windows 兼容性
+- 避免在 ASGI 环境中使用 `asyncio.run()`
+- 正确处理异步上下文和资源清理
 
 ---
 
@@ -508,6 +563,8 @@ app.include_router(xxx_router)
 2. 检查 `.env` 配置是否正确
 3. 查看启动日志是否有错误提示
 4. 确认 MySQL 和 Redis 服务已启动
+5. **运行快速修复脚本**：`quick_fix.bat`（Windows）
+6. **查看详细故障排查指南**：[TROUBLESHOOTING.md](./TROUBLESHOOTING.md)
 
 **常见问题**：
 
@@ -516,7 +573,25 @@ app.include_router(xxx_router)
 | `LLM API Key 无效` | 检查 `.env` 中的 `LLM_API_KEY` 是否正确 |
 | `数据库连接失败` | 确认 MySQL 正在运行，检查 DB_HOST/DB_PORT/DB_USER |
 | `前端无法连接后端` | 确认后端运行在 8000 端口，检查 CORS 配置 |
-| `Browser-Use 执行失败` | 检查 `MAX_STEPS` 是否太小，查看执行日志中的错误信息 |
+| `Browser-Use 执行失败 (items 错误)` | 运行 `python test_llm_connection.py` 测试 LLM 连接，参考 [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) |
+| `浏览器停留在 about:blank` | 确保测试用例第一步包含完整的 URL，检查 LLM 响应格式 |
+| `playwright 未安装` | 运行 `playwright install chromium` |
+
+### 🔧 快速修复
+
+如果遇到 Browser-Use 执行问题，运行快速修复脚本：
+
+```bash
+# Windows
+cd Ai_Test_Agent
+quick_fix.bat
+
+# 或手动执行
+cd Agent_server
+pip install -r requirements.txt
+playwright install chromium
+python test_llm_connection.py
+```
 
 ---
 
@@ -578,6 +653,26 @@ app.include_router(xxx_router)
 - **支持的测试场景**：功能测试、接口测试、UI 自动化
 - **平均执行速度**：20-30 秒/个测试用例
 - **成功率**：≥ 85%（取决于网页复杂度）
+- **Browser-Use 版本**：0.3.3（稳定版）
+- **LLM 支持**：Qwen 3 VL（通过 OpenAI 兼容接口）
+
+---
+
+## 🎉 项目状态
+
+✅ **项目已成功运行！**
+
+经过深入调试和优化，项目已完全解决 browser-use 与 LLM 的集成问题：
+- ✅ 使用 browser-use 0.3.3 原生 API
+- ✅ 移除 LangChain 依赖，简化架构
+- ✅ 完整的测试用例生成、执行、报告流程
+- ✅ 支持 Qwen 3 VL 多模态大模型
+
+**关键改进**：
+1. 重写 `browser_use_service.py`，使用原生 API
+2. 移除复杂的适配层和包装器
+3. 优化 LLM 配置和参数
+4. 完善错误处理和日志输出
 
 ---
 
@@ -587,4 +682,4 @@ app.include_router(xxx_router)
 
 ---
 
-<sub>最后更新：2025-12-10 | 版本：1.0.0</sub>
+<sub>最后更新：2025-12-11 | 版本：1.0.1</sub>

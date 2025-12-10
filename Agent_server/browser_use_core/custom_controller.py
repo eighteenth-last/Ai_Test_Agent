@@ -17,7 +17,6 @@ from browser_use.agent.views import ActionResult
 from browser_use.browser.context import BrowserContext
 from browser_use.controller.service import Controller, DoneAction
 from browser_use.controller.registry.service import Registry, RegisteredAction
-from main_content_extractor import MainContentExtractor
 from browser_use.controller.views import (
     ClickElementAction,
     DoneAction,

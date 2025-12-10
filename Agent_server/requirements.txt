@@ -1,48 +1,43 @@
-# ========== Web Framework & Server ==========
-fastapi==0.109.0
-uvicorn>=0.31.1
+# ====================== Web Framework & Server ======================
+fastapi==0.115.0          # 0.109 与 pydantic 2.11+ 冲突
+uvicorn[standard]==0.32.0
 python-multipart==0.0.9
 
-# ========== Database & ORM ==========
+# ====================== Database & ORM =============================
 sqlalchemy==2.0.25
 pymysql==1.1.0
 
-# ========== LLM & AI Integration ==========
-openai==1.10.0
-anthropic==0.28.0
-langchain>=0.1.0
-langchain-openai>=0.1.0
-langchain-community>=0.0.10
+# ====================== Browser Automation =========================
+browser-use==0.3.3        # 使用 0.3.3 稳定版本
+playwright==1.49.1        # Playwright 浏览器自动化
 
-# ========== Browser Automation ==========
-browser-use>=0.1.0
-selenium==4.17.2
-playwright>=1.40.0
-
-# ========== Web Scraping & MCP ==========
-mcp==1.23.2
+# ====================== Web Scraping & MCP =========================
 aiohttp==3.9.1
-requests>=2.31.0
-beautifulsoup4>=4.12.0
+requests==2.32.3
+beautifulsoup4==4.12.3
 
-# ========== Data Processing ==========
-pandas>=2.0.0
+# ====================== Data Processing ============================
+pandas==2.3.3             # 与 numpy 2.x 官方 wheel 对齐
 openpyxl==3.1.2
-markdown>=3.4.0
+markdown==3.7
 
-# ========== Caching & Config ==========
+# ====================== Caching & Config ===========================
 redis==5.0.1
 python-dotenv==1.0.0
 
-# ========== Testing & Logging ==========
+# ====================== Testing ===================================
 pytest==8.0.0
-pytest-asyncio>=0.21.0
-logging>=0.5.1.2
+pytest-asyncio==0.21.0
+# 标准库 logging 已内置，无需安装
 
-# ========== Image & Vision Processing (Optional) ==========
-pillow>=10.0.0
-opencv-python>=4.8.0
+# ====================== Image & Vision =============================
+pillow==10.4.0
+opencv-python==4.10.0.84
 
-# ========== Async & Performance ==========
-aiofiles>=23.2.0
-numpy>=1.24.0
+# ====================== Async & Performance ========================
+aiofiles==24.1.0
+numpy==2.3.3              # 与 pandas 2.3.3 官方 wheel 对齐
+
+# ====================== LLM & AI ===================================
+# browser-use 0.3.3 使用自己的 LLM 抽象层，不需要 LangChain
+# langchain-core 和 langchain-openai 已移除

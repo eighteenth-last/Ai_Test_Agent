@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Report</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1, h2, h3 {
+            color: #333;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .pass {
+            color: green;
+            font-weight: bold;
+        }
+        .fail {
+            color: red;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div id="content">
+        <div class="markdown- report"><h1>AI Agent 测试报告</h1>
+<hr />
+<h2>1. 测试概览</h2>
+<ul>
+<li><strong>总用例数</strong>：1 个  </li>
+<li><strong>通过用例数</strong>：0 个  </li>
+<li><strong>失败用例数</strong>：1 个  </li>
+<li><strong>通过率</strong>：0%  </li>
+<li><strong>总耗时</strong>：9 秒  </li>
+</ul>
+<blockquote>
+<p>⚠️ 所有测试用例均未通过，系统在执行过程中提前终止，未完成预期操作流程。</p>
+</blockquote>
+<hr />
+<h2>2. 测试用例详情</h2>
+<h3>用例 ID: 60</h3>
+<ul>
+<li><strong>状态</strong>：失败（<code>fail</code>）  </li>
+<li><strong>执行时间</strong>：2025-12-11T01:20:06  </li>
+<li><strong>执行耗时</strong>：9 秒  </li>
+<li><strong>错误信息</strong>：<code>测试未完成，执行了 3 步后终止</code>  </li>
+<li><strong>截图记录</strong>：无  </li>
+<li><strong>关联测试代码 ID</strong>：无（<code>null</code>）</li>
+</ul>
+<hr />
+<h2>3. 行为分析（重点）</h2>
+<h3>📌 Agent 执行路径语义化描述：</h3>
+<p>该用例的 Agent 在整个执行过程中仅完成了 <strong>3 个步骤</strong>，且所有步骤均停留在 <code>about:blank</code> 页面，标题均为 <code>"Starting agent 456f..."</code>，表明 Agent <strong>尚未真正进入目标页面或执行任何有效交互操作</strong>。</p>
+<h4>步骤分解：</h4>
+<ul>
+<li><strong>第 1 步</strong>（时间戳：2025-12-11T01:20:05.626774）  </li>
+<li>当前页面：<code>about:blank</code>（空白页）  </li>
+<li>标题：<code>Starting agent 456f...</code>  </li>
+<li>
+<p>操作列表：空（无任何动作）<br />
+  → <strong>语义解释</strong>：Agent 启动中，尚未加载目标页面或执行导航。</p>
+</li>
+<li>
+<p><strong>第 2 步</strong>（时间戳：2025-12-11T01:20:05.626774）  </p>
+</li>
+<li>
+<p>页面与标题同上，无任何新操作。<br />
+  → <strong>语义解释</strong>：Agent 仍处于初始化阶段，未触发页面跳转或元素交互。</p>
+</li>
+<li>
+<p><strong>第 3 步</strong>（时间戳：2025-12-11T01:20:05.626774）  </p>
+</li>
+<li>页面与标题依旧未变，无任何动作。<br />
+  → <strong>语义解释</strong>：Agent 未进入业务流程，可能因启动超时、配置缺失或环境异常导致卡死。</li>
+</ul>
+<h4>🔍 关键问题定位：</h4>
+<ul>
+<li><strong>未发生任何真实交互行为</strong>：所有步骤均无 <code>actions</code>，说明 Agent 未执行点击、输入、导航等核心操作。</li>
+<li><strong>页面始终为 <code>about:blank</code></strong>：表明目标 URL 未被加载，或浏览器实例未正确初始化。</li>
+<li><strong>最终状态 <code>success: false</code></strong>：明确表示任务未达成，且无后续恢复机制。</li>
+<li><strong>执行日志时间戳完全一致</strong>：三个步骤的时间戳完全相同，暗示这些“步骤”可能是并行或伪记录，实际并未按顺序推进。</li>
+</ul>
+<blockquote>
+<p>❗ <strong>根本原因推断</strong>：<br />
+Agent 在启动阶段即陷入停滞，未能成功加载目标页面或初始化执行上下文。可能是以下原因之一：<br />
+- 目标 URL 未传入或为空；<br />
+- 浏览器驱动/代理服务未正常响应；<br />
+- 系统资源不足或权限限制导致进程挂起；<br />
+- Agent 配置文件缺失关键参数（如 <code>target_url</code>, <code>start_page</code> 等）。</p>
+</blockquote>
+<hr />
+<h2>4. 失败原因诊断与修复建议</h2>
+<h3>🧨 失败原因诊断：</h3>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>初始化失败</strong></td>
+<td>Agent 未成功启动或未加载目标页面，停留在空白页。</td>
+</tr>
+<tr>
+<td><strong>无有效操作</strong></td>
+<td>未执行任何用户交互动作，说明流程未进入业务逻辑层。</td>
+</tr>
+<tr>
+<td><strong>时间戳异常</strong></td>
+<td>三步时间戳完全一致，表明执行引擎未正常推进步骤。</td>
+</tr>
+<tr>
+<td><strong>缺乏容错机制</strong></td>
+<td>未捕获启动失败异常，直接标记为“未完成”而非“启动失败”。</td>
+</tr>
+</tbody>
+</table>
+<h3>✅ 修复建议：</h3>
+<ol>
+<li>
+<p><strong>检查目标 URL 是否传入</strong><br />
+   ➤ 确保测试用例中包含有效的 <code>target_url</code> 参数，并在 Agent 启动时正确传递。</p>
+</li>
+<li>
+<p><strong>验证浏览器/代理服务可用性</strong><br />
+   ➤ 检查 Selenium / Playwright / Puppeteer 等驱动是否正常运行，端口是否被占用，是否有权限访问。</p>
+</li>
+<li>
+<p><strong>增加启动超时与重试机制</strong><br />
+   ➤ 若 Agent 启动超过 5 秒未加载页面，应主动抛出异常并记录日志，避免无限等待。</p>
+</li>
+<li>
+<p><strong>补充初始化日志输出</strong><br />
+   ➤ 在 Agent 启动阶段添加日志，如：“正在加载目标页面 [URL]”，“浏览器已准备就绪”，便于定位卡点。</p>
+</li>
+<li>
+<p><strong>修复执行引擎调度逻辑</strong><br />
+   ➤ 确保每个步骤之间有真实的时间间隔和状态更新，避免“伪步骤”干扰判断。</p>
+</li>
+<li>
+<p><strong>增加失败回溯机制</strong><br />
+   ➤ 当前仅记录“未完成”，应细化失败类型（如“启动失败”、“页面加载超时”、“元素未找到”等），便于分类统计与修复。</p>
+</li>
+</ol>
+<hr />
+<h2>5. 测试总结</h2>
+<p>本次测试共执行 1 个用例，全部失败，通过率为 0%。失败的根本原因在于 <strong>Agent 未成功启动或未加载目标页面</strong>，全程停留在空白页，未执行任何有效操作。执行日志显示步骤时间戳异常一致，进一步佐证系统未正常推进流程。</p>
+<blockquote>
+<p>📌 <strong>结论</strong>：当前测试环境或 Agent 初始化模块存在严重缺陷，需优先修复启动流程与目标页面加载机制，否则后续所有测试均无法正常进行。</p>
+<p>💡 <strong>下一步行动建议</strong>：<br />
+- 优先修复 Agent 启动模块，确保能正确加载目标页面；<br />
+- 增加详细的启动日志与异常捕获；<br />
+- 重新运行本用例，验证修复效果；<br />
+- 扩展测试覆盖范围，加入“页面加载成功”、“元素可交互”等前置校验点。</p>
+</blockquote>
+<hr />
+<p>✅ 报告生成时间：2025-12-11<br />
+📊 报告人：AI 测试报告生成专家</p></div>
+    </div>
+</body>
+</html>

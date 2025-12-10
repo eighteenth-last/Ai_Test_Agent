@@ -20,12 +20,28 @@ from browser_use.agent.views import (
     AgentHistory,
     AgentHistoryList,
     AgentStepInfo,
-    ToolCallingMethod,
 )
 from browser_use.browser.views import BrowserStateHistory
 from browser_use.utils import time_execution_async
 from dotenv import load_dotenv
-from browser_use.agent.message_manager.utils import is_model_without_tool_support
+
+# 尝试导入 ToolCallingMethod，如果不存在则使用字符串类型
+try:
+    from browser_use.agent.views import ToolCallingMethod
+except ImportError:
+    # browser-use 0.3.3 可能没有这个类型，使用字符串
+    ToolCallingMethod = str
+
+# 尝试导入 is_model_without_tool_support
+try:
+    from browser_use.agent.message_manager.utils import is_model_without_tool_support
+except ImportError:
+    # 如果不存在，提供一个默认实现
+    def is_model_without_tool_support(model_name: str) -> bool:
+        """检查模型是否不支持 tool calling"""
+        # 简单的启发式检查
+        unsupported_keywords = ['claude-2', 'gpt-3.5-turbo-instruct']
+        return any(keyword in model_name.lower() for keyword in unsupported_keywords)
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -36,22 +52,32 @@ SKIP_LLM_API_KEY_VERIFICATION = (
 
 
 class BrowserUseAgent(Agent):
-    def _set_tool_calling_method(self) -> ToolCallingMethod | None:
+    def _set_tool_calling_method(self):
+        """
+        设置 tool calling 方法
+        
+        这是关键！不同的 LLM 需要不同的 tool calling 方法
+        """
         tool_calling_method = self.settings.tool_calling_method
         if tool_calling_method == 'auto':
+            # 检查是否是不支持 tool 的模型
             if is_model_without_tool_support(self.model_name):
+                logger.info(f"[BrowserUseAgent] 模型 {self.model_name} 不支持 tool calling，使用 'raw' 模式")
                 return 'raw'
             elif self.chat_model_library == 'ChatGoogleGenerativeAI':
                 return None
             elif self.chat_model_library == 'ChatOpenAI':
+                # Qwen 通过 OpenAI 兼容接口，使用 function_calling
+                logger.info(f"[BrowserUseAgent] 使用 function_calling 模式")
                 return 'function_calling'
             elif self.chat_model_library == 'AzureChatOpenAI':
                 return 'function_calling'
             else:
+                logger.info(f"[BrowserUseAgent] 未知模型库 {self.chat_model_library}，使用默认模式")
                 return None
         else:
+            logger.info(f"[BrowserUseAgent] 使用指定的 tool calling 方法: {tool_calling_method}")
             return tool_calling_method
-
     @time_execution_async("--run (agent)")
     async def run(
             self, max_steps: int = 100, on_step_start: AgentHookFunc | None = None,
@@ -149,29 +175,4 @@ class BrowserUseAgent(Agent):
             # Unregister signal handlers before cleanup
             signal_handler.unregister()
 
-            if self.settings.save_playwright_script_path:
-                logger.info(
-                    f'Agent run finished. Attempting to save Playwright script to: {self.settings.save_playwright_script_path}'
-                )
-                try:
-                    # Extract sensitive data keys if sensitive_data is provided
-                    keys = list(self.sensitive_data.keys()) if self.sensitive_data else None
-                    # Pass browser and context config to the saving method
-                    self.state.history.save_as_playwright_script(
-                        self.settings.save_playwright_script_path,
-                        sensitive_data_keys=keys,
-                        browser_config=self.browser.config,
-                        context_config=self.browser_context.config,
-                    )
-                except Exception as script_gen_err:
-                    # Log any error during script generation/saving
-                    logger.error(f'Failed to save Playwright script: {script_gen_err}', exc_info=True)
-
             await self.close()
-
-            if self.settings.generate_gif:
-                output_path: str = 'agent_history.gif'
-                if isinstance(self.settings.generate_gif, str):
-                    output_path = self.settings.generate_gif
-
-                create_history_gif(task=self.task, history=self.state.history, output_path=output_path)
