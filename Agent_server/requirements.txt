@@ -1,0 +1,48 @@
+# ========== Web Framework & Server ==========
+fastapi==0.109.0
+uvicorn>=0.31.1
+python-multipart==0.0.9
+
+# ========== Database & ORM ==========
+sqlalchemy==2.0.25
+pymysql==1.1.0
+
+# ========== LLM & AI Integration ==========
+openai==1.10.0
+anthropic==0.28.0
+langchain>=0.1.0
+langchain-openai>=0.1.0
+langchain-community>=0.0.10
+
+# ========== Browser Automation ==========
+browser-use>=0.1.0
+selenium==4.17.2
+playwright>=1.40.0
+
+# ========== Web Scraping & MCP ==========
+mcp==1.23.2
+aiohttp==3.9.1
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+
+# ========== Data Processing ==========
+pandas>=2.0.0
+openpyxl==3.1.2
+markdown>=3.4.0
+
+# ========== Caching & Config ==========
+redis==5.0.1
+python-dotenv==1.0.0
+
+# ========== Testing & Logging ==========
+pytest==8.0.0
+pytest-asyncio>=0.21.0
+logging>=0.5.1.2
+
+# ========== Image & Vision Processing (Optional) ==========
+pillow>=10.0.0
+opencv-python>=4.8.0
+
+# ========== Async & Performance ==========
+aiofiles>=23.2.0
+numpy>=1.24.0
