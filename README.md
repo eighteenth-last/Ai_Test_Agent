@@ -532,8 +532,8 @@ app.include_router(xxx_router)
 ## 📞 联系方式
 
 如有问题或建议，欢迎通过以下方式联系：
-作者：程序员Eighteen
-邮箱：32732495516@qq.com & eighteenthstuai@gmail.com
+- **作者**：程序员Eighteen
+- **邮箱**：32732495516@qq.com & eighteenthstuai@gmail.com
 
 
 ### 🤝 参与贡献
