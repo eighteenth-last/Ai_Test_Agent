@@ -132,20 +132,53 @@
         <!-- 代理交互输出 -->
         <el-card shadow="never">
           <template #header>
-            <div style="display: flex; align-items: center;">
-              <i class="el-icon-cpu" style="margin-right: 8px" />
-              <strong>代理交互</strong>
-              <el-tag v-if="isExecuting" type="info" size="small" style="margin-left: 10px">
-                执行中...
-              </el-tag>
-              <el-tag 
-                v-else-if="executionResult"
-                :type="executionResult.status === 'pass' ? 'success' : 'danger'"
-                size="small"
-                style="margin-left: 10px"
-              >
-                {{ executionResult.status === 'pass' ? '执行成功' : '执行失败' }}
-              </el-tag>
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <div style="display: flex; align-items: center;">
+                <i class="el-icon-cpu" style="margin-right: 8px" />
+                <strong>代理交互</strong>
+                <el-tag v-if="isExecuting && !isPaused" type="info" size="small" style="margin-left: 10px">
+                  执行中...
+                </el-tag>
+                <el-tag v-else-if="isPaused" type="warning" size="small" style="margin-left: 10px">
+                  已暂停
+                </el-tag>
+                <el-tag 
+                  v-else-if="executionResult"
+                  :type="executionResult.status === 'pass' ? 'success' : 'danger'"
+                  size="small"
+                  style="margin-left: 10px"
+                >
+                  {{ executionResult.status === 'pass' ? '执行成功' : '执行失败' }}
+                </el-tag>
+              </div>
+              <div v-if="isExecuting">
+                <el-button 
+                  v-if="!isPaused"
+                  size="small" 
+                  type="warning" 
+                  @click="pauseExecution"
+                  :loading="pauseLoading"
+                >
+                  暂停执行
+                </el-button>
+                <el-button 
+                  v-else
+                  size="small" 
+                  type="success" 
+                  @click="resumeExecution"
+                  :loading="resumeLoading"
+                >
+                  继续执行
+                </el-button>
+                <el-button 
+                  size="small" 
+                  type="danger" 
+                  @click="stopExecution"
+                  :loading="stopLoading"
+                >
+                  停止执行
+                </el-button>
+              </div>
             </div>
           </template>
 
@@ -269,6 +302,11 @@ const executeDialogVisible = ref(false)
 const selectedCase = ref(null)
 const isExecuting = ref(false)
 const executionResult = ref(null)
+const isPaused = ref(false)
+const pauseLoading = ref(false)
+const resumeLoading = ref(false)
+const stopLoading = ref(false)
+const currentTaskId = ref(null)
 
 const executeConfig = reactive({
   headless: true,
@@ -306,12 +344,90 @@ const executeCase = (testCase) => {
   executeDialogVisible.value = true
 }
 
+// 暂停执行
+const pauseExecution = async () => {
+  if (!currentTaskId.value) return
+  
+  pauseLoading.value = true
+  try {
+    const result = await testCodeAPI.pauseTask(currentTaskId.value)
+    if (result.success) {
+      isPaused.value = true
+      ElMessage.success('已暂停执行')
+    }
+  } catch (error) {
+    ElMessage.error('暂停失败: ' + (error.message || '未知错误'))
+  } finally {
+    pauseLoading.value = false
+  }
+}
+
+// 恢复执行
+const resumeExecution = async () => {
+  if (!currentTaskId.value) return
+  
+  resumeLoading.value = true
+  try {
+    const result = await testCodeAPI.resumeTask(currentTaskId.value)
+    if (result.success) {
+      isPaused.value = false
+      ElMessage.success('已恢复执行')
+    }
+  } catch (error) {
+    ElMessage.error('恢复失败: ' + (error.message || '未知错误'))
+  } finally {
+    resumeLoading.value = false
+  }
+}
+
+// 停止执行
+const stopExecution = async () => {
+  if (!currentTaskId.value) return
+  
+  try {
+    await ElMessageBox.confirm(
+      '确定要停止当前测试吗？停止后无法恢复。',
+      '确认停止',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+    
+    stopLoading.value = true
+    const result = await testCodeAPI.stopTask(currentTaskId.value)
+    if (result.success) {
+      isExecuting.value = false
+      isPaused.value = false
+      ElMessage.success('已停止执行')
+      
+      // 创建停止结果
+      executionResult.value = {
+        status: 'fail',
+        error_message: '用户手动停止',
+        total_steps: 0,
+        duration: 0,
+        history: null
+      }
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('停止失败: ' + (error.message || '未知错误'))
+    }
+  } finally {
+    stopLoading.value = false
+  }
+}
+
 // 确认执行
 const confirmExecute = async () => {
   const caseId = selectedCase.value.id
   
   // 设置执行状态
   isExecuting.value = true
+  isPaused.value = false
+  currentTaskId.value = caseId
   executingCases.value[caseId] = true
   
   try {
@@ -352,6 +468,8 @@ const confirmExecute = async () => {
     }
   } finally {
     isExecuting.value = false
+    isPaused.value = false
+    currentTaskId.value = null
     executingCases.value[caseId] = false
   }
 }

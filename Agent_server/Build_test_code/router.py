@@ -69,3 +69,103 @@ async def execute_with_browser_use(
         raise HTTPException(status_code=500, detail=result.get('message'))
     
     return result
+
+
+@router.post("/pause-task/{task_id}")
+async def pause_task(task_id: int):
+    """
+    暂停正在执行的测试任务
+    
+    **参数**：
+    - task_id: 任务ID（通常是测试用例ID）
+    
+    **返回**：
+    - 暂停操作的结果
+    """
+    from Build_test_code.task_manager import get_task_manager
+    
+    task_manager = get_task_manager()
+    success = task_manager.pause_task(task_id)
+    
+    if success:
+        return {
+            "success": True,
+            "message": f"任务 {task_id} 已暂停"
+        }
+    else:
+        raise HTTPException(status_code=404, detail=f"任务 {task_id} 不存在")
+
+
+@router.post("/resume-task/{task_id}")
+async def resume_task(task_id: int):
+    """
+    恢复已暂停的测试任务
+    
+    **参数**：
+    - task_id: 任务ID（通常是测试用例ID）
+    
+    **返回**：
+    - 恢复操作的结果
+    """
+    from Build_test_code.task_manager import get_task_manager
+    
+    task_manager = get_task_manager()
+    success = task_manager.resume_task(task_id)
+    
+    if success:
+        return {
+            "success": True,
+            "message": f"任务 {task_id} 已恢复"
+        }
+    else:
+        raise HTTPException(status_code=404, detail=f"任务 {task_id} 不存在")
+
+
+@router.post("/stop-task/{task_id}")
+async def stop_task(task_id: int):
+    """
+    停止正在执行的测试任务
+    
+    **参数**：
+    - task_id: 任务ID（通常是测试用例ID）
+    
+    **返回**：
+    - 停止操作的结果
+    """
+    from Build_test_code.task_manager import get_task_manager
+    
+    task_manager = get_task_manager()
+    success = task_manager.stop_task(task_id)
+    
+    if success:
+        return {
+            "success": True,
+            "message": f"任务 {task_id} 已停止"
+        }
+    else:
+        raise HTTPException(status_code=404, detail=f"任务 {task_id} 不存在")
+
+
+@router.get("/task-status/{task_id}")
+async def get_task_status(task_id: int):
+    """
+    获取任务状态
+    
+    **参数**：
+    - task_id: 任务ID
+    
+    **返回**：
+    - 任务的当前状态信息
+    """
+    from Build_test_code.task_manager import get_task_manager
+    
+    task_manager = get_task_manager()
+    status = task_manager.get_task_status(task_id)
+    
+    if status:
+        return {
+            "success": True,
+            "data": status
+        }
+    else:
+        raise HTTPException(status_code=404, detail=f"任务 {task_id} 不存在")

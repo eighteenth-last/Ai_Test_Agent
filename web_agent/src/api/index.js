@@ -36,6 +36,15 @@ export const testCaseAPI = {
   },
   getById(id) {
     return api.get(`/test-cases/${id}`)
+  },
+  uploadFile(file) {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post('/test-cases/upload-file', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
   }
 }
 
@@ -48,6 +57,18 @@ export const testCodeAPI = {
       max_steps,
       use_vision
     })
+  },
+  pauseTask(task_id) {
+    return api.post(`/test-code/pause-task/${task_id}`)
+  },
+  resumeTask(task_id) {
+    return api.post(`/test-code/resume-task/${task_id}`)
+  },
+  stopTask(task_id) {
+    return api.post(`/test-code/stop-task/${task_id}`)
+  },
+  getTaskStatus(task_id) {
+    return api.get(`/test-code/task-status/${task_id}`)
   }
 }
 
@@ -61,6 +82,16 @@ export const testReportAPI = {
   },
   getById(report_id) {
     return api.get(`/reports/${report_id}`)
+  },
+  download(report_id) {
+    // 使用原生方式下载文件
+    const url = `/api/reports/${report_id}/download`
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `test_report_${report_id}.html`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
   }
 }
 

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import List
@@ -72,3 +73,46 @@ async def get_report_by_id(
         raise HTTPException(status_code=404, detail=result.get('message'))
     
     return result
+
+
+@router.get("/{report_id}/download")
+async def download_report(
+    report_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    下载测试报告文件
+    
+    支持下载 HTML、Markdown、TXT 格式的报告文件
+    """
+    result = TestReportService.get_report_by_id(report_id=report_id, db=db)
+    
+    if not result.get('success'):
+        raise HTTPException(status_code=404, detail=result.get('message'))
+    
+    report_data = result.get('data')
+    file_path = report_data.get('file_path')
+    
+    if not file_path or not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="报告文件不存在")
+    
+    # 获取文件扩展名
+    format_type = report_data.get('format_type', 'html')
+    filename = f"test_report_{report_id}.{format_type}"
+    
+    # 设置正确的 MIME 类型
+    media_type_map = {
+        'html': 'text/html',
+        'markdown': 'text/markdown',
+        'txt': 'text/plain'
+    }
+    media_type = media_type_map.get(format_type, 'application/octet-stream')
+    
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{filename}"
+        }
+    )

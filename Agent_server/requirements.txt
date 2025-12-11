@@ -21,6 +21,11 @@ pandas==2.3.3             # 与 numpy 2.x 官方 wheel 对齐
 openpyxl==3.1.2
 markdown==3.7
 
+# ====================== Document Processing ========================
+PyPDF2==3.0.1             # PDF 文件解析
+python-docx==1.1.0        # DOCX 文件解析
+# textract==1.6.5         # DOC 文件解析（可选，需要额外系统依赖）
+
 # ====================== Caching & Config ===========================
 redis==5.0.1
 python-dotenv==1.0.0

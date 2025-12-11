@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Report</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px;
+            line-height: 1.8;
+            background-color: #f5f7fa;
+        }
+        
+        #content {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #2c3e50;
+            font-size: 32px;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #4CAF50;
+        }
+        
+        h2 {
+            color: #34495e;
+            font-size: 24px;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            padding-top: 20px;
+        }
+        
+        h3 {
+            color: #555;
+            font-size: 20px;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        h4 {
+            color: #666;
+            font-size: 18px;
+            margin-top: 25px;
+            margin-bottom: 12px;
+        }
+        
+        p {
+            margin: 15px 0;
+            color: #333;
+        }
+        
+        ul, ol {
+            margin: 20px 0;
+            padding-left: 30px;
+        }
+        
+        li {
+            margin: 10px 0;
+            line-height: 1.8;
+        }
+        
+        hr {
+            border: none;
+            border-top: 2px solid #e0e0e0;
+            margin: 40px 0;
+        }
+        
+        blockquote {
+            background-color: #fff3cd;
+            border-left: 5px solid #ffc107;
+            padding: 20px 25px;
+            margin: 25px 0;
+            border-radius: 4px;
+        }
+        
+        code {
+            background-color: #f4f4f4;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 30px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        th, td {
+            border: 1px solid #ddd;
+            padding: 15px 20px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: #4CAF50;
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        
+        .pass {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        
+        .fail {
+            color: #f44336;
+            font-weight: bold;
+        }
+        
+        strong {
+            color: #2c3e50;
+        }
+    </style>
+</head>
+<body>
+    <div id="content">
+        <div class="markdown- report"><h1>测试报告</h1>
+<hr />
+<h2>1. 测试概览</h2>
+<ul>
+<li><strong>总用例数</strong>：1 个  </li>
+<li><strong>通过用例数</strong>：1 个  </li>
+<li><strong>失败用例数</strong>：0 个  </li>
+<li><strong>通过率</strong>：100%  </li>
+<li><strong>总耗时</strong>：89 秒  </li>
+<li><strong>执行时间</strong>：2025-12-11 09:40:16  </li>
+</ul>
+<blockquote>
+<p>✅ 所有测试用例均成功执行，系统行为符合预期。</p>
+</blockquote>
+<hr />
+<h2>2. 测试用例详情</h2>
+<h3>用例 ID：64</h3>
+<p><strong>状态</strong>：✅ 通过<br />
+<strong>目标</strong>：验证使用不存在的账号登录学生系统时，系统应返回“账号不存在”类错误提示。<br />
+<strong>测试数据</strong>：<br />
+- 账号：<code>2022900117</code><br />
+- 密码：<code>900116</code></p>
+<p><strong>最终结果</strong>：<br />
+- 系统响应：<code>未找到记录</code>（等价于“账号不存在”）<br />
+- 测试结论：✅ 符合预期，验证通过</p>
+<hr />
+<h2>3. 行为分析（重点）</h2>
+<p>本测试由 AI Agent 自动执行，共完成 6 个步骤，完整模拟了用户登录流程并验证异常场景。以下是逐步骤语义化行为分析：</p>
+<hr />
+<h3>📌 步骤 1：导航至登录页面</h3>
+<ul>
+<li><strong>操作</strong>：打开浏览器，访问 <code>http://123.56.3.98:81/stu/#pages_login_student</code></li>
+<li><strong>Agent 思考</strong>：确认当前页面为空（about:blank），需先导航到指定 URL，确保页面加载成功后再进行后续操作。</li>
+<li><strong>执行结果</strong>：成功跳转，页面标题显示“登录”，表单元素已渲染。</li>
+<li><strong>关键点</strong>：此步为所有后续操作的基础，若页面未加载或跳转失败，将导致整个测试中断。</li>
+</ul>
+<hr />
+<h3>📌 步骤 2：输入用户名</h3>
+<ul>
+<li><strong>操作</strong>：在索引为 0 的输入框中填入账号 <code>2022900117</code></li>
+<li><strong>Agent 思考</strong>：确认页面已加载且表单元素可见，按顺序执行第一步输入操作，为下一步密码输入做准备。</li>
+<li><strong>执行结果</strong>：输入成功，无报错，页面保持稳定。</li>
+<li><strong>关键点</strong>：Agent 准确识别了用户名输入框的索引位置（index 0），说明其具备良好的 DOM 元素定位能力。</li>
+</ul>
+<hr />
+<h3>📌 步骤 3：输入密码</h3>
+<ul>
+<li><strong>操作</strong>：在索引为 1 的输入框中填入密码 <code>900116</code></li>
+<li><strong>Agent 思考</strong>：前一步已完成，当前页面状态正常，继续按计划输入密码，为点击登录按钮做准备。</li>
+<li><strong>执行结果</strong>：密码输入成功，页面无异常。</li>
+<li><strong>关键点</strong>：Agent 在连续操作中保持上下文记忆，能准确衔接前后步骤，体现良好的任务连贯性。</li>
+</ul>
+<hr />
+<h3>📌 步骤 4：点击登录按钮</h3>
+<ul>
+<li><strong>操作</strong>：点击索引为 6 的“登录”按钮</li>
+<li><strong>Agent 思考</strong>：已完成账号和密码输入，下一步是触发登录动作。预期系统应返回“账号不存在”类错误信息。</li>
+<li><strong>执行结果</strong>：按钮点击成功，系统弹出提示：“未找到记录”。</li>
+<li><strong>关键点</strong>：这是核心验证点。Agent 成功触发后端校验逻辑，并捕获到预期错误信息，表明系统对非法账户处理机制健全。</li>
+</ul>
+<hr />
+<h3>📌 步骤 5：记录测试结果</h3>
+<ul>
+<li><strong>操作</strong>：将测试结果写入 <code>results.md</code> 文件</li>
+<li><strong>Agent 思考</strong>：已完成全部操作，系统反馈符合预期，需将结果持久化以便归档或展示。</li>
+<li><strong>执行结果</strong>：文件写入成功，内容包含完整测试过程与结论。</li>
+<li><strong>关键点</strong>：体现了自动化测试中的“结果可追溯”原则，便于后期审计或复现。</li>
+</ul>
+<hr />
+<h3>📌 步骤 6：结束任务并通知用户</h3>
+<ul>
+<li><strong>操作</strong>：调用 <code>done</code> 动作，设置 <code>success=true</code>，附带 <code>results.md</code> 文件</li>
+<li><strong>Agent 思考</strong>：所有步骤均已执行完毕，系统行为符合预期，正式结束任务并向用户汇报。</li>
+<li><strong>执行结果</strong>：任务标记为完成，用户收到结构化反馈。</li>
+<li><strong>关键点</strong>：Agent 不仅完成技术操作，还主动封装结果、提供可读性强的总结，提升用户体验。</li>
+</ul>
+<hr />
+<h2>4. 失败原因诊断与修复建议</h2>
+<blockquote>
+<p>⚠️ 本次测试无失败用例，无需诊断失败原因。</p>
+</blockquote>
+<p>但基于通用测试经验，若未来出现类似登录失败场景，可参考以下排查方向：</p>
+<table>
+<thead>
+<tr>
+<th>可能问题</th>
+<th>定位方式</th>
+<th>修复建议</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>页面未加载</td>
+<td>检查 <code>go_to_url</code> 后是否出现超时或空白页</td>
+<td>增加页面加载等待机制，如 <code>wait_for_element</code></td>
+</tr>
+<tr>
+<td>输入框找不到</td>
+<td>查看 <code>input_text</code> 中 index 是否匹配实际 DOM 结构</td>
+<td>使用更稳定的定位方式（如 CSS 选择器或 XPath）</td>
+</tr>
+<tr>
+<td>登录按钮不可点击</td>
+<td>检查按钮是否被遮挡、禁用或动态加载</td>
+<td>添加滚动、等待动画结束等前置操作</td>
+</tr>
+<tr>
+<td>错误提示未捕获</td>
+<td>检查是否遗漏对弹窗/Toast/Alert 的监听</td>
+<td>增加对错误消息文本的断言逻辑</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>5. 测试总结</h2>
+<p>本次测试成功验证了学生登录系统在面对“不存在账号”时的健壮性与正确性：</p>
+<p>✅ <strong>功能覆盖完整</strong>：从页面导航 → 输入账号密码 → 提交登录 → 验证错误提示 → 记录结果 → 任务结束，全流程闭环。</p>
+<p>✅ <strong>行为智能可靠</strong>：AI Agent 展现出优秀的上下文理解能力、操作顺序控制能力和异常响应判断力，能自主规划并执行复杂交互流程。</p>
+<p>✅ <strong>结果可追溯</strong>：通过生成 <code>results.md</code> 文件，确保测试过程和结论可被人工复核，满足质量保障要求。</p>
+<p>✅ <strong>性能达标</strong>：总耗时 89 秒，在合理范围内，未出现明显卡顿或延迟。</p>
+<hr />
+<h2>📊 建议后续优化方向</h2>
+<ol>
+<li><strong>增加多组边界值测试</strong>：如空账号、空密码、超长字符串、特殊字符等，进一步强化系统容错能力。</li>
+<li><strong>引入截图对比机制</strong>：在关键步骤（如登录失败提示）自动截图，用于视觉回归测试。</li>
+<li><strong>支持多浏览器/设备适配</strong>：扩展测试环境，确保跨平台兼容性。</li>
+<li><strong>集成 CI/CD 流程</strong>：将此类自动化测试纳入持续集成流水线，实现每日自动回归。</li>
+</ol>
+<hr />
+<p>📌 <strong>结论</strong>：本次测试圆满完成，系统表现稳定，错误处理机制有效，符合产品设计预期。建议将该测试用例纳入常规回归测试套件，保障系统长期稳定性。</p>
+<hr />
+<blockquote>
+<p>报告生成时间：2025-12-11 09:41:45<br />
+生成工具：AI 测试报告专家系统 v1.0</p>
+</blockquote></div>
+    </div>
+</body>
+</html>

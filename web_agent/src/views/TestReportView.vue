@@ -42,9 +42,15 @@
       <template #header>
         <div style="display: flex; justify-content: space-between; align-items: center">
           <span>测试报告详情</span>
-          <el-button @click="fullscreen = !fullscreen" link>
-            {{ fullscreen ? '退出全屏' : '全屏显示' }}
-          </el-button>
+          <div>
+            <el-button type="primary" size="small" @click="downloadReport" style="margin-right: 10px">
+              <el-icon style="margin-right: 5px"><Download /></el-icon>
+              下载报告
+            </el-button>
+            <el-button @click="fullscreen = !fullscreen" link>
+              {{ fullscreen ? '退出全屏' : '全屏显示' }}
+            </el-button>
+          </div>
         </div>
       </template>
       
@@ -81,6 +87,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Download } from '@element-plus/icons-vue'
 import { testReportAPI } from '@/api'
 
 const reports = ref([])
@@ -118,6 +125,22 @@ const viewReport = async (row) => {
     }
   } catch (error) {
     ElMessage.error('加载报告详情失败')
+    console.error(error)
+  }
+}
+
+// 下载报告
+const downloadReport = () => {
+  if (!currentReport.value) {
+    ElMessage.warning('没有可下载的报告')
+    return
+  }
+  
+  try {
+    testReportAPI.download(currentReport.value.id)
+    ElMessage.success('报告下载已开始')
+  } catch (error) {
+    ElMessage.error('下载报告失败')
     console.error(error)
   }
 }

@@ -1,6 +1,7 @@
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON, inspect
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.dialects.mysql import LONGTEXT
 from datetime import datetime
 import os
 from dotenv import load_dotenv
@@ -100,13 +101,13 @@ class TestResult(Base):
     # 关联的测试用例ID（新增 - 支持Browser-Use模式）
     test_case_id = Column(Integer, nullable=True, comment='关联测试用例ID')
     # 测试执行日志
-    execution_log = Column(Text, comment='执行日志')
+    execution_log = Column(LONGTEXT , comment='执行日志')
     # 截图文件路径数组，JSON格式
     screenshots = Column(JSON, comment='截图路径（JSON数组）')
     # 测试结果状态：pass(通过)/fail(失败)/error(错误)
     status = Column(String(20), comment='测试结果')
     # 错误信息或异常堆栈
-    error_message = Column(Text, comment='错误信息')
+    error_message = Column(LONGTEXT , comment='错误信息')
     # 测试执行时间
     executed_at = Column(DateTime, default=datetime.now, comment='执行时间')
     # 测试执行耗时，单位为秒

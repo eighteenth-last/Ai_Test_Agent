@@ -244,36 +244,127 @@ class TestReportService:
     <title>Test Report</title>
     <style>
         body {{
-            font-family: Arial, sans-serif;
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
             max-width: 1200px;
             margin: 0 auto;
-            padding: 20px;
-            line-height: 1.6;
+            padding: 40px;
+            line-height: 1.8;
+            background-color: #f5f7fa;
         }}
-        h1, h2, h3 {{
+        
+        #content {{
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }}
+        
+        h1 {{
+            color: #2c3e50;
+            font-size: 32px;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #4CAF50;
+        }}
+        
+        h2 {{
+            color: #34495e;
+            font-size: 24px;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            padding-top: 20px;
+        }}
+        
+        h3 {{
+            color: #555;
+            font-size: 20px;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }}
+        
+        h4 {{
+            color: #666;
+            font-size: 18px;
+            margin-top: 25px;
+            margin-bottom: 12px;
+        }}
+        
+        p {{
+            margin: 15px 0;
             color: #333;
         }}
+        
+        ul, ol {{
+            margin: 20px 0;
+            padding-left: 30px;
+        }}
+        
+        li {{
+            margin: 10px 0;
+            line-height: 1.8;
+        }}
+        
+        hr {{
+            border: none;
+            border-top: 2px solid #e0e0e0;
+            margin: 40px 0;
+        }}
+        
+        blockquote {{
+            background-color: #fff3cd;
+            border-left: 5px solid #ffc107;
+            padding: 20px 25px;
+            margin: 25px 0;
+            border-radius: 4px;
+        }}
+        
+        code {{
+            background-color: #f4f4f4;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+        }}
+        
         table {{
             width: 100%;
             border-collapse: collapse;
-            margin: 20px 0;
+            margin: 30px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }}
+        
         th, td {{
             border: 1px solid #ddd;
-            padding: 12px;
+            padding: 15px 20px;
             text-align: left;
         }}
+        
         th {{
             background-color: #4CAF50;
             color: white;
+            font-weight: 600;
         }}
+        
+        tr:nth-child(even) {{
+            background-color: #f9f9f9;
+        }}
+        
+        tr:hover {{
+            background-color: #f5f5f5;
+        }}
+        
         .pass {{
-            color: green;
+            color: #4CAF50;
             font-weight: bold;
         }}
+        
         .fail {{
-            color: red;
+            color: #f44336;
             font-weight: bold;
+        }}
+        
+        strong {{
+            color: #2c3e50;
         }}
     </style>
 </head>

@@ -6,6 +6,7 @@ from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 import sys
+import io
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -255,3 +256,134 @@ class TestCaseService:
             "created_at": case.created_at.isoformat() if case.created_at else None,
             "csv_file_path": case.csv_file_path
         }
+    
+    @staticmethod
+    async def process_uploaded_file(
+        filename: str,
+        content: bytes,
+        db: Session
+    ) -> Dict[str, Any]:
+        """
+        处理上传的文件并生成测试用例
+        
+        Args:
+            filename: 文件名
+            content: 文件内容（字节）
+            db: 数据库会话
+        
+        Returns:
+            处理结果
+        """
+        try:
+            file_ext = os.path.splitext(filename)[1].lower()
+            
+            # 解析文件内容
+            if file_ext == '.txt' or file_ext == '.md':
+                # 纯文本或Markdown
+                text_content = content.decode('utf-8')
+            elif file_ext == '.pdf':
+                # PDF文件
+                text_content = TestCaseService._extract_text_from_pdf(content)
+            elif file_ext == '.docx':
+                # Word 2007+
+                text_content = TestCaseService._extract_text_from_docx(content)
+            elif file_ext == '.doc':
+                # Word 2003
+                text_content = TestCaseService._extract_text_from_doc(content)
+            else:
+                return {
+                    "success": False,
+                    "message": f"不支持的文件格式: {file_ext}"
+                }
+            
+            if not text_content or not text_content.strip():
+                return {
+                    "success": False,
+                    "message": "文件内容为空或无法解析"
+                }
+            
+            # 保存上传的文件
+            upload_dir = os.path.join(SAVE_FOLDER_DIR, 'uploads')
+            os.makedirs(upload_dir, exist_ok=True)
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            saved_filename = f"{timestamp}_{filename}"
+            saved_path = os.path.join(upload_dir, saved_filename)
+            
+            with open(saved_path, 'wb') as f:
+                f.write(content)
+            
+            print(f"[INFO] 文件已保存: {saved_path}")
+            print(f"[INFO] 解析的文本内容长度: {len(text_content)} 字符")
+            
+            # 使用解析的文本内容生成测试用例
+            result = await TestCaseService.generate_test_cases(
+                requirement=text_content,
+                db=db
+            )
+            
+            if result.get('success'):
+                result['uploaded_file'] = saved_path
+                result['message'] = f"成功从文件 '{filename}' 生成 {len(result.get('test_cases', []))} 个测试用例"
+            
+            return result
+        
+        except Exception as e:
+            import traceback
+            error_traceback = traceback.format_exc()
+            print(f"[ERROR] 处理上传文件失败: {str(e)}")
+            print(error_traceback)
+            return {
+                "success": False,
+                "message": f"处理文件失败: {str(e)}",
+                "error_details": error_traceback
+            }
+    
+    @staticmethod
+    def _extract_text_from_pdf(content: bytes) -> str:
+        """从PDF提取文本"""
+        try:
+            import PyPDF2
+            pdf_file = io.BytesIO(content)
+            pdf_reader = PyPDF2.PdfReader(pdf_file)
+            
+            text = ""
+            for page in pdf_reader.pages:
+                text += page.extract_text() + "\n"
+            
+            return text.strip()
+        except ImportError:
+            return "错误：需要安装 PyPDF2 库。请运行: pip install PyPDF2"
+        except Exception as e:
+            return f"PDF解析错误: {str(e)}"
+    
+    @staticmethod
+    def _extract_text_from_docx(content: bytes) -> str:
+        """从DOCX提取文本"""
+        try:
+            from docx import Document
+            docx_file = io.BytesIO(content)
+            doc = Document(docx_file)
+            
+            text = ""
+            for paragraph in doc.paragraphs:
+                text += paragraph.text + "\n"
+            
+            return text.strip()
+        except ImportError:
+            return "错误：需要安装 python-docx 库。请运行: pip install python-docx"
+        except Exception as e:
+            return f"DOCX解析错误: {str(e)}"
+    
+    @staticmethod
+    def _extract_text_from_doc(content: bytes) -> str:
+        """从DOC提取文本"""
+        try:
+            import textract
+            # textract 可以处理 .doc 文件
+            text = textract.process(content).decode('utf-8')
+            return text.strip()
+        except ImportError:
+            return "错误：需要安装 textract 库。请运行: pip install textract"
+        except Exception as e:
+            return f"DOC解析错误: {str(e)}。提示：.doc格式较老，建议转换为.docx格式"

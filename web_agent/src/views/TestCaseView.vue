@@ -7,19 +7,56 @@
       
       <!-- 生成测试用例 -->
       <el-form :model="form" label-width="100px">
-        <el-form-item label="测试需求">
-          <el-input
-            v-model="form.requirement"
-            type="textarea"
-            :rows="6"
-            placeholder="请输入测试需求，例如：用户可以登录学生端，查看课程，打开实验项目，上传并提交文件"
-          />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="generateTestCases" :loading="generating">
-            生成测试用例
-          </el-button>
-        </el-form-item>
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="测试需求">
+              <el-input
+                v-model="form.requirement"
+                type="textarea"
+                :rows="10"
+                placeholder="请输入测试需求，例如：用户可以登录学生端，查看课程，打开实验项目，上传并提交文件"
+              />
+              <div style="margin-top: 10px">
+                <el-button type="primary" @click="generateTestCases" :loading="generating">
+                  生成测试用例
+                </el-button>
+              </div>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="或上传文件">
+              <el-upload
+                ref="uploadRef"
+                :auto-upload="false"
+                :on-change="handleFileChange"
+                :limit="1"
+                accept=".md,.txt,.pdf,.doc,.docx"
+                drag
+                style="width: 100%"
+              >
+                <el-icon class="el-icon--upload"><upload-filled /></el-icon>
+                <div class="el-upload__text">
+                  拖拽文件到此处或 <em>点击上传</em>
+                </div>
+                <template #tip>
+                  <div class="el-upload__tip">
+                    支持 .md / .txt / .pdf / .doc / .docx 格式，文件大小不超过 10MB
+                  </div>
+                </template>
+              </el-upload>
+              <div style="margin-top: 10px">
+                <el-button 
+                  type="success" 
+                  @click="uploadFileAndGenerate" 
+                  :loading="uploading"
+                  :disabled="!selectedFile"
+                >
+                  上传文件并生成
+                </el-button>
+              </div>
+            </el-form-item>
+          </el-col>
+        </el-row>
       </el-form>
     </el-card>
 
@@ -80,14 +117,51 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { UploadFilled } from '@element-plus/icons-vue'
 import { testCaseAPI } from '@/api'
 
 const form = ref({ requirement: '' })
 const testCases = ref([])
 const loading = ref(false)
 const generating = ref(false)
+const uploading = ref(false)
 const dialogVisible = ref(false)
 const currentCase = ref(null)
+const selectedFile = ref(null)
+const uploadRef = ref(null)
+
+// 文件选择处理
+const handleFileChange = (file) => {
+  selectedFile.value = file.raw
+}
+
+// 上传文件并生成测试用例
+const uploadFileAndGenerate = async () => {
+  if (!selectedFile.value) {
+    ElMessage.warning('请先选择文件')
+    return
+  }
+  
+  uploading.value = true
+  try {
+    const result = await testCaseAPI.uploadFile(selectedFile.value)
+    if (result.success) {
+      ElMessage.success(result.message)
+      selectedFile.value = null
+      if (uploadRef.value) {
+        uploadRef.value.clearFiles()
+      }
+      loadTestCases()
+    } else {
+      ElMessage.error(result.message)
+    }
+  } catch (error) {
+    ElMessage.error('上传文件失败')
+    console.error(error)
+  } finally {
+    uploading.value = false
+  }
+}
 
 // 生成测试用例
 const generateTestCases = async () => {

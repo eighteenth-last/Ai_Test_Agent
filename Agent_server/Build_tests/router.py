@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -88,3 +88,49 @@ async def get_test_case(
         "success": True,
         "data": case
     }
+
+
+@router.post("/upload-file")
+async def upload_file_and_generate(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """
+    上传文件并生成测试用例
+    
+    支持的文件格式：
+    - .md (Markdown)
+    - .txt (纯文本)
+    - .pdf (PDF文档)
+    - .doc (Word 2003)
+    - .docx (Word 2007+)
+    
+    文件内容将被解析为测试需求，然后自动生成测试用例
+    """
+    # 验证文件类型
+    allowed_extensions = ['.md', '.txt', '.pdf', '.doc', '.docx']
+    file_ext = os.path.splitext(file.filename)[1].lower()
+    
+    if file_ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"不支持的文件格式。支持的格式：{', '.join(allowed_extensions)}"
+        )
+    
+    # 验证文件大小（限制10MB）
+    max_size = 10 * 1024 * 1024  # 10MB
+    content = await file.read()
+    if len(content) > max_size:
+        raise HTTPException(status_code=400, detail="文件大小超过10MB限制")
+    
+    # 调用服务处理文件
+    result = await TestCaseService.process_uploaded_file(
+        filename=file.filename,
+        content=content,
+        db=db
+    )
+    
+    if not result.get('success'):
+        raise HTTPException(status_code=500, detail=result.get('message'))
+    
+    return result

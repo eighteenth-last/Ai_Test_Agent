@@ -8,13 +8,14 @@
 
 ## ✨ 核心特性
 
-### 🎯 三大功能模块
+### 🎯 四大功能模块
 
 | 功能 | 描述 |
 |------|------|
-| **测试用例生成** | 输入需求描述，AI 自动生成结构化测试用例 |
-| **AI 智能执行** | Browser-Use + LLM 实时决策，无需编写代码 |
-| **自动报告生成** | 执行完成自动分析日志，生成专业测试报告 |
+| **测试用例生成** | 输入需求描述或上传文档（支持 MD/TXT/PDF/DOC/DOCX），AI 自动生成结构化测试用例 |
+| **AI 智能执行** | Browser-Use + LLM 实时决策，无需编写代码，支持暂停/恢复/停止控制 |
+| **自动报告生成** | 执行完成自动分析日志，生成专业测试报告，支持 HTML 格式下载 |
+| **任务管理** | 实时监控测试执行状态，支持暂停、恢复、停止操作 |
 
 ### 🚀 技术亮点
 
@@ -24,6 +25,10 @@
 - ✅ **智能容错**：自动处理弹窗、动态加载、页面变化等异常
 - ✅ **全栈现代化**：Vue 3 + FastAPI + MySQL，采用异步架构
 - ✅ **中文优先**：UI、注释、提示词全中文，支持密码 MD5 加密
+- ✅ **文档解析**：支持上传 MD/TXT/PDF/DOC/DOCX 文件自动生成测试用例
+- ✅ **任务控制**：实时暂停/恢复/停止测试执行，精确控制测试流程
+- ✅ **报告导出**：一键下载 HTML 格式测试报告，支持离线查看
+- ✅ **优化布局**：报告采用现代化设计，间距合理，阅读体验佳
 
 ---
 
@@ -67,6 +72,7 @@ Ai_Test_Agent/
 │   │
 │   ├── Build_test_code/            # 测试执行模块（Browser-Use）
 │   │   ├── browser_use_service.py # 核心执行服务
+│   │   ├── task_manager.py        # 任务管理器（暂停/恢复/停止）
 │   │   └── router.py              # FastAPI 路由
 │   │
 │   ├── Build_Report/               # 报告生成模块
@@ -241,8 +247,10 @@ DEBUG=True
 # ========== Browser-Use 配置 ==========
 HEADLESS=false
 MAX_STEPS=100
-BROWSER_WINDOW_WIDTH=1280
-BROWSER_WINDOW_HEIGHT=1100
+MAX_ACTIONS=10
+BROWSER_WINDOW_WIDTH=1920
+BROWSER_WINDOW_HEIGHT=1200
+DISABLE_SECURITY=false
 
 # ========== 文件路径 ==========
 SAVE_FOLDER_DIR=../save_floder
@@ -254,11 +262,19 @@ SAVE_FOLDER_DIR=../save_floder
 
 ### 场景 1️⃣：生成测试用例
 
+#### 方式一：文本输入
 1. 打开 Web UI → **测试用例** 选项卡
-2. 输入测试需求（例如：用户登录、查看课程、上传文件）
+2. 在左侧文本框输入测试需求（例如：用户登录、查看课程、上传文件）
 3. 点击 **生成测试用例**
 4. 系统自动调用 Qwen LLM 生成 3 个结构化用例
 5. 用例保存到数据库 + CSV 文件
+
+#### 方式二：文档上传
+1. 打开 Web UI → **测试用例** 选项卡
+2. 在右侧上传区域拖拽或点击上传文档
+3. 支持格式：`.md` / `.txt` / `.pdf` / `.doc` / `.docx`
+4. 文件大小限制：10MB
+5. 系统自动解析文档内容并生成测试用例
 
 **生成结果包含**：
 - 模块名、用例标题、前置条件
@@ -283,17 +299,34 @@ SAVE_FOLDER_DIR=../save_floder
 - ⚡ 执行的动作（点击、输入、等待等）
 - ⏰ 每一步的时间戳
 
+**任务控制功能**：
+- ⏸️ **暂停执行**：暂时停止测试，保持当前状态
+- ▶️ **继续执行**：从暂停点恢复测试
+- ⏹️ **停止执行**：完全终止测试（需确认）
+
+**浏览器配置**：
+- 窗口大小：1920x1200（可在 .env 中配置）
+- 自动最大化窗口
+- 禁用自动化检测特征
+
 ### 场景 3️⃣：查看测试报告
 
 1. 打开 Web UI → **测试报告** 选项卡
 2. 查看报告列表（包含通过率、耗时等统计）
 3. 点击 **查看报告** 查看详细内容
+4. 点击 **下载报告** 按钮导出 HTML 文件
 
 **报告内容包含**：
 - 测试概览（通过数、失败数、总耗时）
 - 每个用例的执行详情
 - 失败原因分析和修复建议
 - Agent 的行为路径描述
+
+**报告特性**：
+- 📊 现代化设计，间距合理，阅读体验佳
+- 🎨 使用卡片布局和颜色标识
+- 📥 支持一键下载 HTML 格式
+- 💾 离线可查看，包含完整样式
 
 ---
 
@@ -305,6 +338,11 @@ SAVE_FOLDER_DIR=../save_floder
 POST /api/test-cases/generate
   请求: {"requirement": "用户可以登录并查看课程"}
   响应: {"success": true, "test_cases": [...], "csv_file_path": "..."}
+
+POST /api/test-cases/upload-file
+  请求: FormData (file: 上传的文件)
+  响应: {"success": true, "test_cases": [...], "uploaded_file": "..."}
+  支持格式: .md / .txt / .pdf / .doc / .docx
 
 GET /api/test-cases/list?limit=20&offset=0
   响应: {"success": true, "data": [...], "total": 10}
@@ -324,6 +362,18 @@ POST /api/test-code/execute-browser-use
     "use_vision": false
   }
   响应: {"success": true, "data": {"status": "pass", "total_steps": 15, ...}}
+
+POST /api/test-code/pause-task/{task_id}
+  响应: {"success": true, "message": "任务已暂停"}
+
+POST /api/test-code/resume-task/{task_id}
+  响应: {"success": true, "message": "任务已恢复"}
+
+POST /api/test-code/stop-task/{task_id}
+  响应: {"success": true, "message": "任务已停止"}
+
+GET /api/test-code/task-status/{task_id}
+  响应: {"success": true, "data": {"status": "running", ...}}
 ```
 
 ### 报告相关
@@ -338,6 +388,10 @@ GET /api/reports/list?limit=20&offset=0
 
 GET /api/reports/{report_id}
   响应: {"success": true, "data": {"id": 1, "details": "..."}}
+
+GET /api/reports/{report_id}/download
+  响应: 文件下载（HTML/Markdown/TXT 格式）
+  Content-Type: text/html / text/markdown / text/plain
 ```
 
 **详细 API 文档访问**：
@@ -373,10 +427,10 @@ GET /api/reports/{report_id}
 |------|------|------|
 | id | Integer | 主键 ID |
 | test_case_id | Integer | 关联测试用例 ID |
-| execution_log | Text | 执行日志（JSON 格式） |
+| execution_log | LONGTEXT | 执行日志（JSON 格式，支持大量数据） |
 | screenshots | JSON | 截图路径数组 |
 | status | String(20) | 测试状态（pass/fail/error） |
-| error_message | Text | 错误信息 |
+| error_message | LONGTEXT | 错误信息（支持大量错误堆栈） |
 | duration | Integer | 执行耗时（秒） |
 | executed_at | DateTime | 执行时间 |
 
@@ -386,10 +440,10 @@ GET /api/reports/{report_id}
 |------|------|------|
 | id | Integer | 主键 ID |
 | title | String(200) | 报告标题 |
-| summary | JSON | 测试统计摘要 |
+| summary | JSON | 测试统计摘要（total/pass/fail/duration） |
 | details | Text | 报告详细内容（HTML/Markdown） |
 | file_path | String(500) | 报告文件路径 |
-| format_type | String(20) | 格式类型（html/markdown） |
+| format_type | String(20) | 格式类型（html/markdown/txt） |
 | created_at | DateTime | 生成时间 |
 
 ---
@@ -469,6 +523,9 @@ app.include_router(xxx_router)
 | `sqlalchemy==2.0.25` | ORM 数据库映射 |
 | `pymysql==1.1.0` | MySQL 驱动 |
 | `redis==5.0.1` | 缓存服务 |
+| `PyPDF2==3.0.1` | PDF 文件解析 |
+| `python-docx==1.1.0` | DOCX 文件解析 |
+| `markdown==3.7` | Markdown 转 HTML |
 
 **注意**：本项目使用 browser-use 0.3.3 原生的 LLM 抽象层，**不依赖 LangChain**。
 
@@ -648,13 +705,16 @@ python test_llm_connection.py
 
 ## 📊 项目统计
 
-- **后端代码行数**：~2000+
-- **前端代码行数**：~1500+
+- **后端代码行数**：~3000+
+- **前端代码行数**：~2000+
 - **支持的测试场景**：功能测试、接口测试、UI 自动化
 - **平均执行速度**：20-30 秒/个测试用例
 - **成功率**：≥ 85%（取决于网页复杂度）
 - **Browser-Use 版本**：0.3.3（稳定版）
 - **LLM 支持**：Qwen 3 VL（通过 OpenAI 兼容接口）
+- **支持文档格式**：MD / TXT / PDF / DOC / DOCX
+- **任务控制**：支持暂停/恢复/停止
+- **报告格式**：HTML（优化布局，支持下载）
 
 ---
 
@@ -673,6 +733,10 @@ python test_llm_connection.py
 2. 移除复杂的适配层和包装器
 3. 优化 LLM 配置和参数
 4. 完善错误处理和日志输出
+5. 添加文件上传功能，支持多种文档格式
+6. 实现任务管理器，支持暂停/恢复/停止
+7. 优化报告布局，支持 HTML 下载
+8. 数据库字段升级为 LONGTEXT，支持大量日志
 
 ---
 
@@ -682,4 +746,26 @@ python test_llm_connection.py
 
 ---
 
-<sub>最后更新：2025-12-11 | 版本：1.0.1</sub>
+<sub>最后更新：2025-12-11 | 版本：1.1.0</sub>
+
+## 🆕 更新日志
+
+### v1.1.0 (2025-12-11)
+- ✨ 新增文件上传功能，支持 MD/TXT/PDF/DOC/DOCX 格式
+- ✨ 新增任务管理器，支持暂停/恢复/停止测试执行
+- ✨ 新增报告下载功能，支持 HTML 格式导出
+- 🎨 优化报告布局，采用现代化设计，间距合理
+- 🔧 数据库字段升级为 LONGTEXT，支持大量执行日志
+- 🔧 优化浏览器窗口配置，默认 1920x1200 分辨率
+- 🐛 修复停止任务时浏览器继续执行的问题
+- 📝 更新 README 文档，补充最新功能说明
+
+### v1.0.1 (2025-12-10)
+- 🐛 修复 Browser-Use 与 LLM 集成兼容性问题
+- 🔧 移除 LangChain 依赖，使用 browser-use 原生 API
+- 📝 完善技术文档和故障排查指南
+
+### v1.0.0 (2025-12-09)
+- 🎉 项目初始版本发布
+- ✨ 实现测试用例生成、执行、报告三大核心功能
+- ✨ 集成 Browser-Use 0.3.3 和 Qwen 3 VL

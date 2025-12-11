@@ -20,10 +20,12 @@ from dotenv import load_dotenv
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database.connection import TestCase, TestResult
+from Build_test_code.task_manager import get_task_manager
 
 # 使用 browser-use 原生的 LLM（不是 LangChain）
 from browser_use.llm.openai.chat import ChatOpenAI
 from browser_use import Agent
+from browser_use.browser.browser import Browser, BrowserConfig
 
 load_dotenv()
 
@@ -82,6 +84,10 @@ class BrowserUseService:
         
         start_time = time.time()
         
+        # 创建任务
+        task_manager = get_task_manager()
+        task_manager.create_task(test_case_id, test_case_id)
+        
         try:
             # 3. 创建 LLM（使用 browser-use 原生的 ChatOpenAI）
             print(f"[BrowserUse] 🔧 LLM配置: model={os.getenv('LLM_MODEL')}, base_url={os.getenv('LLM_BASE_URL')}")
@@ -93,27 +99,96 @@ class BrowserUseService:
                 temperature=float(os.getenv('LLM_TEMPERATURE', '0.0')),
             )
             
-            # 4. 创建 Agent（使用 browser-use 原生的 Agent）
+            # 4. 创建浏览器配置
+            window_width = int(os.getenv('BROWSER_WINDOW_WIDTH', '1920'))
+            window_height = int(os.getenv('BROWSER_WINDOW_HEIGHT', '1200'))
+            
+            browser_config = BrowserConfig(
+                headless=headless,
+                disable_security=os.getenv('DISABLE_SECURITY', 'false').lower() == 'true',
+                extra_browser_args=[
+                    '--disable-blink-features=AutomationControlled',  # 隐藏自动化特征
+                    '--disable-infobars',  # 禁用信息栏
+                    '--disable-extensions',  # 禁用扩展
+                    '--no-first-run',  # 跳过首次运行
+                    '--no-default-browser-check',  # 跳过默认浏览器检查
+                    '--disable-popup-blocking',  # 禁用弹窗阻止
+                    '--disable-translate',  # 禁用翻译提示
+                    f'--window-size={window_width},{window_height}',  # 设置窗口大小
+                    '--start-maximized',  # 最大化窗口
+                ],
+            )
+            browser = Browser(config=browser_config)
+            
+            # 5. 创建 Agent（使用 browser-use 原生的 Agent）
             print(f"[BrowserUse] 🚀 开始执行测试: {test_case.title}")
             print(f"[BrowserUse] ⚙️  配置: max_steps={max_steps}, vision={use_vision}, headless={headless}")
             
             agent = Agent(
                 task=task_description,
                 llm=llm,
+                browser=browser,
                 use_vision=use_vision,
                 max_actions_per_step=max_actions,
             )
             
-            # 5. 执行测试
-            history = await agent.run(max_steps=max_steps)
+            # 6. 执行测试（使用 Task 以支持取消）
+            # 创建可取消的任务
+            task = asyncio.create_task(agent.run(max_steps=max_steps))
             
-            # 6. 处理执行结果
+            # 监控任务状态
+            try:
+                while not task.done():
+                    # 检查停止标志
+                    if task_manager.should_stop(test_case_id):
+                        print(f"[BrowserUse] ⚠️ 检测到停止信号，正在停止 Agent...")
+                        
+                        # 调用 Agent 的 stop 方法
+                        try:
+                            agent.stop()
+                            print(f"[BrowserUse] ✓ Agent.stop() 已调用")
+                        except Exception as e:
+                            print(f"[BrowserUse] ⚠️ 调用 Agent.stop() 时出错: {e}")
+                        
+                        # 取消任务
+                        task.cancel()
+                        
+                        # 等待任务取消完成（最多等待2秒）
+                        try:
+                            await asyncio.wait_for(task, timeout=2.0)
+                        except asyncio.TimeoutError:
+                            print(f"[BrowserUse] ⚠️ 任务未在2秒内完成，强制取消")
+                        except asyncio.CancelledError:
+                            print(f"[BrowserUse] ✓ 任务已被取消")
+                        except Exception as e:
+                            print(f"[BrowserUse] ⚠️ 等待任务时出错: {e}")
+                        
+                        # 强制关闭浏览器
+                        try:
+                            await browser.close()
+                            print(f"[BrowserUse] ✓ 浏览器已关闭")
+                        except Exception as e:
+                            print(f"[BrowserUse] ⚠️ 关闭浏览器时出错: {e}")
+                        
+                        raise Exception("用户手动停止")
+                    
+                    # 检查暂停
+                    await task_manager.check_pause(test_case_id)
+                    
+                    await asyncio.sleep(0.2)  # 每0.2秒检查一次
+                
+                history = task.result()
+            except asyncio.CancelledError:
+                print(f"[BrowserUse] ✓ 任务已被取消")
+                raise Exception("用户手动停止")
+            
+            # 7. 处理执行结果
             execution_time = int(time.time() - start_time)
             execution_result = BrowserUseService._process_execution_result(
                 history, test_case, execution_time
             )
             
-            # 7. 保存到数据库
+            # 8. 保存到数据库
             test_result = TestResult(
                 test_code_id=None,
                 test_case_id=test_case_id,
@@ -131,7 +206,7 @@ class BrowserUseService:
             print(f"[BrowserUse] {'✅ 成功' if execution_result['status'] == 'pass' else '❌ 失败'}")
             print(f"[BrowserUse] 📊 共执行 {execution_result['total_steps']} 步，耗时 {execution_time} 秒")
             
-            # 8. 自动生成测试报告
+            # 9. 自动生成测试报告
             report_data = None
             try:
                 from Build_Report.service import TestReportService
@@ -163,6 +238,35 @@ class BrowserUseService:
                 }
             }
         
+        except asyncio.CancelledError:
+            # 任务被取消（用户停止）
+            execution_time = int(time.time() - start_time)
+            print(f"[BrowserUse] ⚠️ 任务被用户取消")
+            
+            test_result = TestResult(
+                test_code_id=None,
+                test_case_id=test_case_id,
+                execution_log=json.dumps({"message": "用户手动停止"}, ensure_ascii=False),
+                screenshots=[],
+                status="fail",
+                error_message="用户手动停止",
+                duration=execution_time
+            )
+            
+            db.add(test_result)
+            db.commit()
+            
+            return {
+                "success": False,
+                "message": "测试已被用户停止",
+                "data": {
+                    "result_id": test_result.id,
+                    "status": "fail",
+                    "error_message": "用户手动停止",
+                    "duration": execution_time
+                }
+            }
+        
         except Exception as e:
             import traceback
             error_msg = str(e)
@@ -191,6 +295,10 @@ class BrowserUseService:
                 "message": f"测试执行失败: {error_msg}",
                 "error_details": error_trace
             }
+        
+        finally:
+            # 清理任务
+            task_manager.remove_task(test_case_id)
     
     @staticmethod
     def _build_task_description(test_case: TestCase) -> str:
@@ -208,10 +316,26 @@ class BrowserUseService:
             f"- {key}: {value}" for key, value in test_data.items()
         ])
         
+        # 尝试从测试数据或步骤中提取目标URL
+        target_url = test_data.get('url') or test_data.get('target_url') or test_data.get('网址')
+        
+        # 如果没有明确的URL，尝试从第一个步骤中提取
+        if not target_url and steps_list:
+            first_step = steps_list[0].lower()
+            if 'http' in first_step:
+                # 简单提取URL（可以改进）
+                import re
+                url_match = re.search(r'https?://[^\s]+', steps_list[0])
+                if url_match:
+                    target_url = url_match.group(0)
+        
+        # 构建任务描述，如果有URL则添加导航指令
+        url_instruction = f"\n⚠️ 首先立即访问目标网址：{target_url}\n" if target_url else ""
+        
         task = f"""
 【测试任务】
 标题：{test_case.title}
-
+{url_instruction}
 【前置条件】
 {test_case.precondition or '无'}
 
@@ -225,12 +349,13 @@ class BrowserUseService:
 {formatted_data if formatted_data else '无'}
 
 【重要提示】
-1. 严格按照步骤顺序执行
-2. 每个步骤执行后验证是否成功
-3. 遇到问题时智能调整策略（如元素未找到，尝试滚动或等待）
-4. 关键步骤建议截图验证
-5. 完成所有步骤后明确说明"测试完成"
-6. 如果无法继续，说明原因并停止
+1. 立即开始执行，不要停留在空白页面
+2. 严格按照步骤顺序执行
+3. 每个步骤执行后验证是否成功
+4. 遇到问题时智能调整策略（如元素未找到，尝试滚动或等待）
+5. 关键步骤建议截图验证
+6. 完成所有步骤后明确说明"测试完成"
+7. 如果无法继续，说明原因并停止
 
 【成功标准】
 所有步骤顺利执行且预期结果达成
