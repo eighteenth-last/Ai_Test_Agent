@@ -154,6 +154,42 @@ class VisualElement(Base):
     created_at = Column(DateTime, default=datetime.now, comment='创建时间')
 
 
+class BugReport(Base):
+    """Bug集合表"""
+    __tablename__ = 'bug_reports'
+    
+    # 主键ID，自动递增
+    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    # Bug名称（使用测试用例名称）
+    bug_name = Column(String(200), nullable=False, comment='Bug名称')
+    # 关联的测试用例ID
+    test_case_id = Column(Integer, comment='关联测试用例ID')
+    # 关联的测试结果ID
+    test_result_id = Column(Integer, comment='关联测试结果ID')
+    # 定位地址（出错的URL）
+    location_url = Column(String(500), comment='定位地址')
+    # 错误类型：功能错误/设计缺陷/安全问题/系统错误
+    error_type = Column(String(50), nullable=False, comment='错误类型')
+    # 严重程度：一级/二级/三级/四级
+    severity_level = Column(String(20), nullable=False, comment='严重程度')
+    # 复现步骤（JSON数组格式）
+    reproduce_steps = Column(Text, nullable=False, comment='复现步骤（JSON格式）')
+    # 失败截图路径
+    screenshot_path = Column(String(500), comment='失败截图路径')
+    # 结果反馈（LLM分析的实际结果vs预期结果）
+    result_feedback = Column(Text, comment='结果反馈')
+    # 预期结果
+    expected_result = Column(Text, comment='预期结果')
+    # 实际结果
+    actual_result = Column(Text, comment='实际结果')
+    # Bug状态：待处理/已确认/已修复/已关闭
+    status = Column(String(20), default='待处理', comment='Bug状态')
+    # 创建时间
+    created_at = Column(DateTime, default=datetime.now, comment='创建时间')
+    # 更新时间
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
+
+
 def init_db():
     """初始化数据库表
     
@@ -171,7 +207,8 @@ def init_db():
             'test_codes': TestCode,
             'test_results': TestResult,
             'test_reports': TestReport,
-            'visual_elements': VisualElement
+            'visual_elements': VisualElement,
+            'bug_reports': BugReport
         }
         
         # 仅创建不存在的表

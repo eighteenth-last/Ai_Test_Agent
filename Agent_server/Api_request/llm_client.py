@@ -355,6 +355,71 @@ class LLMClient:
                 "message": str(e),
                 "content": ""
             }
+    
+    def analyze_bug(self, analysis_prompt: str) -> Dict[str, Any]:
+        """
+        分析 Bug 并返回结构化数据
+        
+        Args:
+            analysis_prompt: Bug 分析提示
+        
+        Returns:
+            Dict with success flag and bug analysis data
+        """
+        system_prompt = """你是 AI Bug 分析专家。根据测试执行情况分析 Bug 的类型和严重程度。
+请严格按照 JSON 格式返回结果，不要添加任何额外的文字说明。"""
+        
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": analysis_prompt}
+        ]
+        
+        try:
+            response = self.chat(
+                messages=messages,
+                temperature=0.1,
+                max_tokens=2000
+            )
+            
+            # 尝试解析 JSON
+            try:
+                # 清理可能的 markdown 代码块标记
+                cleaned_response = response.strip()
+                if cleaned_response.startswith('```json'):
+                    cleaned_response = cleaned_response[7:]
+                if cleaned_response.startswith('```'):
+                    cleaned_response = cleaned_response[3:]
+                if cleaned_response.endswith('```'):
+                    cleaned_response = cleaned_response[:-3]
+                cleaned_response = cleaned_response.strip()
+                
+                bug_data = json.loads(cleaned_response)
+                
+                return {
+                    "success": True,
+                    "data": bug_data
+                }
+            except json.JSONDecodeError as e:
+                print(f"[LLM] JSON 解析失败: {str(e)}")
+                print(f"[LLM] 原始响应: {response}")
+                
+                # 返回默认值
+                return {
+                    "success": True,
+                    "data": {
+                        "error_type": "系统错误",
+                        "severity_level": "一级",
+                        "actual_result": response,
+                        "result_feedback": "LLM 返回格式异常，无法解析"
+                    }
+                }
+        
+        except Exception as e:
+            return {
+                "success": False,
+                "message": str(e),
+                "data": {}
+            }
 
 
 # Global instance - 延迟初始化

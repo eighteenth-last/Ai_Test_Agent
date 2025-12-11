@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Report</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px;
+            line-height: 1.8;
+            background-color: #f5f7fa;
+        }
+        
+        #content {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #2c3e50;
+            font-size: 32px;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #4CAF50;
+        }
+        
+        h2 {
+            color: #34495e;
+            font-size: 24px;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            padding-top: 20px;
+        }
+        
+        h3 {
+            color: #555;
+            font-size: 20px;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        h4 {
+            color: #666;
+            font-size: 18px;
+            margin-top: 25px;
+            margin-bottom: 12px;
+        }
+        
+        p {
+            margin: 15px 0;
+            color: #333;
+        }
+        
+        ul, ol {
+            margin: 20px 0;
+            padding-left: 30px;
+        }
+        
+        li {
+            margin: 10px 0;
+            line-height: 1.8;
+        }
+        
+        hr {
+            border: none;
+            border-top: 2px solid #e0e0e0;
+            margin: 40px 0;
+        }
+        
+        blockquote {
+            background-color: #fff3cd;
+            border-left: 5px solid #ffc107;
+            padding: 20px 25px;
+            margin: 25px 0;
+            border-radius: 4px;
+        }
+        
+        code {
+            background-color: #f4f4f4;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 30px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        th, td {
+            border: 1px solid #ddd;
+            padding: 15px 20px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: #4CAF50;
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        
+        .pass {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        
+        .fail {
+            color: #f44336;
+            font-weight: bold;
+        }
+        
+        strong {
+            color: #2c3e50;
+        }
+    </style>
+</head>
+<body>
+    <div id="content">
+        <div class="markdown- report"><h1>学生登录系统自动化测试报告</h1>
+<hr />
+<h2>1. 测试概览</h2>
+<ul>
+<li><strong>总用例数</strong>：0 个（注：实际执行了 1 个测试任务，但未被归类为“用例”）</li>
+<li><strong>通过数</strong>：0 个</li>
+<li><strong>失败数</strong>：1 个</li>
+<li><strong>通过率</strong>：0%</li>
+<li><strong>总耗时</strong>：106 秒</li>
+<li><strong>最终状态</strong>：测试失败（<code>success: false</code>）</li>
+</ul>
+<blockquote>
+<p>📌 注：虽然系统统计显示“0 个用例”，但根据 <code>execution_log</code> 可知，实际执行了一个完整的端到端登录流程测试任务。此处“用例”可能指代未被正确注册或分类的测试单元。</p>
+</blockquote>
+<hr />
+<h2>2. 测试用例详情</h2>
+<h3>用例 ID：79</h3>
+<p><strong>状态</strong>：失败<br />
+<strong>执行时间</strong>：2025-12-11T17:23:56<br />
+<strong>耗时</strong>：106 秒<br />
+<strong>错误信息</strong>：<code>测试未完成或失败</code><br />
+<strong>附加文件</strong>：<br />
+- <code>results.md</code><br />
+- <code>123-56-3-98-81-stu-pages-login-student.pdf</code></p>
+<hr />
+<h2>3. 详细行为分析（Agent 执行路径与思考过程）</h2>
+<p>本测试由 AI Agent 自动执行，共经历 <strong>8 个步骤</strong>，完整模拟学生登录流程。以下是关键操作路径与语义化分析：</p>
+<hr />
+<h3>✅ 步骤 1：导航至登录页面</h3>
+<ul>
+<li><strong>操作</strong>：访问 <code>http://123.56.3.98:81/stu/#pages_login_loginx</code>  </li>
+<li><strong>思考</strong>：从空白页启动，立即跳转目标 URL，符合用户“立即开始”的指令。  </li>
+<li><strong>结果</strong>：成功导航，页面加载中。</li>
+</ul>
+<blockquote>
+<p>💡 <strong>语义总结</strong>：代理正确理解初始指令，主动触发页面加载，无延迟。</p>
+</blockquote>
+<hr />
+<h3>⏳ 步骤 2：等待页面加载</h3>
+<ul>
+<li><strong>操作</strong>：等待 3 秒，确保 DOM 元素渲染完成。  </li>
+<li><strong>思考</strong>：检测到页面为空白，判断需等待内容加载；遵循“页面未加载则等待”规则。  </li>
+<li><strong>结果</strong>：等待后页面标题变为“登录”，元素可见。</li>
+</ul>
+<blockquote>
+<p>💡 <strong>语义总结</strong>：代理具备智能等待机制，避免因页面未渲染导致后续操作失败。</p>
+</blockquote>
+<hr />
+<h3>✅ 步骤 3：输入用户名</h3>
+<ul>
+<li><strong>操作</strong>：在索引 0 的输入框中键入 <code>2022900116</code>  </li>
+<li><strong>思考</strong>：识别出账户字段（index 0），按用户要求执行输入。  </li>
+<li><strong>结果</strong>：成功填入，界面无报错。</li>
+</ul>
+<blockquote>
+<p>💡 <strong>语义总结</strong>：代理准确识别 UI 元素并执行输入，符合预期。</p>
+</blockquote>
+<hr />
+<h3>✅ 步骤 4：输入密码</h3>
+<ul>
+<li><strong>操作</strong>：在索引 1 的输入框中键入 <code>900112</code>  </li>
+<li><strong>思考</strong>：确认密码字段存在（index 1），继续执行下一步。  </li>
+<li><strong>结果</strong>：密码输入成功，界面无异常。</li>
+</ul>
+<blockquote>
+<p>💡 <strong>语义总结</strong>：代理延续操作逻辑，无中断，输入动作精准。</p>
+</blockquote>
+<hr />
+<h3>✅ 步骤 5：点击登录按钮</h3>
+<ul>
+<li><strong>操作</strong>：点击索引 6 的“登录”按钮  </li>
+<li><strong>思考</strong>：确认表单填写完毕，触发提交动作，期望跳转至首页。  </li>
+<li><strong>结果</strong>：点击成功，但服务器返回“密码错误”。</li>
+</ul>
+<blockquote>
+<p>⚠️ <strong>关键转折点</strong>：此步为失败起点 —— 虽然操作本身成功，但系统响应为认证失败。</p>
+</blockquote>
+<hr />
+<h3>❌ 步骤 6：处理登录失败</h3>
+<ul>
+<li><strong>操作</strong>：保存当前页面为 PDF 文件  </li>
+<li><strong>思考</strong>：收到“密码错误”提示，无法继续登录；按用户要求保存证据。  </li>
+<li><strong>结果</strong>：PDF 生成成功，记录错误状态。</li>
+</ul>
+<blockquote>
+<p>💡 <strong>语义总结</strong>：代理具备容错能力，在失败后自动进入“证据留存”模式，符合测试规范。</p>
+</blockquote>
+<hr />
+<h3>❌ 步骤 7 &amp; 8：报告失败并结束任务</h3>
+<ul>
+<li><strong>操作</strong>：写入 <code>results.md</code> 并调用 <code>done(success=false)</code>  </li>
+<li><strong>思考</strong>：所有步骤已执行，但未达成“成功登录”目标 → 标记失败。  </li>
+<li><strong>结果</strong>：任务标记为失败，附带日志与截图证据。</li>
+</ul>
+<blockquote>
+<p>💡 <strong>语义总结</strong>：代理严格遵循“成功标准”——必须完成全部预期结果才可标记成功。即使操作执行无误，只要结果不符，即判定失败。</p>
+</blockquote>
+<hr />
+<h2>4. 失败原因诊断与修复建议</h2>
+<h3>🔍 失败根本原因：</h3>
+<blockquote>
+<p><strong>登录凭证无效</strong> —— 用户提供的账号 <code>2022900116</code> 与密码 <code>900112</code> 组合在系统中不存在或不匹配，导致服务器返回“密码错误”。</p>
+</blockquote>
+<ul>
+<li>代理所有前端操作均正确执行（导航、输入、点击）。</li>
+<li>问题不在自动化脚本或元素定位，而在于<strong>测试数据有效性</strong>。</li>
+<li>系统对错误密码有明确反馈（“密码错误”），说明后端验证机制正常。</li>
+</ul>
+<hr />
+<h3>🛠 修复建议：</h3>
+<h4>✅ 方案一：验证测试数据</h4>
+<ul>
+<li>联系系统管理员或测试数据负责人，确认以下内容：</li>
+<li>账号 <code>2022900116</code> 是否真实存在？</li>
+<li>密码 <code>900112</code> 是否为该账号当前有效密码？</li>
+<li>是否存在大小写、空格等隐藏字符？</li>
+</ul>
+<h4>✅ 方案二：使用预设测试账号</h4>
+<ul>
+<li>建议在测试环境中配置专用测试账号（如 <code>test_student_001 / password123</code>），避免依赖生产环境真实数据。</li>
+</ul>
+<h4>✅ 方案三：增强测试健壮性</h4>
+<ul>
+<li>在自动化脚本中增加“前置校验”步骤：</li>
+<li>检查登录页面是否包含“忘记密码”或“注册”链接 → 判断是否为真实登录页。</li>
+<li>若连续多次登录失败，自动切换备用账号或暂停并通知人工介入。</li>
+</ul>
+<h4>✅ 方案四：补充错误处理策略</h4>
+<ul>
+<li>当前代理仅保存 PDF，建议扩展为：</li>
+<li>自动截图 + 日志记录 + 邮件/消息通知负责人。</li>
+<li>支持重试机制（如更换密码或账号）。</li>
+</ul>
+<hr />
+<h2>5. 测试总结</h2>
+<p>本次测试虽以失败告终，但<strong>自动化执行过程严谨、逻辑清晰、容错机制完善</strong>，充分体现了 AI Agent 在复杂交互场景下的稳定性和智能决策能力。</p>
+<h3>✅ 成功之处：</h3>
+<ul>
+<li>完整覆盖登录全流程：导航 → 等待 → 输入 → 提交 → 错误处理 → 报告。</li>
+<li>准确识别 UI 元素并执行操作，无元素定位失败。</li>
+<li>在遇到系统错误时，能自动保存证据并如实报告失败，符合测试规范。</li>
+</ul>
+<h3>❌ 主要问题：</h3>
+<ul>
+<li><strong>测试数据无效</strong>是唯一失败根源，非脚本或系统缺陷。</li>
+<li>缺乏“测试数据有效性校验”环节，导致资源浪费（106 秒执行无效流程）。</li>
+</ul>
+<h3>📈 后续优化方向：</h3>
+<ol>
+<li>引入“测试数据管理模块”，支持动态加载有效账号密码。</li>
+<li>增加“登录失败重试策略”，如尝试默认测试账号。</li>
+<li>输出结构化测试报告（含截图、日志、错误码），便于快速定位问题。</li>
+<li>将“用例”概念标准化，确保每个测试任务都被正确归类和统计。</li>
+</ol>
+<hr />
+<blockquote>
+<p>🧾 <strong>最终结论</strong>：<br />
+本次测试<strong>执行过程合格，结果失败源于数据问题</strong>。建议优先修正测试账号密码，再重新运行测试。自动化框架本身表现优异，无需调整。</p>
+</blockquote>
+<hr />
+<p>✅ <strong>报告生成时间</strong>：2025-12-11<br />
+✅ <strong>报告人</strong>：AI 测试报告生成专家</p></div>
+    </div>
+</body>
+</html>

@@ -21,6 +21,7 @@ from database.connection import init_db
 from Build_tests.router import router as test_cases_router
 from Build_test_code.router import router as test_code_router
 from Build_Report.router import router as report_router
+from Bug_Analysis.router import router as bug_router
 
 
 # Create FastAPI application with custom docs
@@ -47,6 +48,7 @@ app.add_middleware(
 app.include_router(test_cases_router)
 app.include_router(test_code_router)
 app.include_router(report_router)
+app.include_router(bug_router)
 
 
 

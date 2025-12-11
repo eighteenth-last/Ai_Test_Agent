@@ -8,13 +8,14 @@
 
 ## ✨ 核心特性
 
-### 🎯 四大功能模块
+### 🎯 五大功能模块
 
 | 功能 | 描述 |
 |------|------|
 | **测试用例生成** | 输入需求描述或上传文档（支持 MD/TXT/PDF/DOC/DOCX），AI 自动生成结构化测试用例 |
 | **AI 智能执行** | Browser-Use + LLM 实时决策，无需编写代码，支持暂停/恢复/停止控制 |
 | **自动报告生成** | 执行完成自动分析日志，生成专业测试报告，支持 HTML 格式下载 |
+| **Bug 智能管理** | 测试失败时自动分析 Bug 严重程度，记录复现步骤和截图，支持状态跟踪 |
 | **任务管理** | 实时监控测试执行状态，支持暂停、恢复、停止操作 |
 
 ### 🚀 技术亮点
@@ -29,6 +30,8 @@
 - ✅ **任务控制**：实时暂停/恢复/停止测试执行，精确控制测试流程
 - ✅ **报告导出**：一键下载 HTML 格式测试报告，支持离线查看
 - ✅ **优化布局**：报告采用现代化设计，间距合理，阅读体验佳
+- ✅ **Bug 管理**：自动分析 Bug 严重程度（一级~四级），智能提取复现步骤和截图
+- ✅ **智能决策**：一级/二级 Bug 中止测试，三级/四级 Bug 继续执行并记录
 
 ---
 
@@ -46,8 +49,7 @@
     │ • 测试用例生成        │      │ • Qwen LLM 集成       │
     │ • 执行用例（无代码）   │  ←→  │ • Browser-Use Agent   │
     │ • 查看测试报告        │      │ • 数据库 ORM          │
-    └────────────────────────┘      │ • Firecrawl MCP       │
-                                    └───────────────────────┘
+    └────────────────────────┘    └───────────────────────┘
                                             ↓
                                     ┌───────────────────────┐
                                     │   MySQL + Redis       │
@@ -79,6 +81,10 @@ Ai_Test_Agent/
 │   │   ├── service.py             # 报告逻辑（调用 LLM 分析）
 │   │   └── router.py              # FastAPI 路由
 │   │
+│   ├── Bug_Analysis/               # Bug 分析模块
+│   │   ├── service.py             # Bug 分析逻辑（LLM 智能分析）
+│   │   └── router.py              # FastAPI 路由
+│   │
 │   ├── browser_use_core/           # Browser-Use 增强核心（来自 web-ui）
 │   │   ├── browser_use_agent.py   # 自定义 Agent
 │   │   ├── custom_browser.py      # 自定义浏览器配置
@@ -107,7 +113,8 @@ Ai_Test_Agent/
 │   │   ├── views/
 │   │   │   ├── TestCaseView.vue    # 测试用例生成页面
 │   │   │   ├── ExecuteCaseView.vue # 执行用例页面（核心交互）
-│   │   │   └── TestReportView.vue  # 报告查看页面
+│   │   │   ├── TestReportView.vue  # 报告查看页面
+│   │   │   └── BugReportView.vue   # Bug 管理页面
 │   │   │
 │   │   ├── App.vue                # 主应用组件（导航 + 布局）
 │   │   └── main.js                # Vue 应用入口
@@ -119,7 +126,9 @@ Ai_Test_Agent/
 │
 ├── save_floder/                    # 生成文件输出目录
 │   ├── test_case_*.csv            # 生成的测试用例
-│   ├── test_report_*.markdown     # 生成的测试报告
+│   ├── test_report_*.html         # 生成的测试报告
+│   ├── bug_floder/                # Bug 截图目录
+│   │   └── *.pdf                  # 失败页面截图（PDF 格式）
 │   └── ...
 │
 └── README.md                       # 本文件
@@ -328,6 +337,37 @@ SAVE_FOLDER_DIR=../save_floder
 - 📥 支持一键下载 HTML 格式
 - 💾 离线可查看，包含完整样式
 
+### 场景 4️⃣：Bug 管理
+
+1. 打开 Web UI → **错误集合** 选项卡
+2. 查看 Bug 列表（按严重程度和状态筛选）
+3. 点击 **查看详情** 查看 Bug 完整信息
+4. 使用 **更新状态** 下拉菜单跟踪 Bug 处理进度
+
+**Bug 自动分析**：
+- 🤖 LLM 自动分析 Bug 类型（功能错误、设计缺陷、安全问题、系统错误）
+- 📊 智能判定严重程度（一级~四级）
+- 📸 自动保存失败页面截图（PDF 格式）
+- 📝 提取测试用例步骤作为复现步骤，标记失败位置
+
+**严重程度分级**：
+| 级别 | 定义 | 颜色 | 处理策略 |
+|------|------|------|----------|
+| **一级（致命）** | 系统崩溃/核心功能完全失效/数据丢失 | 🔴 深红色 | 立即中止测试 |
+| **二级（严重）** | 主要功能异常/存在重大安全隐患 | 🟠 橙色 | 立即中止测试 |
+| **三级（一般）** | 次要功能异常/用户体验显著下降 | 🟡 黄色 | 继续测试并记录 |
+| **四级（轻微）** | 优化建议/不影响使用的UI/文案问题 | ⚪ 灰色 | 继续测试并记录 |
+
+**Bug 信息包含**：
+- Bug 名称（测试用例标题）
+- 定位地址（失败页面 URL）
+- 错误类型和严重程度
+- 复现步骤（✅ 成功步骤 / ❌ 失败步骤）
+- 失败截图（PDF 格式）
+- 预期结果 vs 实际结果
+- LLM 分析的结果反馈
+- Bug 状态（待处理/已确认/已修复/已关闭）
+
 ---
 
 ## 🔌 API 接口文档
@@ -394,6 +434,20 @@ GET /api/reports/{report_id}/download
   Content-Type: text/html / text/markdown / text/plain
 ```
 
+### Bug 管理相关
+
+```
+GET /api/bugs/list?limit=20&offset=0&severity_level=一级&status=待处理
+  响应: {"success": true, "data": [...], "total": 5}
+
+GET /api/bugs/{bug_id}
+  响应: {"success": true, "data": {"id": 1, "bug_name": "...", ...}}
+
+PUT /api/bugs/{bug_id}/status
+  请求: {"status": "已确认"}
+  响应: {"success": true, "message": "Bug 状态已更新为: 已确认"}
+```
+
 **详细 API 文档访问**：
 - Swagger UI：http://localhost:8000/docs
 - ReDoc：http://localhost:8000/redoc
@@ -440,11 +494,31 @@ GET /api/reports/{report_id}/download
 |------|------|------|
 | id | Integer | 主键 ID |
 | title | String(200) | 报告标题 |
-| summary | JSON | 测试统计摘要（total/pass/fail/duration） |
+| summary | JSON | 测试统计摘要（status/duration） |
 | details | Text | 报告详细内容（HTML/Markdown） |
 | file_path | String(500) | 报告文件路径 |
 | format_type | String(20) | 格式类型（html/markdown/txt） |
 | created_at | DateTime | 生成时间 |
+
+### BugReport（Bug 报告表）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | Integer | 主键 ID |
+| bug_name | String(200) | Bug 名称（测试用例标题） |
+| test_case_id | Integer | 关联测试用例 ID |
+| test_result_id | Integer | 关联测试结果 ID |
+| location_url | String(500) | 定位地址（失败页面 URL） |
+| error_type | String(50) | 错误类型（功能错误/设计缺陷/安全问题/系统错误） |
+| severity_level | String(20) | 严重程度（一级/二级/三级/四级） |
+| reproduce_steps | Text | 复现步骤（JSON 数组） |
+| screenshot_path | String(500) | 失败截图路径（PDF 格式） |
+| result_feedback | Text | 结果反馈（LLM 分析） |
+| expected_result | Text | 预期结果 |
+| actual_result | Text | 实际结果 |
+| status | String(20) | Bug 状态（待处理/已确认/已修复/已关闭） |
+| created_at | DateTime | 创建时间 |
+| updated_at | DateTime | 更新时间 |
 
 ---
 
@@ -737,6 +811,8 @@ python test_llm_connection.py
 6. 实现任务管理器，支持暂停/恢复/停止
 7. 优化报告布局，支持 HTML 下载
 8. 数据库字段升级为 LONGTEXT，支持大量日志
+9. **新增 Bug 智能管理系统，自动分析和跟踪**
+10. **智能提取复现步骤，自动保存失败截图**
 
 ---
 
@@ -746,9 +822,25 @@ python test_llm_connection.py
 
 ---
 
-<sub>最后更新：2025-12-11 | 版本：1.1.0</sub>
+<sub>最后更新：2025-12-11 | 版本：1.2.0</sub>
 
 ## 🆕 更新日志
+
+### v1.2.0 (2025-12-11)
+- ✨ 新增 Bug 智能管理功能，自动分析严重程度（一级~四级）
+- ✨ 新增 Bug 复现步骤自动提取，标记成功/失败位置
+- ✨ 新增失败页面自动截图（PDF 格式），保存到 bug_floder 目录
+- ✨ 新增 Bug 状态跟踪（待处理/已确认/已修复/已关闭）
+- 🎨 新增错误集合页面，支持按严重程度和状态筛选
+- 🤖 LLM 自动分析 Bug 类型和结果反馈
+- 🔧 一级/二级 Bug 自动中止测试，三级/四级继续执行
+- 📝 完善 Bug 管理文档和使用指南
+
+### v1.1.1 (2025-12-11)
+- 🎨 优化测试报告标题，使用测试用例名称替代时间戳
+- 🎨 简化测试汇总显示，只显示"成功/失败"和"耗时"
+- 🔧 前端兼容新旧报告格式
+- 📝 更新报告列表修改说明文档
 
 ### v1.1.0 (2025-12-11)
 - ✨ 新增文件上传功能，支持 MD/TXT/PDF/DOC/DOCX 格式

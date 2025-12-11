@@ -95,4 +95,19 @@ export const testReportAPI = {
   }
 }
 
+// Bug report API
+export const bugReportAPI = {
+  getList(params) {
+    return api.get('/bugs/list', { params })
+  },
+  getById(bug_id) {
+    return api.get(`/bugs/${bug_id}`)
+  },
+  updateStatus(bug_id, status) {
+    return api.put(`/bugs/${bug_id}/status`, null, {
+      params: { status }
+    })
+  }
+}
+
 export default api

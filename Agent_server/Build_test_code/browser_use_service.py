@@ -206,7 +206,34 @@ class BrowserUseService:
             print(f"[BrowserUse] {'✅ 成功' if execution_result['status'] == 'pass' else '❌ 失败'}")
             print(f"[BrowserUse] 📊 共执行 {execution_result['total_steps']} 步，耗时 {execution_time} 秒")
             
-            # 9. 自动生成测试报告
+            # 9. 如果测试失败，分析 Bug
+            bug_analysis_result = None
+            if execution_result['status'] == 'fail':
+                try:
+                    from Bug_Analysis.service import BugAnalysisService
+                    
+                    print("[BrowserUse] 🔍 正在分析 Bug...")
+                    
+                    # 分析 Bug
+                    bug_analysis_result = await BugAnalysisService.analyze_bug_from_execution(
+                        test_case_id=test_case_id,
+                        test_result_id=test_result.id,
+                        execution_history=execution_result["history"],
+                        error_message=execution_result.get("error_message", "测试未完成或失败"),
+                        db=db
+                    )
+                    
+                    if bug_analysis_result:
+                        severity = bug_analysis_result['severity_level']
+                        should_stop = bug_analysis_result['should_stop']
+                        print(f"[BrowserUse] 🐛 Bug 已记录: 严重程度={severity}, 是否中止={'是' if should_stop else '否'}")
+                    
+                except Exception as bug_error:
+                    import traceback as tb
+                    print(f"[BrowserUse] ⚠️ Bug 分析失败: {str(bug_error)}")
+                    print(tb.format_exc())
+            
+            # 10. 自动生成测试报告
             report_data = None
             try:
                 from Build_Report.service import TestReportService
@@ -234,7 +261,8 @@ class BrowserUseService:
                     "history": execution_result["history"],
                     "final_url": execution_result["final_url"],
                     "duration": execution_time,
-                    "report": report_data
+                    "report": report_data,
+                    "bug_analysis": bug_analysis_result
                 }
             }
         
@@ -289,11 +317,42 @@ class BrowserUseService:
             
             db.add(test_result)
             db.commit()
+            db.refresh(test_result)
+            
+            # ========== 新增：Bug 分析 ==========
+            bug_analysis_result = None
+            try:
+                from Bug_Analysis.service import BugAnalysisService
+                
+                print("[BrowserUse] 🔍 正在分析 Bug...")
+                
+                # 分析 Bug
+                bug_analysis_result = await BugAnalysisService.analyze_bug_from_execution(
+                    test_case_id=test_case_id,
+                    test_result_id=test_result.id,
+                    execution_history={"error": error_msg, "trace": error_trace},
+                    error_message=error_msg,
+                    db=db
+                )
+                
+                if bug_analysis_result:
+                    severity = bug_analysis_result['severity_level']
+                    should_stop = bug_analysis_result['should_stop']
+                    print(f"[BrowserUse] 🐛 Bug 已记录: 严重程度={severity}, 是否中止={'是' if should_stop else '否'}")
+                else:
+                    print("[BrowserUse] ⚠️ Bug 分析未返回结果")
+                
+            except Exception as bug_error:
+                import traceback as tb
+                print(f"[BrowserUse] ⚠️ Bug 分析失败: {str(bug_error)}")
+                print(tb.format_exc())
+            # ========== Bug 分析结束 ==========
             
             return {
                 "success": False,
                 "message": f"测试执行失败: {error_msg}",
-                "error_details": error_trace
+                "error_details": error_trace,
+                "bug_analysis": bug_analysis_result
             }
         
         finally:

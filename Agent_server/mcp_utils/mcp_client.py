@@ -15,8 +15,8 @@ from typing import Any, Dict, List, Optional, Set, Type, Union, get_type_hints
 from browser_use.controller.registry.views import ActionModel
 from langchain.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from pydantic import BaseModel, Field, create_model
-from pydantic.v1 import BaseModel, Field
+from pydantic import Field, create_model
+from pydantic.v1 import Field
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ async def setup_mcp_client_and_tools(mcp_server_config: Dict[str, Any]) -> Optio
         return None
 
 
-def create_tool_param_model(tool: BaseTool) -> Type[BaseModel]:
+def create_tool_param_model(tool: BaseTool) -> type[ActionModel]:
     """Creates a Pydantic model from a LangChain tool's schema"""
 
     # Get tool schema information

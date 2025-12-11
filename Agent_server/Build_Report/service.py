@@ -8,7 +8,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from database.connection import TestReport, TestResult, TestCode
+from database.connection import TestReport, TestResult, TestCode, TestCase
 # MCP integration removed - using direct formatting if needed
 
 load_dotenv()
@@ -50,12 +50,13 @@ class TestReportService:
                     "message": "No test results found"
                 }
             
-            # Parse test results
+            # Parse test results and get test case info
             results_data = []
             total = len(test_results)
             pass_count = 0
             fail_count = 0
             total_duration = 0
+            test_case_title = None  # 用于存储测试用例标题
             
             for result in test_results:
                 if result.status == 'pass':
@@ -64,6 +65,12 @@ class TestReportService:
                     fail_count += 1
                 
                 total_duration += result.duration or 0
+                
+                # 获取测试用例信息
+                if result.test_case_id and not test_case_title:
+                    test_case = db.query(TestCase).filter(TestCase.id == result.test_case_id).first()
+                    if test_case:
+                        test_case_title = test_case.title
                 
                 # 尝试解析 execution_log (如果是 JSON 格式的 Agent 历史)
                 log_content = result.execution_log
@@ -84,11 +91,9 @@ class TestReportService:
                     "executed_at": result.executed_at.isoformat() if result.executed_at else None
                 })
             
-            # Summary data
+            # Summary data - 简化为只包含状态和耗时
             summary = {
-                "total": total,
-                "pass": pass_count,
-                "fail": fail_count,
+                "status": "通过" if pass_count == total else "失败",
                 "duration": total_duration
             }
             
@@ -150,9 +155,10 @@ class TestReportService:
                 format_type=final_format
             )
             
-            # Save to database
+            # Save to database - 使用测试用例标题作为报告标题
+            report_title = test_case_title if test_case_title else f"Test Report {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
             test_report = TestReport(
-                title=f"Test Report {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                title=report_title,
                 summary=summary,
                 details=final_content,
                 file_path=file_path,
@@ -395,7 +401,7 @@ class TestReportService:
             Test report list
         """
         reports = db.query(TestReport).order_by(
-            TestReport.created_at.desc()
+            TestReport.id.desc()
         ).limit(limit).offset(offset).all()
         
         return [

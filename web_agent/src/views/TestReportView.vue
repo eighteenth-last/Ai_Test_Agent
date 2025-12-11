@@ -11,13 +11,22 @@
       <el-table :data="reports" v-loading="loading" stripe>
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column prop="title" label="报告标题" width="300" />
-        <el-table-column label="测试汇总" width="400">
+        <el-table-column label="测试汇总" width="300">
           <template #default="{ row }">
             <div v-if="row.summary">
-              <el-tag type="info">总计: {{ row.summary.total }}</el-tag>
-              <el-tag type="success" style="margin-left: 5px">通过: {{ row.summary.pass }}</el-tag>
-              <el-tag type="danger" style="margin-left: 5px">失败: {{ row.summary.fail }}</el-tag>
-              <el-tag type="warning" style="margin-left: 5px">耗时: {{ row.summary.duration }}s</el-tag>
+              <!-- 新格式：直接有 status 字段 -->
+              <template v-if="row.summary.status">
+                <el-tag :type="row.summary.status === '通过' ? 'success' : 'danger'">
+                  {{ row.summary.status }}
+                </el-tag>
+              </template>
+              <!-- 旧格式：有 pass 和 fail 字段，需要计算 -->
+              <template v-else-if="row.summary.pass !== undefined">
+                <el-tag :type="row.summary.fail === 0 ? 'success' : 'danger'">
+                  {{ row.summary.fail === 0 ? '通过' : '失败' }}
+                </el-tag>
+              </template>
+              <el-tag type="warning" style="margin-left: 10px">耗时: {{ row.summary.duration }}s</el-tag>
             </div>
           </template>
         </el-table-column>
@@ -60,16 +69,20 @@
           <el-descriptions-item label="报告标题">{{ currentReport.title }}</el-descriptions-item>
           <el-descriptions-item label="格式类型">{{ currentReport.format_type }}</el-descriptions-item>
           <el-descriptions-item label="生成时间">{{ formatDate(currentReport.created_at) }}</el-descriptions-item>
-          <el-descriptions-item label="总计" span="1">
-            <el-tag type="info">{{ currentReport.summary?.total || 0 }}</el-tag>
+          <el-descriptions-item label="测试结果" span="1">
+            <!-- 新格式：直接有 status 字段 -->
+            <el-tag v-if="currentReport.summary?.status" 
+                    :type="currentReport.summary.status === '通过' ? 'success' : 'danger'">
+              {{ currentReport.summary.status }}
+            </el-tag>
+            <!-- 旧格式：有 pass 和 fail 字段 -->
+            <el-tag v-else-if="currentReport.summary?.pass !== undefined"
+                    :type="currentReport.summary.fail === 0 ? 'success' : 'danger'">
+              {{ currentReport.summary.fail === 0 ? '通过' : '失败' }}
+            </el-tag>
+            <el-tag v-else type="info">未知</el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="通过" span="1">
-            <el-tag type="success">{{ currentReport.summary?.pass || 0 }}</el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item label="失败" span="1">
-            <el-tag type="danger">{{ currentReport.summary?.fail || 0 }}</el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item label="耗时" span="1">
+          <el-descriptions-item label="执行耗时" span="1">
             <el-tag type="warning">{{ currentReport.summary?.duration || 0 }}s</el-tag>
           </el-descriptions-item>
         </el-descriptions>

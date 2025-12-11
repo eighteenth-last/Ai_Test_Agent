@@ -26,6 +26,10 @@
               <el-icon><DataAnalysis /></el-icon>
               <span>测试报告</span>
             </el-menu-item>
+            <el-menu-item index="/bug-report">
+              <el-icon><Warning /></el-icon>
+              <span>错误集合</span>
+            </el-menu-item>
           </el-menu>
         </el-aside>
         
@@ -38,7 +42,7 @@
 </template>
 
 <script setup>
-import { Document, Edit, DataAnalysis, VideoPlay } from '@element-plus/icons-vue'
+import { Document, Edit, DataAnalysis, VideoPlay, Warning } from '@element-plus/icons-vue'
 </script>
 
 <style>

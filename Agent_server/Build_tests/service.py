@@ -200,7 +200,7 @@ class TestCaseService:
             Test case list
         """
         cases = db.query(TestCase).order_by(
-            TestCase.created_at.desc()
+            TestCase.id.desc()
         ).limit(limit).offset(offset).all()
         
         return [
