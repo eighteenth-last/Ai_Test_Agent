@@ -11,7 +11,8 @@ import asyncio
 import json
 import time
 import os
-from typing import Dict, Any
+import re
+from typing import Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
 import sys
@@ -21,13 +22,24 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database.connection import TestCase, TestResult
 from Build_test_code.task_manager import get_task_manager
+from Build_test_code.custom_actions import register_custom_actions
 
 # 使用 browser-use 原生的 LLM（不是 LangChain）
 from browser_use.llm.openai.chat import ChatOpenAI
 from browser_use import Agent
 from browser_use.browser.browser import Browser, BrowserConfig
+from browser_use.controller.service import Controller
 
 load_dotenv()
+
+
+# 答题相关关键词
+ANSWER_KEYWORDS = [
+    '错题再练', '错题集', '练习', '答题', '做题',
+    '完成题目', '完成所有题目', '提交答案',
+    '开始答题', '进入练习', '开始练习',
+    'practice', 'exercise', 'answer', 'question',
+]
 
 
 class BrowserUseService:
@@ -120,7 +132,18 @@ class BrowserUseService:
             )
             browser = Browser(config=browser_config)
             
-            # 5. 创建 Agent（使用 browser-use 原生的 Agent）
+            # 5. 创建 Controller 并注册自定义 actions
+            controller = Controller()
+            
+            # 检查是否需要答题，如果需要则注册自定义答题 action
+            need_answer = BrowserUseService._need_auto_answer(test_case)
+            if need_answer:
+                print("[BrowserUse] 该测试用例需要答题，注册自定义答题 action")
+                register_custom_actions(controller)
+            else:
+                print("[BrowserUse] 该测试用例不需要答题")
+            
+            # 6. 创建 Agent（使用 browser-use 原生的 Agent）
             print(f"[BrowserUse] 🚀 开始执行测试: {test_case.title}")
             print(f"[BrowserUse] ⚙️  配置: max_steps={max_steps}, vision={use_vision}, headless={headless}")
             
@@ -128,12 +151,12 @@ class BrowserUseService:
                 task=task_description,
                 llm=llm,
                 browser=browser,
+                controller=controller,  # 使用自定义 controller
                 use_vision=use_vision,
                 max_actions_per_step=max_actions,
             )
             
-            # 6. 执行测试（使用 Task 以支持取消）
-            # 创建可取消的任务
+            # 7. 执行测试（使用 Task 以支持取消）
             task = asyncio.create_task(agent.run(max_steps=max_steps))
             
             # 监控任务状态
@@ -153,11 +176,11 @@ class BrowserUseService:
                         # 取消任务
                         task.cancel()
                         
-                        # 等待任务取消完成（最多等待2秒）
+                        # 等待任务取消完成（最多等待20秒）
                         try:
-                            await asyncio.wait_for(task, timeout=2.0)
+                            await asyncio.wait_for(task, timeout=20)
                         except asyncio.TimeoutError:
-                            print(f"[BrowserUse] ⚠️ 任务未在2秒内完成，强制取消")
+                            print(f"[BrowserUse] ⚠️ 任务未在20秒内完成，强制取消")
                         except asyncio.CancelledError:
                             print(f"[BrowserUse] ✓ 任务已被取消")
                         except Exception as e:
@@ -178,6 +201,7 @@ class BrowserUseService:
                     await asyncio.sleep(0.2)  # 每0.2秒检查一次
                 
                 history = task.result()
+                    
             except asyncio.CancelledError:
                 print(f"[BrowserUse] ✓ 任务已被取消")
                 raise Exception("用户手动停止")
@@ -409,18 +433,104 @@ class BrowserUseService:
 
 【重要提示】
 1. 立即开始执行，不要停留在空白页面
-2. 严格按照步骤顺序执行
-3. 每个步骤执行后验证是否成功
-4. 遇到问题时智能调整策略（如元素未找到，尝试滚动或等待）
-5. 关键步骤建议使用 save_screenshot 保存截图验证（PNG格式）
-6. ⚠️ 重要：如果测试失败或遇到错误，必须先使用 save_screenshot 保存当前页面截图，然后再调用 done 动作
-7. 完成所有步骤后明确说明"测试完成"
-8. 如果无法继续，说明原因并停止
+2. ⚠️ 严格按照步骤顺序执行，每个步骤只执行一次，完成后立即进入下一步
+3. ⚠️ 如果页面显示错误提示（如"密码错误"）后元素消失，等待2-3秒让页面恢复，或者点击页面空白处关闭提示
+4. ⚠️ 如果元素未找到，先尝试：等待2秒 → 滚动页面 → 点击关闭弹窗 → 刷新页面，不要重复执行已完成的步骤
+5. ⚠️ 绝对不要使用 go_back()，这会导致页面变成空白
+6. ⚠️ **重要：如果进入答题页面（URL包含practiceId或页面有题目列表），使用 auto_answer 动作自动完成所有题目，然后继续执行后续步骤（如点击提交）**
+7. 关键步骤建议使用 save_screenshot 保存截图验证（PNG格式）
+8. ⚠️ 重要：如果测试失败或遇到错误，必须先使用 save_screenshot 保存当前页面截图，然后再调用 done 动作
+9. 完成所有步骤后明确说明"测试完成"
+10. 如果连续3次无法找到元素，说明原因并停止
 
 【成功标准】
 所有步骤顺利执行且预期结果达成
 """
         return task.strip()
+    
+    @staticmethod
+    def _need_auto_answer(test_case: TestCase) -> bool:
+        """
+        分析测试用例是否需要自动答题
+        通过检查步骤中的关键词判断
+        """
+        steps = json.loads(test_case.steps) if test_case.steps else []
+        
+        # 检查步骤中是否包含答题关键词
+        for i, step in enumerate(steps):
+            # 精确匹配
+            for keyword in ANSWER_KEYWORDS:
+                if keyword in step:
+                    print(f"[BrowserUse] 步骤 {i+1} 包含答题关键词 '{keyword}': {step}")
+                    return True
+            
+            # 正则匹配（支持模糊匹配）
+            patterns = [
+                r'点击.*[练习|答题|做题]',
+                r'进入.*[题|练习]',
+                r'完成.*题',
+            ]
+            
+            for pattern in patterns:
+                if re.search(pattern, step):
+                    print(f"[BrowserUse] 步骤 {i+1} 匹配答题模式 '{pattern}': {step}")
+                    return True
+        
+        print("[BrowserUse] 未检测到答题相关步骤")
+        return False
+    
+    @staticmethod
+    async def _is_question_page(page) -> bool:
+        """
+        检测是否进入答题页面
+        通过 URL 和页面元素判断
+        """
+        try:
+            # 方法1: 检查 URL 关键词
+            current_url = page.url
+            if 'practice' in current_url or 'exercise' in current_url or 'question' in current_url:
+                print("[PageMonitor] 检测到答题页面 URL")
+                return True
+            
+            # 方法2: 检查页面是否有题目元素
+            has_questions = await page.evaluate("""
+                () => {
+                    const wrappers = document.querySelectorAll('.question-wrapper, .topic-item, .question-item');
+                    return wrappers.length > 0;
+                }
+            """)
+            
+            if has_questions:
+                print("[PageMonitor] 检测到题目元素")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            print(f"[PageMonitor] 检测答题页面失败: {str(e)}")
+            return False
+    
+    @staticmethod
+    async def _verify_practice_ready(page) -> bool:
+        """
+        验证练习页面是否加载完成
+        检查题目是否渲染完成
+        """
+        try:
+            # 等待题目元素出现
+            await page.wait_for_function("""
+                () => {
+                    const wrappers = document.querySelectorAll('.question-wrapper, .topic-item, .question-item');
+                    return wrappers.length > 0;
+                }
+            """, timeout=5000)
+            
+            print("[PageMonitor] ✓ 题目加载完成")
+            return True
+            
+        except Exception as e:
+            print(f"[PageMonitor] 题目加载超时: {str(e)}")
+            return False
     
     @staticmethod
     def _process_execution_result(history, test_case: TestCase, execution_time: int) -> Dict[str, Any]:

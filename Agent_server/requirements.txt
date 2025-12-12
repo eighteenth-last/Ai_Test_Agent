@@ -15,6 +15,7 @@ playwright==1.49.1        # Playwright 浏览器自动化
 aiohttp==3.9.1
 requests==2.32.3
 beautifulsoup4==4.12.3
+websockets>=13.0.0       # WebSocket 支持（某些包的依赖）
 
 # ====================== Data Processing ============================
 pandas==2.3.3             # 与 numpy 2.x 官方 wheel 对齐

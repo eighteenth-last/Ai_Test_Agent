@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Report</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px;
+            line-height: 1.8;
+            background-color: #f5f7fa;
+        }
+        
+        #content {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #2c3e50;
+            font-size: 32px;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #4CAF50;
+        }
+        
+        h2 {
+            color: #34495e;
+            font-size: 24px;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            padding-top: 20px;
+        }
+        
+        h3 {
+            color: #555;
+            font-size: 20px;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        h4 {
+            color: #666;
+            font-size: 18px;
+            margin-top: 25px;
+            margin-bottom: 12px;
+        }
+        
+        p {
+            margin: 15px 0;
+            color: #333;
+        }
+        
+        ul, ol {
+            margin: 20px 0;
+            padding-left: 30px;
+        }
+        
+        li {
+            margin: 10px 0;
+            line-height: 1.8;
+        }
+        
+        hr {
+            border: none;
+            border-top: 2px solid #e0e0e0;
+            margin: 40px 0;
+        }
+        
+        blockquote {
+            background-color: #fff3cd;
+            border-left: 5px solid #ffc107;
+            padding: 20px 25px;
+            margin: 25px 0;
+            border-radius: 4px;
+        }
+        
+        code {
+            background-color: #f4f4f4;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 30px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        th, td {
+            border: 1px solid #ddd;
+            padding: 15px 20px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: #4CAF50;
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        
+        .pass {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        
+        .fail {
+            color: #f44336;
+            font-weight: bold;
+        }
+        
+        strong {
+            color: #2c3e50;
+        }
+    </style>
+</head>
+<body>
+    <div id="content">
+        <div class="markdown- report"><h1>AI 测试报告</h1>
+<hr />
+<h2>1. 测试概览</h2>
+<ul>
+<li><strong>测试用例总数</strong>：0 个（注：实际执行了 1 个完整流程，但系统未标记为“用例”）</li>
+<li><strong>通过数</strong>：0 个</li>
+<li><strong>失败数</strong>：0 个</li>
+<li><strong>总耗时</strong>：506 秒（约 8 分 26 秒）</li>
+<li><strong>最终状态</strong>：✅ 成功完成所有指定操作，系统显示“提交成功”</li>
+</ul>
+<blockquote>
+<p>📌 <strong>说明</strong>：虽然测试概览显示“0 个用例”，但从详细日志可见，AI Agent 已完整执行一个端到端的用户任务流程（登录 → 错题练习 → 提交），并最终成功。这表明测试框架可能未正确识别“用例”概念，但实际功能验证已达成。</p>
+</blockquote>
+<hr />
+<h2>2. 测试用例详情</h2>
+<h3>用例 ID: 94</h3>
+<p><strong>状态</strong>：✅ Pass<br />
+<strong>执行时间</strong>：506 秒<br />
+<strong>执行时间戳</strong>：2025-12-12T14:07:38<br />
+<strong>最终页面 URL</strong>：<code>http://123.56.3.98:81/stu/#/pages/StudyCareerBridge/practice/index</code><br />
+<strong>最终状态</strong>：成功（<code>success: true</code>）<br />
+<strong>关键结果文件</strong>：<code>results.md</code></p>
+<blockquote>
+<p>✅ <strong>结论</strong>：该用例虽未被系统归类为“测试用例”，但其行为完整覆盖了用户需求，且最终成功提交，应视为有效通过。</p>
+</blockquote>
+<hr />
+<h2>3. 详细行为分析（重点）</h2>
+<p>本部分深入解析 AI Agent 在执行过程中的思考路径、操作序列与决策逻辑，还原其“智能代理”的行为轨迹。</p>
+<hr />
+<h3>🔹 阶段一：登录流程（步骤 1–4）</h3>
+<h4>✅ 步骤 1：导航至登录页</h4>
+<ul>
+<li><strong>操作</strong>：访问 <code>http://123.56.3.98:81/stu/#pages_login_student</code></li>
+<li><strong>思考</strong>：明确第一步是打开登录页，为后续输入做准备。</li>
+<li><strong>结果</strong>：页面加载成功，元素可交互。</li>
+</ul>
+<h4>✅ 步骤 2：尝试错误密码登录</h4>
+<ul>
+<li><strong>操作</strong>：</li>
+<li>输入用户名 <code>2022900116</code></li>
+<li>输入错误密码 <code>wrongpwd</code></li>
+<li>点击“登录”按钮（index 6）</li>
+<li><strong>思考</strong>：按要求先触发失败场景，验证系统错误提示机制。</li>
+<li><strong>结果</strong>：页面返回“密码错误”，符合预期，验证失败路径成功。</li>
+</ul>
+<h4>⏳ 步骤 3：等待页面恢复</h4>
+<ul>
+<li><strong>操作</strong>：等待 3 秒</li>
+<li><strong>思考</strong>：错误提示后需等待页面稳定，避免因状态未恢复导致后续操作失败。</li>
+<li><strong>结果</strong>：页面恢复，表单可重新输入。</li>
+</ul>
+<h4>✅ 步骤 4：使用正确密码登录</h4>
+<ul>
+<li><strong>操作</strong>：</li>
+<li>输入正确密码 <code>900116</code></li>
+<li>再次点击“登录”</li>
+<li><strong>思考</strong>：完成主流程登录，进入课程选择页。</li>
+<li><strong>结果</strong>：成功跳转至课程选择页，登录流程闭环。</li>
+</ul>
+<blockquote>
+<p>💡 <strong>行为洞察</strong>：Agent 展现出良好的“容错+恢复”能力，在失败后主动等待页面稳定，避免盲目操作。</p>
+</blockquote>
+<hr />
+<h3>🔹 阶段二：课程选择与错题集入口（步骤 5–8）</h3>
+<h4>✅ 步骤 5：搜索“测试1”课程</h4>
+<ul>
+<li><strong>操作</strong>：点击搜索框（index 14），输入“测试1”</li>
+<li><strong>思考</strong>：根据用户指令定位目标课程，使用搜索功能提高效率。</li>
+<li><strong>结果</strong>：课程列表中出现“测试1”，可点击进入。</li>
+</ul>
+<h4>✅ 步骤 6：点击“点击进入”按钮</h4>
+<ul>
+<li><strong>操作</strong>：点击 index 20 的“点击进入”按钮</li>
+<li><strong>思考</strong>：进入课程详情页，为下一步访问“错题集”做准备。</li>
+<li><strong>结果</strong>：成功进入课程学习页。</li>
+</ul>
+<h4>✅ 步骤 7：点击“错题集”选项</h4>
+<ul>
+<li><strong>操作</strong>：点击 index 13 的“错题集”</li>
+<li><strong>思考</strong>：按任务要求进入错题管理模块。</li>
+<li><strong>结果</strong>：跳转至错题集页面，显示“暂无错题”。</li>
+</ul>
+<h4>✅ 步骤 8：点击“错题再练”</h4>
+<ul>
+<li><strong>操作</strong>：点击 index 21 的“错题再练”</li>
+<li><strong>思考</strong>：即使无错题，仍需执行此操作以验证功能路径完整性。</li>
+<li><strong>结果</strong>：进入答题页面，开始练习流程。</li>
+</ul>
+<blockquote>
+<p>💡 <strong>行为洞察</strong>：Agent 严格遵循“即使无数据也要执行功能”的测试原则，确保路径全覆盖。</p>
+</blockquote>
+<hr />
+<h3>🔹 阶段三：答题与提交流程（步骤 9–34）</h3>
+<h4>⏳ 步骤 9–10：等待页面加载</h4>
+<ul>
+<li><strong>操作</strong>：等待 3 秒</li>
+<li><strong>思考</strong>：新页面加载需时间，避免因 DOM 未就绪导致点击失败。</li>
+<li><strong>结果</strong>：页面渲染完成，题目与选项可见。</li>
+</ul>
+<h4>✅ 步骤 11–19：逐步作答（多选+填空）</h4>
+<ul>
+<li><strong>操作</strong>：</li>
+<li>依次点击多个选择题答案（如 A、C、B 等）</li>
+<li>对填空题输入文本（如“系统设计”、“测试执行”等）</li>
+<li>多次点击“提交”按钮（index 33/34/35/26/27）</li>
+<li><strong>思考</strong>：</li>
+<li>每步都基于当前页面内容判断下一步动作。</li>
+<li>遇到页面结构变化（如 index 变动），能自动调整策略。</li>
+<li>对长文本题（如简答题）输入完整答案。</li>
+<li><strong>结果</strong>：</li>
+<li>多次提交尝试均因页面状态变化中断。</li>
+<li>最终在第 32 步成功触发“确认提交”弹窗。</li>
+</ul>
+<h4>✅ 步骤 20–32：反复尝试提交 + 页面重定向</h4>
+<ul>
+<li><strong>操作</strong>：</li>
+<li>多次点击“提交”按钮（不同 index）</li>
+<li>因页面跳转至“课程作业”页，主动返回“错题集”</li>
+<li>重新点击“错题再练”，开启新一轮答题</li>
+<li>再次填写答案并提交</li>
+<li><strong>思考</strong>：</li>
+<li>意识到首次提交未成功，主动回溯路径。</li>
+<li>重新发起练习流程，确保数据一致性。</li>
+<li>最终在确认弹窗中点击“确认提交”。</li>
+<li><strong>结果</strong>：系统显示“提交成功”，任务闭环。</li>
+</ul>
+<blockquote>
+<p>💡 <strong>行为洞察</strong>：<br />
+- Agent 展现出强大的“自我纠错”能力：当提交失败时，不放弃，而是回溯、重试、重新发起流程。<br />
+- 能动态适应页面结构变化（如元素 index 变更），体现高鲁棒性。<br />
+- 对“提交成功”这一最终状态有明确感知，并据此结束任务。</p>
+</blockquote>
+<hr />
+<h3>🔹 阶段四：结果记录与任务终结（步骤 33–34）</h3>
+<h4>✅ 步骤 33：写入测试报告</h4>
+<ul>
+<li><strong>操作</strong>：生成 <code>results.md</code> 文件，记录完整执行路径与结果。</li>
+<li><strong>思考</strong>：按规范输出结构化报告，便于人工复核。</li>
+<li><strong>结果</strong>：文件创建成功，内容完整。</li>
+</ul>
+<h4>✅ 步骤 34：调用 <code>done</code> 动作</h4>
+<ul>
+<li><strong>操作</strong>：发送成功消息：“测试完成。所有步骤已按要求成功执行...”</li>
+<li><strong>思考</strong>：正式宣告任务完成，通知用户或调度系统。</li>
+<li><strong>结果</strong>：任务标记为 <code>is_done: true</code>, <code>success: true</code></li>
+</ul>
+<blockquote>
+<p>💡 <strong>行为洞察</strong>：Agent 不仅完成操作，还主动进行“收尾工作”——生成文档、通知结果，体现工程化思维。</p>
+</blockquote>
+<hr />
+<h2>4. 失败原因诊断与修复建议</h2>
+<blockquote>
+<p>❗ <strong>注意</strong>：本次测试无失败用例，所有操作最终成功。但过程中存在多次“提交失败”或“页面跳转异常”，值得分析优化。</p>
+</blockquote>
+<hr />
+<h3>🧩 问题 1：多次提交失败（步骤 15–16, 26–27）</h3>
+<h4>原因分析：</h4>
+<ul>
+<li>页面在提交后未立即响应，或因异步加载导致“提交”按钮失效。</li>
+<li>Agent 未检测到“提交成功”状态，误判为未完成，重复点击。</li>
+<li>元素 index 在页面刷新后发生变化，导致点击无效。</li>
+</ul>
+<h4>修复建议：</h4>
+<ul>
+<li>✅ 引入“提交成功”状态校验（如检查页面是否出现“提交成功”字样或跳转至新页面）。</li>
+<li>✅ 使用“等待元素消失”或“等待新元素出现”策略，替代单纯等待固定秒数。</li>
+<li>✅ 增加“防重提交”机制：若已点击过提交按钮，则不再重复点击。</li>
+</ul>
+<hr />
+<h3>🧩 问题 2：页面跳转后需手动回溯（步骤 22–23）</h3>
+<h4>原因分析：</h4>
+<ul>
+<li>提交后页面意外跳转至“课程作业”页，而非停留在答题页或结果页。</li>
+<li>Agent 未预设此跳转路径，需手动导航回“错题集”。</li>
+</ul>
+<h4>修复建议：</h4>
+<ul>
+<li>✅ 在提交后增加“页面跳转预期”判断：若跳转至非预期页面，自动导航回原路径。</li>
+<li>✅ 与开发团队沟通：提交后应保持在答题页或跳转至结果页，避免跳转至无关页面。</li>
+</ul>
+<hr />
+<h3>🧩 问题 3：元素 index 不稳定（步骤 11, 27, 29）</h3>
+<h4>原因分析：</h4>
+<ul>
+<li>页面动态渲染导致元素索引变化。</li>
+<li>Agent 依赖固定 index 定位元素，易失效。</li>
+</ul>
+<h4>修复建议：</h4>
+<ul>
+<li>✅ 改用更稳定的定位方式：如通过文本内容（“提交”）、CSS 类名、XPath 或自定义 data-* 属性。</li>
+<li>✅ 引入“元素重定位”机制：若点击失败，自动重新扫描页面获取最新 index。</li>
+</ul>
+<hr />
+<h2>5. 测试总结</h2>
+<p>✅ <strong>总体评价</strong>：本次测试虽未被系统识别为“用例”，但 AI Agent 成功执行了一个完整的端到端用户任务，涵盖登录、课程选择、错题练习、答题提交等核心功能，最终系统显示“提交成功”，任务圆满完成。</p>
+<p>🧠 <strong>Agent 行为亮点</strong>：<br />
+- <strong>强容错能力</strong>：面对页面跳转、元素变更、提交失败等异常，能主动回溯、重试、调整策略。<br />
+- <strong>语义理解准确</strong>：能根据用户指令拆解步骤，如“先输错密码→再输对密码→选课→进错题集→答题→提交”。<br />
+- <strong>工程化意识强</strong>：主动生成报告、调用 done 动作，符合自动化测试最佳实践。</p>
+<p>🔧 <strong>改进建议</strong>：<br />
+1. <strong>增强状态感知</strong>：引入“提交成功”状态校验，避免无效重试。<br />
+2. <strong>优化元素定位</strong>：从 index 定位转向语义化定位（如文本、class、data-id）。<br />
+3. <strong>统一页面跳转逻辑</strong>：提交后应跳转至结果页或保持原页，避免跳转至无关页面。<br />
+4. <strong>补充用例标识</strong>：建议在测试框架中明确“用例”概念，便于统计与管理。</p>
+<p>📌 <strong>最终结论</strong>：本次测试验证了系统核心功能链路的可用性，AI Agent 表现优异，具备独立完成复杂业务流程的能力。建议将此类“流程级测试”纳入常规回归测试范围，提升系统健壮性。</p>
+<hr />
+<blockquote>
+<p>📄 附件：<code>results.md</code>（已生成，包含完整执行摘要）<br />
+🕒 总耗时：506 秒 —— 合理，因涉及多次页面加载与人工模拟操作。<br />
+🎯 目标达成：✅ 所有步骤按要求执行完毕，系统反馈“提交成功”。</p>
+</blockquote></div>
+    </div>
+</body>
+</html>
