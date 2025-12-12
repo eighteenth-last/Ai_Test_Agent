@@ -4,7 +4,47 @@
       <template #header>
         <div style="display: flex; justify-content: space-between; align-items: center">
           <h3>测试报告列表</h3>
-          <el-button size="small" @click="loadReports">刷新</el-button>
+          <!-- 筛选条件和刷新按钮在同一行 -->
+          <div style="display: flex; gap: 10px; align-items: center">
+            <el-select
+              v-model="filterStatus"
+              placeholder="测试状态"
+              clearable
+              size="small"
+              style="width: 120px"
+              @change="handleFilterChange"
+            >
+              <el-option label="通过" value="通过" />
+              <el-option label="失败" value="失败" />
+            </el-select>
+            
+            <el-select
+              v-model="filterFormat"
+              placeholder="格式类型"
+              clearable
+              size="small"
+              style="width: 120px"
+              @change="handleFilterChange"
+            >
+              <el-option label="HTML" value="html" />
+              <el-option label="Markdown" value="markdown" />
+              <el-option label="TXT" value="txt" />
+            </el-select>
+            
+            <el-date-picker
+              v-model="dateRange"
+              type="daterange"
+              range-separator="至"
+              start-placeholder="开始日期"
+              end-placeholder="结束日期"
+              size="small"
+              style="width: 240px"
+              @change="handleFilterChange"
+            />
+            
+            <el-button size="small" @click="resetFilters">重置筛选</el-button>
+            <el-button size="small" @click="refreshData">刷新</el-button>
+          </div>
         </div>
       </template>
       
@@ -44,6 +84,19 @@
           </template>
         </el-table-column>
       </el-table>
+      
+      <!-- 分页组件 -->
+      <div style="margin-top: 20px; display: flex; justify-content: center">
+        <el-pagination
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="total"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="handleSizeChange"
+          @current-change="handleCurrentChange"
+        />
+      </div>
     </el-card>
 
     <!-- 报告详情对话框 -->
@@ -109,20 +162,121 @@ const dialogVisible = ref(false)
 const fullscreen = ref(false)
 const currentReport = ref(null)
 
-// 加载报告列表
+// 分页状态
+const currentPage = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
+
+// 筛选条件
+const filterStatus = ref('')
+const filterFormat = ref('')
+const dateRange = ref(null)
+
+// 所有数据缓存（用于前端筛选和分页）
+const allReports = ref([])
+
+// 加载所有报告数据
+const loadAllReports = async () => {
+  try {
+    // 获取大量数据以支持前端筛选
+    const result = await testReportAPI.getList({ limit: 1000, offset: 0 })
+    if (result.success) {
+      allReports.value = result.data
+    }
+  } catch (error) {
+    console.error('加载所有报告失败:', error)
+  }
+}
+
+// 加载报告列表（应用筛选和分页）
 const loadReports = async () => {
   loading.value = true
   try {
-    const result = await testReportAPI.getList({ limit: 20, offset: 0 })
-    if (result.success) {
-      reports.value = result.data
+    // 如果没有缓存数据，先加载
+    if (allReports.value.length === 0) {
+      await loadAllReports()
     }
+    
+    // 应用前端筛选
+    let filteredData = allReports.value
+    
+    // 状态筛选
+    if (filterStatus.value) {
+      filteredData = filteredData.filter(report => {
+        if (report.summary?.status) {
+          return report.summary.status === filterStatus.value
+        } else if (report.summary?.pass !== undefined) {
+          const status = report.summary.fail === 0 ? '通过' : '失败'
+          return status === filterStatus.value
+        }
+        return false
+      })
+    }
+    
+    // 格式筛选
+    if (filterFormat.value) {
+      filteredData = filteredData.filter(report => 
+        report.format_type === filterFormat.value
+      )
+    }
+    
+    // 日期范围筛选
+    if (dateRange.value && dateRange.value.length === 2) {
+      const [startDate, endDate] = dateRange.value
+      filteredData = filteredData.filter(report => {
+        const reportDate = new Date(report.created_at)
+        return reportDate >= startDate && reportDate <= endDate
+      })
+    }
+    
+    // 更新总数
+    total.value = filteredData.length
+    
+    // 前端分页
+    const start = (currentPage.value - 1) * pageSize.value
+    const end = start + pageSize.value
+    reports.value = filteredData.slice(start, end)
+    
   } catch (error) {
     ElMessage.error('加载报告列表失败')
     console.error(error)
   } finally {
     loading.value = false
   }
+}
+
+// 处理筛选条件变化
+const handleFilterChange = () => {
+  currentPage.value = 1  // 重置到第一页
+  loadReports()
+}
+
+// 重置筛选条件
+const resetFilters = () => {
+  filterStatus.value = ''
+  filterFormat.value = ''
+  dateRange.value = null
+  currentPage.value = 1
+  loadReports()
+}
+
+// 处理每页条数变化
+const handleSizeChange = (newSize) => {
+  pageSize.value = newSize
+  currentPage.value = 1
+  loadReports()
+}
+
+// 处理当前页变化
+const handleCurrentChange = (newPage) => {
+  currentPage.value = newPage
+  loadReports()
+}
+
+// 刷新数据（重新加载所有数据）
+const refreshData = async () => {
+  allReports.value = []  // 清空缓存
+  await loadReports()
 }
 
 // 查看报告

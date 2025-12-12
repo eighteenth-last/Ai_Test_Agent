@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Report</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px;
+            line-height: 1.8;
+            background-color: #f5f7fa;
+        }
+        
+        #content {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #2c3e50;
+            font-size: 32px;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #4CAF50;
+        }
+        
+        h2 {
+            color: #34495e;
+            font-size: 24px;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            padding-top: 20px;
+        }
+        
+        h3 {
+            color: #555;
+            font-size: 20px;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        h4 {
+            color: #666;
+            font-size: 18px;
+            margin-top: 25px;
+            margin-bottom: 12px;
+        }
+        
+        p {
+            margin: 15px 0;
+            color: #333;
+        }
+        
+        ul, ol {
+            margin: 20px 0;
+            padding-left: 30px;
+        }
+        
+        li {
+            margin: 10px 0;
+            line-height: 1.8;
+        }
+        
+        hr {
+            border: none;
+            border-top: 2px solid #e0e0e0;
+            margin: 40px 0;
+        }
+        
+        blockquote {
+            background-color: #fff3cd;
+            border-left: 5px solid #ffc107;
+            padding: 20px 25px;
+            margin: 25px 0;
+            border-radius: 4px;
+        }
+        
+        code {
+            background-color: #f4f4f4;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 30px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        th, td {
+            border: 1px solid #ddd;
+            padding: 15px 20px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: #4CAF50;
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        
+        .pass {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        
+        .fail {
+            color: #f44336;
+            font-weight: bold;
+        }
+        
+        strong {
+            color: #2c3e50;
+        }
+    </style>
+</head>
+<body>
+    <div id="content">
+        <div class="markdown- report"><h1>AI 自动化测试报告</h1>
+<hr />
+<h2>1. 测试概览</h2>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>数值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>总用例数</td>
+<td>0</td>
+</tr>
+<tr>
+<td>通过用例数</td>
+<td>0</td>
+</tr>
+<tr>
+<td>失败用例数</td>
+<td>0</td>
+</tr>
+<tr>
+<td>通过率</td>
+<td>0%</td>
+</tr>
+<tr>
+<td>总耗时</td>
+<td>128 秒</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>说明</strong>：虽然系统显示“总计 0 个用例”，但实际执行了 1 个完整的登录流程测试（ID: 82），该测试最终标记为失败。因此，本报告将围绕此唯一执行的测试用例进行详细分析。</p>
+</blockquote>
+<hr />
+<h2>2. 测试用例详情</h2>
+<h3>用例 ID: 82</h3>
+<ul>
+<li><strong>状态</strong>: ❌ 失败  </li>
+<li><strong>执行时间</strong>: 2025-12-11T21:00:39  </li>
+<li><strong>总耗时</strong>: 128 秒  </li>
+<li><strong>错误信息</strong>: <code>测试未完成或失败</code>  </li>
+<li><strong>最终页面 URL</strong>: <code>http://123.56.3.98:81/stu/#pages_login_student</code>  </li>
+<li><strong>最终状态</strong>: 登录失败，系统返回“密码错误”提示  </li>
+</ul>
+<hr />
+<h2>3. 行为分析（重点）</h2>
+<p>本测试由 AI Agent 自主执行，共经历 8 个步骤，完整模拟用户登录学生系统的全过程。以下是关键操作路径与行为语义化分析：</p>
+<hr />
+<h3>✅ 步骤 1：导航至登录页</h3>
+<ul>
+<li><strong>操作</strong>: 访问 <code>http://123.56.3.98:81/stu/#pages_login_loginx</code></li>
+<li><strong>Agent 思考</strong>: “首次访问目标页面，需确认页面加载成功。”</li>
+<li><strong>结果</strong>: 页面跳转成功，但初始为空白页 → <strong>合理等待策略启动</strong></li>
+</ul>
+<blockquote>
+<p>📌 <strong>分析</strong>：Agent 判断页面可能未完全渲染，主动进入下一步等待，体现智能容错能力。</p>
+</blockquote>
+<hr />
+<h3>⏳ 步骤 2：等待页面加载</h3>
+<ul>
+<li><strong>操作</strong>: 等待 3 秒</li>
+<li><strong>Agent 思考</strong>: “页面空白，可能是加载中，应等待内容出现。”</li>
+<li><strong>结果</strong>: 页面加载完成，标题显示“登录”，输入框和按钮可见 → <strong>成功识别 UI 元素</strong></li>
+</ul>
+<blockquote>
+<p>📌 <strong>分析</strong>：等待策略有效，确保后续操作基于稳定 DOM 状态，避免因元素未就绪导致失败。</p>
+</blockquote>
+<hr />
+<h3>✍️ 步骤 3：输入用户名</h3>
+<ul>
+<li><strong>操作</strong>: 在索引 <code>[0]</code> 输入框中输入 <code>2022900116</code></li>
+<li><strong>Agent 思考</strong>: “已识别账户输入框，按计划填入指定用户名。”</li>
+<li><strong>结果</strong>: 成功输入，无异常 → <strong>符合预期</strong></li>
+</ul>
+<hr />
+<h3>✍️ 步骤 4：输入密码</h3>
+<ul>
+<li><strong>操作</strong>: 在索引 <code>[1]</code> 输入框中输入 <code>900112</code></li>
+<li><strong>Agent 思考</strong>: “密码字段已定位，继续执行下一步。”</li>
+<li><strong>结果</strong>: 成功输入 → <strong>操作无误</strong></li>
+</ul>
+<hr />
+<h3>🔘 步骤 5：点击登录按钮</h3>
+<ul>
+<li><strong>操作</strong>: 点击索引 <code>[6]</code> 的“登录”按钮</li>
+<li><strong>Agent 思考</strong>: “所有凭证已填写，现在提交表单。”</li>
+<li><strong>结果</strong>: 页面未跳转，弹出“密码错误”提示 → <strong>首次失败信号</strong></li>
+</ul>
+<blockquote>
+<p>📌 <strong>关键转折点</strong>：此处是整个测试的失败根源。Agent 执行动作完全正确，但系统拒绝登录，表明问题不在自动化脚本，而在<strong>凭证有效性或系统认证逻辑</strong>。</p>
+</blockquote>
+<hr />
+<h3>🖼️ 步骤 6：保存失败截图</h3>
+<ul>
+<li><strong>操作</strong>: 将当前页面保存为 PDF 文件</li>
+<li><strong>Agent 思考</strong>: “登录失败，需保留证据供后续分析。”</li>
+<li><strong>结果</strong>: 成功生成 <code>123-56-3-98-81-stu-pages-login-student.pdf</code></li>
+</ul>
+<blockquote>
+<p>📌 <strong>分析</strong>：Agent 主动收集失败现场证据，体现良好的调试支持能力。</p>
+</blockquote>
+<hr />
+<h3>📄 步骤 7 &amp; 8：记录结果并结束任务</h3>
+<ul>
+<li><strong>操作</strong>: </li>
+<li>向 <code>results.md</code> 追加测试日志</li>
+<li>调用 <code>done</code> 动作，标记 <code>success=false</code></li>
+<li>附带文件：<code>results.md</code>, <code>PDF 截图</code></li>
+<li><strong>Agent 思考</strong>: “已完成全部步骤，虽失败但过程规范，应如实汇报。”</li>
+</ul>
+<blockquote>
+<p>📌 <strong>分析</strong>：Agent 完整闭环测试流程，即使失败也提供结构化报告，便于人工复盘。</p>
+</blockquote>
+<hr />
+<h2>4. 失败原因诊断与修复建议</h2>
+<h3>🔍 根本原因诊断：</h3>
+<ul>
+<li><strong>非自动化脚本错误</strong>：所有操作均按计划执行，UI 元素定位准确，输入/点击无误。</li>
+<li><strong>真实失败原因</strong>：系统返回“密码错误” → <strong>凭证无效</strong></li>
+<li>可能情况：<ol>
+<li>提供的密码 <code>900112</code> 已被更改或重置；</li>
+<li>用户名 <code>2022900116</code> 对应账户被锁定、禁用或不存在；</li>
+<li>系统存在认证服务异常（如数据库连接失败、缓存未更新）；</li>
+<li>测试环境与生产环境凭证不同步。</li>
+</ol>
+</li>
+</ul>
+<hr />
+<h3>🛠️ 修复建议：</h3>
+<h4>✅ 短期解决方案：</h4>
+<ol>
+<li>
+<p><strong>验证测试凭证</strong>：<br />
+   - 使用管理员账号或后台工具确认 <code>2022900116 / 900112</code> 是否仍为有效组合；<br />
+   - 若无效，请更新测试数据集。</p>
+</li>
+<li>
+<p><strong>重置测试账户密码</strong>：<br />
+   - 若允许，通过系统管理界面重置该账户密码，并同步更新测试脚本。</p>
+</li>
+<li>
+<p><strong>检查账户状态</strong>：<br />
+   - 登录后台查看该账户是否被锁定、过期或权限受限。</p>
+</li>
+</ol>
+<h4>🚀 中长期优化建议：</h4>
+<ol>
+<li>
+<p><strong>引入动态凭证管理机制</strong>：<br />
+   - 使用 API 获取临时有效凭证，避免硬编码静态密码；<br />
+   - 支持从配置中心或数据库读取最新测试账号。</p>
+</li>
+<li>
+<p><strong>增强失败分类处理</strong>：<br />
+   - 当检测到“密码错误”等明确业务错误时，可自动触发“重试 + 凭证刷新”流程；<br />
+   - 区分“技术性失败”（如元素找不到）与“业务性失败”（如密码错误），分别处理。</p>
+</li>
+<li>
+<p><strong>增加前置健康检查</strong>：<br />
+   - 在正式执行前，先调用 <code>/health</code> 或 <code>/login/test</code> 接口验证系统可用性和凭证有效性。</p>
+</li>
+</ol>
+<hr />
+<h2>5. 测试总结</h2>
+<p>本次测试虽以失败告终，但<strong>AI Agent 展现出高度自主性与严谨性</strong>：</p>
+<ul>
+<li>✅ <strong>全流程覆盖</strong>：从导航、等待、输入、点击到结果归档，完整模拟真实用户行为；</li>
+<li>✅ <strong>智能容错机制</strong>：面对页面空白主动等待，避免因 DOM 未加载导致失败；</li>
+<li>✅ <strong>证据留存完善</strong>：自动生成 PDF 截图与 Markdown 报告，便于人工复盘；</li>
+<li>✅ <strong>失败归因清晰</strong>：精准定位为“凭证无效”，而非脚本或元素问题，极大提升排查效率。</li>
+</ul>
+<blockquote>
+<p>💡 <strong>结论</strong>：本次测试失败属于<strong>业务层面凭证问题</strong>，非自动化框架缺陷。建议优先校验测试数据有效性，再重新运行测试。同时推荐引入动态凭证管理和失败分类机制，进一步提升自动化测试的健壮性与智能化水平。</p>
+</blockquote>
+<hr />
+<p>✅ <strong>报告生成完毕</strong><br />
+📅 生成时间：2025-12-11<br />
+🤖 生成者：AI 测试报告专家</p></div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Report</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px;
+            line-height: 1.8;
+            background-color: #f5f7fa;
+        }
+        
+        #content {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #2c3e50;
+            font-size: 32px;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #4CAF50;
+        }
+        
+        h2 {
+            color: #34495e;
+            font-size: 24px;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            padding-top: 20px;
+        }
+        
+        h3 {
+            color: #555;
+            font-size: 20px;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        h4 {
+            color: #666;
+            font-size: 18px;
+            margin-top: 25px;
+            margin-bottom: 12px;
+        }
+        
+        p {
+            margin: 15px 0;
+            color: #333;
+        }
+        
+        ul, ol {
+            margin: 20px 0;
+            padding-left: 30px;
+        }
+        
+        li {
+            margin: 10px 0;
+            line-height: 1.8;
+        }
+        
+        hr {
+            border: none;
+            border-top: 2px solid #e0e0e0;
+            margin: 40px 0;
+        }
+        
+        blockquote {
+            background-color: #fff3cd;
+            border-left: 5px solid #ffc107;
+            padding: 20px 25px;
+            margin: 25px 0;
+            border-radius: 4px;
+        }
+        
+        code {
+            background-color: #f4f4f4;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 30px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        th, td {
+            border: 1px solid #ddd;
+            padding: 15px 20px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: #4CAF50;
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        
+        .pass {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        
+        .fail {
+            color: #f44336;
+            font-weight: bold;
+        }
+        
+        strong {
+            color: #2c3e50;
+        }
+    </style>
+</head>
+<body>
+    <div id="content">
+        <div class="markdown- report"><h1>🧪 学生登录系统自动化测试报告</h1>
+<hr />
+<h2>1. 测试概览</h2>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>数值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>总用例数</td>
+<td>0</td>
+</tr>
+<tr>
+<td>通过用例数</td>
+<td>0</td>
+</tr>
+<tr>
+<td>失败用例数</td>
+<td>0（但实际执行失败）</td>
+</tr>
+<tr>
+<td>通过率</td>
+<td>0%</td>
+</tr>
+<tr>
+<td>总耗时</td>
+<td>95 秒</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>💡 <strong>说明</strong>：虽然测试框架统计“0个用例”，但实际执行了完整的学生登录流程，最终因认证失败而标记为 <code>fail</code>。因此，本报告将该次执行视为一个完整的测试用例进行分析。</p>
+</blockquote>
+<hr />
+<h2>2. 测试用例详情</h2>
+<h3>🆔 用例 ID: 89</h3>
+<ul>
+<li><strong>状态</strong>: ❌ 失败  </li>
+<li><strong>执行时间</strong>: 2025-12-11T22:41:42  </li>
+<li><strong>总耗时</strong>: 95 秒  </li>
+<li><strong>错误信息</strong>: <code>测试未完成或失败</code>  </li>
+<li><strong>关键输出文件</strong>: <code>123-56-3-98-81-stu-pages-login-student.pdf</code>（已保存失败页面截图）</li>
+</ul>
+<hr />
+<h2>3. 详细行为分析（Agent 执行路径语义化解读）</h2>
+<p>本次测试由 AI Agent 自动执行，共经历 <strong>7 步操作</strong>，完整模拟学生登录流程。以下是逐步骤语义化分析：</p>
+<hr />
+<h3>✅ Step 1：导航至登录页</h3>
+<ul>
+<li><strong>操作</strong>: 访问 URL <code>http://123.56.3.98:81/stu/#pages_login_loginx</code></li>
+<li><strong>思考逻辑</strong>: <blockquote>
+<p>“用户要求立即开始测试，当前页面为空（about:blank），需跳转到目标登录页。”</p>
+</blockquote>
+</li>
+<li><strong>结果</strong>: 成功跳转，页面 URL 变更为 <code>#pages_login_student</code>，但内容尚未渲染。</li>
+<li><strong>评估</strong>: ✔️ 导航成功，但页面为空，需等待加载。</li>
+</ul>
+<hr />
+<h3>⏳ Step 2：等待页面加载</h3>
+<ul>
+<li><strong>操作</strong>: 等待 3 秒，确保 SPA 页面渲染完成。</li>
+<li><strong>思考逻辑</strong>: <blockquote>
+<p>“页面显示为空，可能是单页应用（SPA）正在加载，需等待 JavaScript 渲染表单元素。”</p>
+</blockquote>
+</li>
+<li><strong>结果</strong>: 3 秒后，页面标题变为“登录”，并识别出交互元素：</li>
+<li>用户名输入框（索引 [0]）</li>
+<li>密码输入框（索引 [1]）</li>
+<li>登录按钮（索引 [6]）</li>
+<li><strong>评估</strong>: ✔️ 页面成功加载，可继续下一步操作。</li>
+</ul>
+<hr />
+<h3>✍️ Step 3：输入用户名</h3>
+<ul>
+<li><strong>操作</strong>: 在索引 [0] 输入框中键入 <code>2022900116</code></li>
+<li><strong>思考逻辑</strong>: <blockquote>
+<p>“用户名字段已定位，按测试任务输入指定账号。”</p>
+</blockquote>
+</li>
+<li><strong>结果</strong>: 用户名成功填入。</li>
+<li><strong>评估</strong>: ✔️ 输入成功，无异常。</li>
+</ul>
+<hr />
+<h3>✍️ Step 4：输入密码</h3>
+<ul>
+<li><strong>操作</strong>: 在索引 [1] 输入框中键入 <code>900112</code></li>
+<li><strong>思考逻辑</strong>: <blockquote>
+<p>“密码字段可见，直接输入指定密码，无需滚动或等待。”</p>
+</blockquote>
+</li>
+<li><strong>结果</strong>: 密码成功填入。</li>
+<li><strong>评估</strong>: ✔️ 输入成功，无异常。</li>
+</ul>
+<hr />
+<h3>🔘 Step 5：点击登录按钮</h3>
+<ul>
+<li><strong>操作</strong>: 点击索引 [6] 的“登录”按钮</li>
+<li><strong>思考逻辑</strong>: <blockquote>
+<p>“已完成账号密码输入，下一步提交表单，预期跳转至学生仪表盘。”</p>
+</blockquote>
+</li>
+<li><strong>结果</strong>: 页面未跳转，出现提示：“密码错误”</li>
+<li><strong>评估</strong>: ❌ 登录失败，系统返回认证错误。</li>
+</ul>
+<hr />
+<h3>📄 Step 6：保存失败截图</h3>
+<ul>
+<li><strong>操作</strong>: 将当前页面保存为 PDF 文件 <code>123-56-3-98-81-stu-pages-login-student.pdf</code></li>
+<li><strong>思考逻辑</strong>: <blockquote>
+<p>“根据测试规范，失败时必须保存当前页面作为证据，再调用 done 报告失败。”</p>
+</blockquote>
+</li>
+<li><strong>结果</strong>: PDF 成功生成，记录错误状态。</li>
+<li><strong>评估</strong>: ✔️ 文档留存合规，符合测试规范。</li>
+</ul>
+<hr />
+<h3>🛑 Step 7：结束测试并上报失败</h3>
+<ul>
+<li><strong>操作</strong>: 调用 <code>done(success=false)</code>，附带失败描述与 PDF 文件</li>
+<li><strong>思考逻辑</strong>: <blockquote>
+<p>“所有步骤已完成，但登录失败。无法继续，需上报失败并提供证据。”</p>
+</blockquote>
+</li>
+<li><strong>结果</strong>: 测试标记为失败，输出包含错误说明和附件。</li>
+<li><strong>评估</strong>: ✔️ 流程闭环，失败处理规范。</li>
+</ul>
+<hr />
+<h2>4. 失败原因诊断与修复建议</h2>
+<h3>🔍 根本原因分析</h3>
+<ul>
+<li><strong>直接原因</strong>: 系统返回“密码错误”提示，表明账户 <code>2022900116</code> 使用密码 <code>900112</code> 无法通过认证。</li>
+<li><strong>可能原因</strong>:<br />
+  1. <strong>密码错误</strong>：测试用例提供的密码不正确。<br />
+  2. <strong>账户状态异常</strong>：账户被锁定、未激活或不存在。<br />
+  3. <strong>环境问题</strong>：测试环境数据库未同步最新密码，或存在缓存/配置错误。<br />
+  4. <strong>前端校验拦截</strong>：密码格式不符合规则（如长度、复杂度），但未在界面上明确提示。</li>
+</ul>
+<blockquote>
+<p>📌 <strong>关键发现</strong>：Agent 在每一步都准确执行了指令，且元素定位无误，<strong>失败并非由自动化脚本缺陷导致，而是业务逻辑层面的认证失败</strong>。</p>
+</blockquote>
+<hr />
+<h3>🛠️ 修复建议</h3>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>建议</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>测试数据</strong></td>
+<td>核对测试账户 <code>2022900116</code> 的真实密码，更新测试用例中的密码字段。</td>
+</tr>
+<tr>
+<td><strong>环境检查</strong></td>
+<td>验证测试环境数据库中该账户是否存在、是否启用、密码是否同步。</td>
+</tr>
+<tr>
+<td><strong>日志排查</strong></td>
+<td>查看后端认证日志，确认是密码错误还是其他异常（如账户不存在、IP限制等）。</td>
+</tr>
+<tr>
+<td><strong>UI优化</strong></td>
+<td>若为密码格式错误，应在前端增加实时校验提示，避免用户盲目提交。</td>
+</tr>
+<tr>
+<td><strong>用例设计</strong></td>
+<td>增加“密码错误”场景的预期结果断言，使测试失败更明确、可追溯。</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>5. 测试总结</h2>
+<p>✅ <strong>优点</strong>：<br />
+- Agent 行为逻辑清晰，每一步均有合理思考与评估。<br />
+- 页面加载等待机制有效，避免因 SPA 渲染延迟导致的误判。<br />
+- 失败处理规范：自动保存截图 + 明确上报失败原因，便于后续排查。<br />
+- 全流程自动化执行，无手动干预，符合 CI/CD 测试标准。</p>
+<p>⚠️ <strong>不足</strong>：<br />
+- 测试用例未预设“密码错误”的预期结果，导致失败时缺乏上下文判断。<br />
+- 未尝试重试或切换账户，若为临时性错误（如网络抖动），可增加容错机制。</p>
+<p>📌 <strong>结论</strong>：</p>
+<blockquote>
+<p>本次测试虽标记为失败，但<strong>自动化流程本身运行稳定、逻辑严谨</strong>。失败根源在于<strong>测试数据或环境配置问题</strong>，而非脚本缺陷。建议优先核对测试账户密码，并补充“异常登录”场景的预期断言，以提升测试覆盖率与健壮性。</p>
+</blockquote>
+<hr />
+<p>📄 <strong>附件</strong>：<br />
+- <code>[PDF] 123-56-3-98-81-stu-pages-login-student.pdf</code> —— 登录失败页面截图，供人工复核使用。</p>
+<hr />
+<p>✅ <strong>报告生成完毕</strong> —— 由 AI 测试报告专家撰写，基于 Agent 执行日志深度解析。</p></div>
+    </div>
+</body>
+</html>

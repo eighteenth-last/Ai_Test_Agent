@@ -54,8 +54,8 @@ class TestCase(Base):
     expected = Column(Text, nullable=False, comment='预期结果')
     # 关键词标签
     keywords = Column(String(200), comment='关键词')
-    # 优先级：high/medium/low
-    priority = Column(String(20), comment='优先级')
+    # 优先级：1-4级（1级最高，3级为默认）
+    priority = Column(String(20), comment='优先级', default='3')
     # 用例类型：功能测试/接口测试/单元测试等
     case_type = Column(String(50), comment='用例类型')
     # 适用测试阶段

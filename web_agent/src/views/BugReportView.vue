@@ -4,35 +4,64 @@
       <template #header>
         <div style="display: flex; justify-content: space-between; align-items: center">
           <h3>错误集合</h3>
-          <div>
-            <el-select
-              v-model="filterSeverity"
-              placeholder="严重程度"
-              clearable
-              style="width: 120px; margin-right: 10px"
-              @change="loadBugs"
-            >
-              <el-option label="一级" value="一级" />
-              <el-option label="二级" value="二级" />
-              <el-option label="三级" value="三级" />
-              <el-option label="四级" value="四级" />
-            </el-select>
-            <el-select
-              v-model="filterStatus"
-              placeholder="状态"
-              clearable
-              style="width: 120px; margin-right: 10px"
-              @change="loadBugs"
-            >
-              <el-option label="待处理" value="待处理" />
-              <el-option label="已确认" value="已确认" />
-              <el-option label="已修复" value="已修复" />
-              <el-option label="已关闭" value="已关闭" />
-            </el-select>
-            <el-button size="small" @click="loadBugs">刷新</el-button>
-          </div>
+          <el-button size="small" @click="refreshData">刷新</el-button>
         </div>
       </template>
+      
+      <!-- 筛选条件 -->
+      <div style="margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap">
+        <el-select
+          v-model="filterSeverity"
+          placeholder="严重程度"
+          clearable
+          style="width: 150px"
+          @change="handleFilterChange"
+        >
+          <el-option label="一级" value="一级" />
+          <el-option label="二级" value="二级" />
+          <el-option label="三级" value="三级" />
+          <el-option label="四级" value="四级" />
+        </el-select>
+        
+        <el-select
+          v-model="filterStatus"
+          placeholder="状态"
+          clearable
+          style="width: 150px"
+          @change="handleFilterChange"
+        >
+          <el-option label="待处理" value="待处理" />
+          <el-option label="已确认" value="已确认" />
+          <el-option label="已修复" value="已修复" />
+          <el-option label="已关闭" value="已关闭" />
+        </el-select>
+        
+        <el-select
+          v-model="filterErrorType"
+          placeholder="错误类型"
+          clearable
+          style="width: 150px"
+          @change="handleFilterChange"
+        >
+          <el-option label="功能错误" value="功能错误" />
+          <el-option label="界面错误" value="界面错误" />
+          <el-option label="性能问题" value="性能问题" />
+          <el-option label="兼容性问题" value="兼容性问题" />
+          <el-option label="其他" value="其他" />
+        </el-select>
+        
+        <el-date-picker
+          v-model="dateRange"
+          type="daterange"
+          range-separator="至"
+          start-placeholder="开始日期"
+          end-placeholder="结束日期"
+          style="width: 280px"
+          @change="handleFilterChange"
+        />
+        
+        <el-button @click="resetFilters">重置筛选</el-button>
+      </div>
       
       <el-table :data="bugs" v-loading="loading" stripe>
         <el-table-column prop="id" label="ID" width="80" />
@@ -85,6 +114,19 @@
           </template>
         </el-table-column>
       </el-table>
+      
+      <!-- 分页组件 -->
+      <div style="margin-top: 20px; display: flex; justify-content: center">
+        <el-pagination
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="total"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="handleSizeChange"
+          @current-change="handleCurrentChange"
+        />
+      </div>
     </el-card>
 
     <!-- Bug 详情对话框 -->
@@ -157,14 +199,26 @@ const bugs = ref([])
 const loading = ref(false)
 const dialogVisible = ref(false)
 const currentBug = ref(null)
+
+// 分页状态
+const currentPage = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
+
+// 筛选条件
 const filterSeverity = ref('')
 const filterStatus = ref('')
+const filterErrorType = ref('')
+const dateRange = ref(null)
+
+// 所有数据缓存（用于前端筛选和分页）
+const allBugs = ref([])
 
 // 严重程度颜色映射
 const severityColors = {
   '一级': '#f56c6c',
   '二级': '#e6a23c',
-  '三级': '#FFFF00',
+  '三级': '#fdf6ec',
   '四级': '#808080'
 }
 
@@ -184,33 +238,110 @@ const getStatusType = (status) => {
   return typeMap[status] || 'info'
 }
 
-// 加载 Bug 列表
+// 加载所有 Bug 数据
+const loadAllBugs = async () => {
+  try {
+    // 获取大量数据以支持前端筛选
+    const result = await bugReportAPI.getList({ limit: 1000, offset: 0 })
+    if (result.success) {
+      allBugs.value = result.data
+    }
+  } catch (error) {
+    console.error('加载所有 Bug 失败:', error)
+  }
+}
+
+// 加载 Bug 列表（应用筛选和分页）
 const loadBugs = async () => {
   loading.value = true
   try {
-    const params = {
-      limit: 50,
-      offset: 0
+    // 如果没有缓存数据，先加载
+    if (allBugs.value.length === 0) {
+      await loadAllBugs()
     }
     
+    // 应用前端筛选
+    let filteredData = allBugs.value
+    
+    // 严重程度筛选
     if (filterSeverity.value) {
-      params.severity_level = filterSeverity.value
+      filteredData = filteredData.filter(bug => 
+        bug.severity_level === filterSeverity.value
+      )
     }
     
+    // 状态筛选
     if (filterStatus.value) {
-      params.status = filterStatus.value
+      filteredData = filteredData.filter(bug => 
+        bug.status === filterStatus.value
+      )
     }
     
-    const result = await bugReportAPI.getList(params)
-    if (result.success) {
-      bugs.value = result.data
+    // 错误类型筛选
+    if (filterErrorType.value) {
+      filteredData = filteredData.filter(bug => 
+        bug.error_type === filterErrorType.value
+      )
     }
+    
+    // 日期范围筛选
+    if (dateRange.value && dateRange.value.length === 2) {
+      const [startDate, endDate] = dateRange.value
+      filteredData = filteredData.filter(bug => {
+        const bugDate = new Date(bug.created_at)
+        return bugDate >= startDate && bugDate <= endDate
+      })
+    }
+    
+    // 更新总数
+    total.value = filteredData.length
+    
+    // 前端分页
+    const start = (currentPage.value - 1) * pageSize.value
+    const end = start + pageSize.value
+    bugs.value = filteredData.slice(start, end)
+    
   } catch (error) {
     ElMessage.error('加载 Bug 列表失败')
     console.error(error)
   } finally {
     loading.value = false
   }
+}
+
+// 处理筛选条件变化
+const handleFilterChange = () => {
+  currentPage.value = 1  // 重置到第一页
+  loadBugs()
+}
+
+// 重置筛选条件
+const resetFilters = () => {
+  filterSeverity.value = ''
+  filterStatus.value = ''
+  filterErrorType.value = ''
+  dateRange.value = null
+  currentPage.value = 1
+  loadBugs()
+}
+
+// 处理每页条数变化
+const handleSizeChange = (newSize) => {
+  pageSize.value = newSize
+  currentPage.value = 1
+  loadBugs()
+}
+
+// 处理当前页变化
+const handleCurrentChange = (newPage) => {
+  currentPage.value = newPage
+  loadBugs()
+}
+
+// 刷新数据（重新加载所有数据）
+const refreshData = async () => {
+  allBugs.value = []  // 清空缓存
+  await loadBugs()
 }
 
 // 查看详情
@@ -235,6 +366,11 @@ const updateStatus = async (bugId, status) => {
     const result = await bugReportAPI.updateStatus(bugId, status)
     if (result.success) {
       ElMessage.success(`状态已更新为: ${status}`)
+      // 更新缓存中的数据
+      const bug = allBugs.value.find(b => b.id === bugId)
+      if (bug) {
+        bug.status = status
+      }
       loadBugs()
     } else {
       ElMessage.error('更新状态失败')

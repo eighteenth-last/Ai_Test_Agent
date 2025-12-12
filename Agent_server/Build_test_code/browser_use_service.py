@@ -99,7 +99,7 @@ class BrowserUseService:
                 temperature=float(os.getenv('LLM_TEMPERATURE', '0.0')),
             )
             
-            # 4. 创建浏览器配置
+            # 4. 创建浏览器配置 参考web ui 的浏览器设置
             window_width = int(os.getenv('BROWSER_WINDOW_WIDTH', '1920'))
             window_height = int(os.getenv('BROWSER_WINDOW_HEIGHT', '1200'))
             
@@ -412,9 +412,10 @@ class BrowserUseService:
 2. 严格按照步骤顺序执行
 3. 每个步骤执行后验证是否成功
 4. 遇到问题时智能调整策略（如元素未找到，尝试滚动或等待）
-5. 关键步骤建议截图验证
-6. 完成所有步骤后明确说明"测试完成"
-7. 如果无法继续，说明原因并停止
+5. 关键步骤建议使用 save_screenshot 保存截图验证（PNG格式）
+6. ⚠️ 重要：如果测试失败或遇到错误，必须先使用 save_screenshot 保存当前页面截图，然后再调用 done 动作
+7. 完成所有步骤后明确说明"测试完成"
+8. 如果无法继续，说明原因并停止
 
 【成功标准】
 所有步骤顺利执行且预期结果达成

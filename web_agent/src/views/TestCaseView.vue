@@ -65,7 +65,7 @@
       <template #header>
         <div style="display: flex; justify-content: space-between; align-items: center">
           <h3>测试用例列表</h3>
-          <el-button size="small" @click="loadTestCases">刷新</el-button>
+          <el-button size="small" @click="refreshData">刷新</el-button>
         </div>
       </template>
       
@@ -80,7 +80,13 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="priority" label="优先级" width="100" />
+        <el-table-column label="优先级" width="100">
+          <template #default="{ row }">
+            <el-tag :color="getPriorityColor(row.priority)" style="color: #fff; border: none">
+              {{ formatPriority(row.priority) }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="case_type" label="用例类型" width="120" />
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
@@ -90,6 +96,19 @@
           </template>
         </el-table-column>
       </el-table>
+      
+      <!-- 分页组件 -->
+      <div style="margin-top: 20px; display: flex; justify-content: center">
+        <el-pagination
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="total"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="handleSizeChange"
+          @current-change="handleCurrentChange"
+        />
+      </div>
     </el-card>
 
     <!-- 详情对话框 -->
@@ -106,7 +125,7 @@
         </el-descriptions-item>
         <el-descriptions-item label="预期结果">{{ currentCase.expected }}</el-descriptions-item>
         <el-descriptions-item label="关键词">{{ currentCase.keywords }}</el-descriptions-item>
-        <el-descriptions-item label="优先级">{{ currentCase.priority }}</el-descriptions-item>
+        <el-descriptions-item label="优先级">{{ formatPriority(currentCase.priority) }}</el-descriptions-item>
         <el-descriptions-item label="用例类型">{{ currentCase.case_type }}</el-descriptions-item>
         <el-descriptions-item label="适用阶段">{{ currentCase.stage }}</el-descriptions-item>
       </el-descriptions>
@@ -130,6 +149,41 @@ const currentCase = ref(null)
 const selectedFile = ref(null)
 const uploadRef = ref(null)
 
+// 分页状态
+const currentPage = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
+
+// 所有数据缓存（用于前端分页）
+const allTestCases = ref([])
+
+// 优先级颜色映射（与 Bug 严重程度颜色一致）
+// 1级：冒烟用例，漏测即阻塞发布，对应 Bug 致命/严重
+// 2级：核心功能，漏测需 hotfix，对应 Bug 严重/主要
+// 3级：一般功能，可下个迭代修复，对应 Bug 一般（默认）
+// 4级：优化或低频功能，可延期，对应 Bug 轻微/建议
+const priorityColors = {
+  '1': '#f56c6c',
+  '2': '#e6a23c',
+  '3': '#0337a1',
+  '4': '#808080',
+}
+
+// 获取优先级颜色
+const getPriorityColor = (priority) => {
+  return priorityColors[String(priority)] || '#909399'
+}
+
+// 格式化优先级显示
+const formatPriority = (priority) => {
+  // 如果是数字，直接显示
+  if (/^[1-4]$/.test(String(priority))) {
+    return `${priority}级`
+  }
+  // 如果是中文，保持原样（兼容旧数据）
+  return priority
+}
+
 // 文件选择处理
 const handleFileChange = (file) => {
   selectedFile.value = file.raw
@@ -151,7 +205,7 @@ const uploadFileAndGenerate = async () => {
       if (uploadRef.value) {
         uploadRef.value.clearFiles()
       }
-      loadTestCases()
+      refreshData()  // 刷新数据并重置分页
     } else {
       ElMessage.error(result.message)
     }
@@ -176,7 +230,7 @@ const generateTestCases = async () => {
     if (result.success) {
       ElMessage.success(result.message)
       form.value.requirement = ''
-      loadTestCases()
+      refreshData()  // 刷新数据并重置分页
     } else {
       ElMessage.error(result.message)
     }
@@ -188,20 +242,62 @@ const generateTestCases = async () => {
   }
 }
 
-// 加载测试用例列表
+// 加载所有测试用例数据
+const loadAllTestCases = async () => {
+  try {
+    // 获取大量数据以支持前端分页
+    const result = await testCaseAPI.getList({ limit: 1000, offset: 0 })
+    if (result.success) {
+      allTestCases.value = result.data
+    }
+  } catch (error) {
+    console.error('加载所有测试用例失败:', error)
+  }
+}
+
+// 加载测试用例列表（应用分页）
 const loadTestCases = async () => {
   loading.value = true
   try {
-    const result = await testCaseAPI.getList({ limit: 20, offset: 0 })
-    if (result.success) {
-      testCases.value = result.data
+    // 如果没有缓存数据，先加载
+    if (allTestCases.value.length === 0) {
+      await loadAllTestCases()
     }
+    
+    // 更新总数
+    total.value = allTestCases.value.length
+    
+    // 前端分页
+    const start = (currentPage.value - 1) * pageSize.value
+    const end = start + pageSize.value
+    testCases.value = allTestCases.value.slice(start, end)
+    
   } catch (error) {
     ElMessage.error('加载测试用例失败')
     console.error(error)
   } finally {
     loading.value = false
   }
+}
+
+// 处理每页条数变化
+const handleSizeChange = (newSize) => {
+  pageSize.value = newSize
+  currentPage.value = 1
+  loadTestCases()
+}
+
+// 处理当前页变化
+const handleCurrentChange = (newPage) => {
+  currentPage.value = newPage
+  loadTestCases()
+}
+
+// 刷新数据（重新加载所有数据）
+const refreshData = async () => {
+  allTestCases.value = []  // 清空缓存
+  currentPage.value = 1
+  await loadTestCases()
 }
 
 // 查看详情

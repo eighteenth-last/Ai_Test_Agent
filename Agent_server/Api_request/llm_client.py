@@ -81,7 +81,7 @@ class LLMClient:
         self,
         requirement: str,
         count: int = 3,
-        priority: str = "medium"
+        priority: str = "3"
     ) -> Dict[str, Any]:
         """
         Generate test cases based on requirements
@@ -89,7 +89,7 @@ class LLMClient:
         Args:
             requirement: User requirements or test points
             count: Number of test cases to generate
-            priority: Default priority (high/medium/low)
+            priority: Default priority (1-4, default is 3)
         
         Returns:
             Generated test case data with success flag
@@ -110,6 +110,12 @@ class LLMClient:
 
 模板字段：{', '.join(template_fields)}
 
+优先级说明（使用数字1-4）：
+- 1级：冒烟用例，漏测即阻塞发布，对应 Bug 致命/严重
+- 2级：核心功能，漏测需 hotfix，对应 Bug 严重/主要
+- 3级：一般功能，可下个迭代修复，对应 Bug 一般（默认）
+- 4级：优化或低频功能，可延期，对应 Bug 轻微/建议
+
 输出必须为 JSON 格式，所有内容使用中文：
 {{
 "test_cases": [
@@ -120,7 +126,7 @@ class LLMClient:
       "steps": ["步骤1", "步骤2", "步骤3"],
       "expected": "预期结果",
       "keywords": "关键词1,关键词2",
-      "priority": "{priority}",
+      "priority": "3",
       "case_type": "功能测试/接口测试/单元测试",
       "stage": "功能测试阶段/集成测试阶段/系统测试阶段"
     }}
@@ -131,6 +137,8 @@ class LLMClient:
 1. 模块名、标题、步骤、预期结果等所有描述性文字必须使用中文
 2. 步骤描述要清晰具体，使用中文表达，例如："打开浏览器并访问登录页面"
 3. 不要使用英文单词，除非是技术术语（如 URL、ID 等）
+4. priority 字段必须是数字字符串 "1"、"2"、"3" 或 "4"，默认为 "3"
+5. 根据用例的重要性合理分配优先级
 """
         
         messages = [

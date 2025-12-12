@@ -29,7 +29,13 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="priority" label="优先级" width="100" />
+        <el-table-column label="优先级" width="100">
+          <template #default="{ row }">
+            <el-tag :color="getPriorityColor(row.priority)" style="color: #fff; border: none">
+              {{ formatPriority(row.priority) }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="case_type" label="用例类型" width="120" />
         <el-table-column label="操作" width="250" fixed="right">
           <template #default="{ row }">
@@ -63,7 +69,7 @@
         </el-descriptions-item>
         <el-descriptions-item label="预期结果">{{ currentCase.expected }}</el-descriptions-item>
         <el-descriptions-item label="关键词">{{ currentCase.keywords }}</el-descriptions-item>
-        <el-descriptions-item label="优先级">{{ currentCase.priority }}</el-descriptions-item>
+        <el-descriptions-item label="优先级">{{ formatPriority(currentCase.priority) }}</el-descriptions-item>
         <el-descriptions-item label="用例类型">{{ currentCase.case_type }}</el-descriptions-item>
         <el-descriptions-item label="适用阶段">{{ currentCase.stage }}</el-descriptions-item>
       </el-descriptions>
@@ -313,6 +319,33 @@ const executeConfig = reactive({
   max_steps: 20,
   use_vision: false
 })
+
+// 优先级颜色映射（与 Bug 严重程度颜色一致）
+// 1级：冒烟用例，漏测即阻塞发布，对应 Bug 致命/严重
+// 2级：核心功能，漏测需 hotfix，对应 Bug 严重/主要
+// 3级：一般功能，可下个迭代修复，对应 Bug 一般（默认）
+// 4级：优化或低频功能，可延期，对应 Bug 轻微/建议
+const priorityColors = {
+  '1': '#f56c6c',
+  '2': '#e6a23c',
+  '3': '#0337a1',
+  '4': '#808080',
+}
+
+// 获取优先级颜色
+const getPriorityColor = (priority) => {
+  return priorityColors[String(priority)] || '#909399'
+}
+
+// 格式化优先级显示
+const formatPriority = (priority) => {
+  // 如果是数字，直接显示
+  if (/^[1-4]$/.test(String(priority))) {
+    return `${priority}级`
+  }
+  // 如果是中文，保持原样（兼容旧数据）
+  return priority
+}
 
 // 加载测试用例列表
 const loadTestCases = async () => {

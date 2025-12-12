@@ -21,7 +21,7 @@ BUILD_POINTS_USER_TEMPLATE = """根据以下需求生成结构化测试点列表
       "id": "p1",
       "title": "...",
       "description": "...",
-      "priority": "high|medium|low",
+      "priority": "1|2|3|4",
       "type": "Functional|Boundary|Exception|Performance",
       "relevance_score": 0.9
     }
@@ -51,7 +51,7 @@ BUILD_TESTS_USER_TEMPLATE = """根据以下需求/测试点生成测试用例，
       "steps": ["步骤1（中文）", "步骤2（中文）", "步骤3（中文）"],
       "expected": "预期结果（中文）",
       "keywords": "关键词1,关键词2",
-      "priority": "high/medium/low",
+      "priority": "1/2/3/4（数字，3为默认）",
       "case_type": "功能测试|接口测试|单元测试",
       "stage": "功能测试阶段|集成测试阶段|系统测试阶段",
       "test_data": {"key": "value"}

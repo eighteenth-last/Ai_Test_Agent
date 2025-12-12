@@ -61,8 +61,11 @@ CHROME_DOCKER_ARGS = [
 
 # Screen resolution utilities not available in browser-use 0.3.3, define locally
 def get_screen_resolution() -> dict:
-    """Get screen resolution, defaults to 1920x1080 if cannot detect"""
-    return {'width': 1920, 'height': 1080}
+    """Get screen resolution from environment variables"""
+    import os
+    width = int(os.getenv('BROWSER_WINDOW_WIDTH', '1920'))
+    height = int(os.getenv('BROWSER_WINDOW_HEIGHT', '1200'))
+    return {'width': width, 'height': height}
 
 
 def get_window_adjustments() -> tuple:
@@ -95,7 +98,10 @@ class CustomBrowser(Browser):
             }
             offset_x, offset_y = get_window_adjustments()
         elif self.config.headless:
-            screen_size = {'width': 1920, 'height': 1080}
+            import os
+            width = int(os.getenv('BROWSER_WINDOW_WIDTH', '1920'))
+            height = int(os.getenv('BROWSER_WINDOW_HEIGHT', '1200'))
+            screen_size = {'width': width, 'height': height}
             offset_x, offset_y = 0, 0
         else:
             screen_size = get_screen_resolution()

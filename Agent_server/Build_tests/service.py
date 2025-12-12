@@ -48,11 +48,11 @@ class TestCaseService:
             
             llm_client = get_llm_client()
             
-            # 调用 LLM 生成测试用例
+            # 调用 LLM 生成测试用例（默认优先级为3级）
             result = llm_client.generate_test_cases(
                 requirement=requirement,
                 count=3,
-                priority="high"
+                priority="3"
             )
             
             if not result.get('success'):
@@ -87,7 +87,7 @@ class TestCaseService:
                     steps=json.dumps(case_data.get('steps', []), ensure_ascii=False),
                     expected=case_data.get('expected', ''),
                     keywords=case_data.get('keywords', ''),
-                    priority=case_data.get('priority', 'medium'),
+                    priority=case_data.get('priority', '3'),
                     case_type=case_data.get('case_type', ''),
                     stage=case_data.get('stage', ''),
                     test_data=case_data.get('test_data', {}),
@@ -174,7 +174,7 @@ class TestCaseService:
                     steps_str,
                     case.get('expected', ''),
                     case.get('keywords', ''),
-                    case.get('priority', 'medium'),
+                    case.get('priority', '3'),
                     case.get('case_type', ''),
                     case.get('stage', '')
                 ]

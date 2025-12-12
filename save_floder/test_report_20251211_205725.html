@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Report</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px;
+            line-height: 1.8;
+            background-color: #f5f7fa;
+        }
+        
+        #content {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #2c3e50;
+            font-size: 32px;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #4CAF50;
+        }
+        
+        h2 {
+            color: #34495e;
+            font-size: 24px;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            padding-top: 20px;
+        }
+        
+        h3 {
+            color: #555;
+            font-size: 20px;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        h4 {
+            color: #666;
+            font-size: 18px;
+            margin-top: 25px;
+            margin-bottom: 12px;
+        }
+        
+        p {
+            margin: 15px 0;
+            color: #333;
+        }
+        
+        ul, ol {
+            margin: 20px 0;
+            padding-left: 30px;
+        }
+        
+        li {
+            margin: 10px 0;
+            line-height: 1.8;
+        }
+        
+        hr {
+            border: none;
+            border-top: 2px solid #e0e0e0;
+            margin: 40px 0;
+        }
+        
+        blockquote {
+            background-color: #fff3cd;
+            border-left: 5px solid #ffc107;
+            padding: 20px 25px;
+            margin: 25px 0;
+            border-radius: 4px;
+        }
+        
+        code {
+            background-color: #f4f4f4;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 30px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        th, td {
+            border: 1px solid #ddd;
+            padding: 15px 20px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: #4CAF50;
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        
+        .pass {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        
+        .fail {
+            color: #f44336;
+            font-weight: bold;
+        }
+        
+        strong {
+            color: #2c3e50;
+        }
+    </style>
+</head>
+<body>
+    <div id="content">
+        <div class="markdown- report"><h1>🧪 自动化测试报告</h1>
+<hr />
+<h2>1. 测试概览</h2>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>数值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>总用例数</td>
+<td>0</td>
+</tr>
+<tr>
+<td>通过用例数</td>
+<td>0</td>
+</tr>
+<tr>
+<td>失败用例数</td>
+<td>0</td>
+</tr>
+<tr>
+<td>通过率</td>
+<td>-</td>
+</tr>
+<tr>
+<td>总耗时</td>
+<td><strong>127 秒</strong></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>⚠️ 注：虽然“总计用例”显示为 0，但实际执行了 <strong>1 个完整测试任务（ID: 81）</strong>，且该任务已成功完成。系统统计可能未将单个任务识别为“用例”，建议后续优化用例计数逻辑。</p>
+</blockquote>
+<hr />
+<h2>2. 测试用例详情</h2>
+<h3>✅ 用例 ID: 81 —— 使用错误密码登录学生端</h3>
+<ul>
+<li><strong>状态</strong>：<code>pass</code></li>
+<li><strong>执行时间</strong>：2025-12-11T20:56:33</li>
+<li><strong>耗时</strong>：127 秒</li>
+<li><strong>目标</strong>：验证系统在输入错误密码时能否正确提示“密码错误”，并阻止登录。</li>
+<li><strong>预期结果</strong>：</li>
+<li>成功访问登录页</li>
+<li>输入用户名 <code>2022900116</code></li>
+<li>输入错误密码 <code>wrongpassword</code></li>
+<li>点击登录后显示“密码错误”提示</li>
+<li>保存当前页面截图（PDF）</li>
+<li>未进入首页</li>
+</ul>
+<p>✅ <strong>实际结果</strong>：全部达成，测试通过。</p>
+<hr />
+<h2>3. 行为分析（重点）</h2>
+<p>本测试由 AI Agent 自主执行，共经历 <strong>8 个步骤</strong>，完整覆盖从导航、输入、点击到结果记录的全过程。以下是关键行为路径与语义化分析：</p>
+<hr />
+<h3>🔹 步骤 1：导航至登录页</h3>
+<ul>
+<li><strong>操作</strong>：访问 <code>http://123.56.3.98:81/stu/#pages_login_loginx</code></li>
+<li><strong>思考过程</strong>：<blockquote>
+<p>“用户要求测试错误登录，第一步是加载目标登录页。当前页面为空，需确保页面加载完成后才能继续。”</p>
+</blockquote>
+</li>
+<li><strong>行为分析</strong>：</li>
+<li>Agent 主动判断页面状态，避免盲目操作。</li>
+<li>显示出良好的“环境感知”能力，为后续操作奠定基础。</li>
+</ul>
+<hr />
+<h3>🔹 步骤 2：等待页面加载</h3>
+<ul>
+<li><strong>操作</strong>：等待 3 秒</li>
+<li><strong>思考过程</strong>：<blockquote>
+<p>“页面虽已跳转，但内容未渲染。根据规则，应等待以确保元素可交互。”</p>
+</blockquote>
+</li>
+<li><strong>行为分析</strong>：</li>
+<li>展现了对“异步加载”的理解，主动引入等待机制。</li>
+<li>避免因 DOM 未就绪导致后续操作失败，体现健壮性设计。</li>
+</ul>
+<hr />
+<h3>🔹 步骤 3：输入用户名</h3>
+<ul>
+<li><strong>操作</strong>：向索引 0 的输入框输入 <code>2022900116</code></li>
+<li><strong>思考过程</strong>：<blockquote>
+<p>“页面已加载完毕，确认存在账号字段（index 0）、密码字段（index 1）和登录按钮（index 6）。按顺序执行第 2 步：输入用户名。”</p>
+</blockquote>
+</li>
+<li><strong>行为分析</strong>：</li>
+<li>Agent 能准确识别 UI 元素结构，并按预设顺序执行。</li>
+<li>体现了“步骤驱动 + 元素定位”的双重能力。</li>
+</ul>
+<hr />
+<h3>🔹 步骤 4：输入错误密码</h3>
+<ul>
+<li><strong>操作</strong>：向索引 1 的输入框输入 <code>wrongpassword</code></li>
+<li><strong>思考过程</strong>：<blockquote>
+<p>“已完成用户名输入，下一步是输入错误密码，以触发系统异常处理流程。”</p>
+</blockquote>
+</li>
+<li><strong>行为分析</strong>：</li>
+<li>明确区分“正常输入”与“异常输入”场景，符合测试意图。</li>
+<li>无冗余操作，直接进入核心验证点。</li>
+</ul>
+<hr />
+<h3>🔹 步骤 5：点击登录按钮</h3>
+<ul>
+<li><strong>操作</strong>：点击索引 6 的“登录”按钮</li>
+<li><strong>思考过程</strong>：<blockquote>
+<p>“输入错误凭证后，点击登录按钮，预期系统应返回‘密码错误’提示。”</p>
+</blockquote>
+</li>
+<li><strong>行为分析</strong>：</li>
+<li>成功触发业务逻辑，验证系统响应是否符合预期。</li>
+<li>为后续断言提供数据支撑。</li>
+</ul>
+<hr />
+<h3>🔹 步骤 6：保存 PDF 截图</h3>
+<ul>
+<li><strong>操作</strong>：调用 <code>save_pdf</code> 保存当前页面</li>
+<li><strong>思考过程</strong>：<blockquote>
+<p>“登录失败提示已出现，需保存证据。生成 PDF 作为测试交付物。”</p>
+</blockquote>
+</li>
+<li><strong>行为分析</strong>：</li>
+<li>强调“可追溯性”，自动归档测试结果。</li>
+<li>符合自动化测试中“结果留存”的最佳实践。</li>
+</ul>
+<hr />
+<h3>🔹 步骤 7 &amp; 8：记录结果并标记完成</h3>
+<ul>
+<li><strong>操作</strong>：</li>
+<li>向 <code>results.md</code> 追加测试摘要</li>
+<li>调用 <code>done</code> 动作，标记任务成功</li>
+<li><strong>思考过程</strong>：<blockquote>
+<p>“所有步骤均已完成，系统表现符合预期。现在记录结果并通知用户。”</p>
+</blockquote>
+</li>
+<li><strong>行为分析</strong>：</li>
+<li>完整闭环：从执行 → 验证 → 记录 → 报告。</li>
+<li>输出清晰、结构化的测试报告，便于人工复核或集成 CI/CD。</li>
+</ul>
+<hr />
+<h2>4. 失败原因诊断与修复建议</h2>
+<blockquote>
+<p>🟢 本次测试无失败用例，所有操作均成功执行。</p>
+</blockquote>
+<h3>💡 建议优化项：</h3>
+<ol>
+<li>
+<p><strong>用例计数逻辑修正</strong><br />
+   - 当前报告中“总用例数 = 0”，但实际执行了 1 个完整测试任务。<br />
+   - <strong>建议</strong>：将每个独立测试任务（如 ID 81）视为一个“用例”，并在统计中计入。</p>
+</li>
+<li>
+<p><strong>增强元素定位容错机制</strong><br />
+   - 当前依赖“索引”定位元素（如 index 0, 1, 6），若页面结构变化易失效。<br />
+   - <strong>建议</strong>：优先使用 CSS 选择器或 XPath 定位，或结合文本内容匹配（如“账户”、“密码”、“登录”）。</p>
+</li>
+<li>
+<p><strong>增加超时重试机制</strong><br />
+   - 当前仅等待 3 秒，若网络波动可能导致页面未完全加载。<br />
+   - <strong>建议</strong>：引入最大等待时间 + 重试策略（如最多等待 10 秒，每秒检查一次）。</p>
+</li>
+<li>
+<p><strong>日志语义化增强</strong><br />
+   - 当前 <code>thinking</code> 字段内容详实，但部分重复（如步骤 7 和 8 的思考高度相似）。<br />
+   - <strong>建议</strong>：合并重复思考，聚焦关键决策点，提升日志可读性。</p>
+</li>
+</ol>
+<hr />
+<h2>5. 测试总结</h2>
+<p>本次测试任务 <strong>“使用错误密码登录学生端”</strong> 已圆满完成，AI Agent 展现出以下优势：</p>
+<p>✅ <strong>自主规划能力</strong>：能根据任务目标拆解步骤，合理安排操作顺序。<br />
+✅ <strong>环境适应能力</strong>：面对页面未加载情况，主动引入等待机制。<br />
+✅ <strong>精准执行能力</strong>：准确识别 UI 元素并完成输入、点击等操作。<br />
+✅ <strong>结果闭环能力</strong>：自动生成报告、保存截图、标记完成，形成完整交付链。<br />
+✅ <strong>语义理解能力</strong>：思考过程清晰反映其对测试意图的理解与执行逻辑。</p>
+<p>📌 <strong>总体评价</strong>：  </p>
+<blockquote>
+<p>本次测试不仅验证了系统功能的正确性（错误密码提示），更展示了 AI Agent 在自动化测试中的高可靠性与智能化水平。建议将其推广至更多回归测试场景，并持续优化元素定位与异常处理机制。</p>
+</blockquote>
+<hr />
+<p>📄 <strong>附件</strong>：<br />
+- <code>results.md</code>：测试结果摘要文件<br />
+- <code>123-56-3-98-81-stu-pages-login-student.pdf</code>：登录失败页面截图</p>
+<hr />
+<p>✅ <strong>报告生成人</strong>：AI 测试报告专家<br />
+📅 <strong>生成时间</strong>：2025-12-11 20:56:33</p></div>
+    </div>
+</body>
+</html>

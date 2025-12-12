@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Report</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px;
+            line-height: 1.8;
+            background-color: #f5f7fa;
+        }
+        
+        #content {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #2c3e50;
+            font-size: 32px;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #4CAF50;
+        }
+        
+        h2 {
+            color: #34495e;
+            font-size: 24px;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            padding-top: 20px;
+        }
+        
+        h3 {
+            color: #555;
+            font-size: 20px;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        h4 {
+            color: #666;
+            font-size: 18px;
+            margin-top: 25px;
+            margin-bottom: 12px;
+        }
+        
+        p {
+            margin: 15px 0;
+            color: #333;
+        }
+        
+        ul, ol {
+            margin: 20px 0;
+            padding-left: 30px;
+        }
+        
+        li {
+            margin: 10px 0;
+            line-height: 1.8;
+        }
+        
+        hr {
+            border: none;
+            border-top: 2px solid #e0e0e0;
+            margin: 40px 0;
+        }
+        
+        blockquote {
+            background-color: #fff3cd;
+            border-left: 5px solid #ffc107;
+            padding: 20px 25px;
+            margin: 25px 0;
+            border-radius: 4px;
+        }
+        
+        code {
+            background-color: #f4f4f4;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 30px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        th, td {
+            border: 1px solid #ddd;
+            padding: 15px 20px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: #4CAF50;
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        
+        .pass {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        
+        .fail {
+            color: #f44336;
+            font-weight: bold;
+        }
+        
+        strong {
+            color: #2c3e50;
+        }
+    </style>
+</head>
+<body>
+    <div id="content">
+        <div class="markdown- report"><h1>学生登录系统自动化测试报告</h1>
+<hr />
+<h2>1. 测试概览</h2>
+<ul>
+<li><strong>总用例数</strong>：0 个（注：实际执行了 1 个测试任务，但未被归类为“用例”）</li>
+<li><strong>通过数</strong>：0 个</li>
+<li><strong>失败数</strong>：1 个</li>
+<li><strong>通过率</strong>：0%</li>
+<li><strong>总耗时</strong>：66 秒</li>
+<li><strong>最终状态</strong>：测试失败</li>
+<li><strong>错误摘要</strong>：登录时收到“密码错误”提示，未能跳转至学生首页。</li>
+</ul>
+<blockquote>
+<p>📌 注：虽然测试概览显示“0 个用例”，但根据详细日志，实际执行了一个完整的端到端登录测试流程。建议后续将此类完整流程归类为“测试用例”，以便统计与追踪。</p>
+</blockquote>
+<hr />
+<h2>2. 测试用例详情</h2>
+<h3>用例 ID：91</h3>
+<p><strong>测试目标</strong>：验证学生账号 <code>2022900116</code> 使用密码 <code>900112</code> 登录系统是否成功，并跳转至学生首页。<br />
+<strong>执行时间</strong>：2025-12-12T09:17:46<br />
+<strong>执行耗时</strong>：66 秒<br />
+<strong>最终状态</strong>：❌ 失败<br />
+<strong>失败原因</strong>：登录失败，页面返回“密码错误”提示。</p>
+<hr />
+<h2>3. 行为分析（重点）</h2>
+<p>本测试由 AI Agent 自动执行，共完成 6 个步骤，完整模拟用户登录行为。以下是关键操作路径与失败点深度分析：</p>
+<hr />
+<h3>✅ 步骤 1：访问登录页面</h3>
+<ul>
+<li><strong>操作</strong>：导航至 <code>http://123.56.3.98:81/stu/#pages_login_loginx</code>  </li>
+<li><strong>结果</strong>：页面成功加载，标题为“登录”，表单元素可见。  </li>
+<li><strong>Agent 思考</strong>：确认页面已正确打开，准备输入用户名。  </li>
+<li><strong>语义化描述</strong>：代理成功启动并定位到目标登录页，无任何阻塞或超时问题。</li>
+</ul>
+<hr />
+<h3>✅ 步骤 2：输入用户名</h3>
+<ul>
+<li><strong>操作</strong>：在索引为 <code>[0]</code> 的输入框中填入 <code>2022900116</code>  </li>
+<li><strong>结果</strong>：输入成功，页面未报错。  </li>
+<li><strong>Agent 思考</strong>：确认账户字段存在且可编辑，按计划输入用户名。  </li>
+<li><strong>语义化描述</strong>：代理准确识别并操作了第一个输入框，符合预期。</li>
+</ul>
+<hr />
+<h3>✅ 步骤 3：输入密码</h3>
+<ul>
+<li><strong>操作</strong>：在索引为 <code>[1]</code> 的输入框中填入 <code>900112</code>  </li>
+<li><strong>结果</strong>：输入成功，页面未报错。  </li>
+<li><strong>Agent 思考</strong>：确认密码字段存在，继续按计划输入密码。  </li>
+<li><strong>语义化描述</strong>：代理顺利完成了密码输入，未出现元素不可见或无法聚焦的问题。</li>
+</ul>
+<hr />
+<h3>✅ 步骤 4：点击登录按钮</h3>
+<ul>
+<li><strong>操作</strong>：点击索引为 <code>[6]</code> 的“登录”按钮  </li>
+<li><strong>结果</strong>：按钮被成功点击，触发登录请求。  </li>
+<li><strong>Agent 思考</strong>：表单已填满，点击提交以触发认证流程。  </li>
+<li><strong>语义化描述</strong>：代理准确识别并触发了登录动作，系统响应正常，但后端返回错误。</li>
+</ul>
+<hr />
+<h3>❌ 步骤 5：登录失败处理</h3>
+<ul>
+<li><strong>现象</strong>：页面未跳转，显示“密码错误”提示。  </li>
+<li><strong>Agent 思考</strong>：检测到登录失败，需按规范保存截图作为证据。  </li>
+<li><strong>操作</strong>：调用 <code>save_pdf</code> 动作，生成文件 <code>123-56-3-98-81-stu-pages-login-student.pdf</code>  </li>
+<li><strong>语义化描述</strong>：代理具备良好的错误处理机制，在失败后自动保存现场证据，符合测试规范。</li>
+</ul>
+<hr />
+<h3>❌ 步骤 6：结束任务并报告失败</h3>
+<ul>
+<li><strong>操作</strong>：调用 <code>done</code> 动作，标记测试失败，并附上截图文件。  </li>
+<li><strong>报告内容</strong>：  <blockquote>
+<p>“测试失败：登录时收到‘密码错误’提示，未能成功跳转至学生端首页。已保存当前错误页面截图作为证据。建议检查密码是否正确或联系系统管理员确认账户状态。”  </p>
+</blockquote>
+</li>
+<li><strong>语义化描述</strong>：代理完整闭环测试流程，明确标注失败原因，并提供可追溯的附件。</li>
+</ul>
+<hr />
+<h2>4. 失败原因诊断与修复建议</h2>
+<h3>🔍 根本原因诊断：</h3>
+<ul>
+<li><strong>直接原因</strong>：输入的密码 <code>900112</code> 与系统记录不匹配，导致后端返回“密码错误”。</li>
+<li><strong>潜在可能</strong>：</li>
+<li>密码输入错误（如多输/少输一位、大小写错误等）；</li>
+<li>账户密码已被重置或过期；</li>
+<li>系统数据库中该账户密码未同步更新；</li>
+<li>测试环境与生产环境密码不一致。</li>
+</ul>
+<blockquote>
+<p>⚠️ 注意：在步骤 4 中，Agent 的思考日志显示输入的是 <code>9001112</code>（多一个“1”），但在实际操作日志中，输入的是 <code>900112</code>。这可能是思考过程中的笔误，不影响实际执行，但仍需注意逻辑一致性。</p>
+</blockquote>
+<hr />
+<h3>🛠 修复建议：</h3>
+<ol>
+<li>
+<p><strong>验证密码准确性</strong>：<br />
+   - 请确认测试账号 <code>2022900116</code> 的真实密码是否为 <code>900112</code>。<br />
+   - 可尝试在浏览器手动登录，或通过后台管理工具重置密码。</p>
+</li>
+<li>
+<p><strong>检查测试数据一致性</strong>：<br />
+   - 确保测试脚本使用的密码与系统当前配置一致。<br />
+   - 建议建立“测试账号密码对照表”，避免硬编码错误。</p>
+</li>
+<li>
+<p><strong>增强错误反馈机制</strong>：<br />
+   - 在测试报告中增加“预期密码”与“实际输入密码”的对比字段，便于快速定位是输入错误还是系统错误。<br />
+   - 可在失败时自动比对密码哈希值（若权限允许），辅助判断是否为密码变更所致。</p>
+</li>
+<li>
+<p><strong>优化 Agent 思考日志</strong>：<br />
+   - 避免在思考过程中出现与实际操作不符的描述（如步骤 4 中提到“9001112”），以免造成混淆。<br />
+   - 建议在每一步操作后加入“操作校验”环节，例如：“确认输入框内容为 '900112'”。</p>
+</li>
+</ol>
+<hr />
+<h2>5. 测试总结</h2>
+<p>本次测试虽未通过，但整个自动化流程表现稳定、逻辑清晰、容错能力强：</p>
+<p>✅ <strong>优点</strong>：<br />
+- Agent 成功完成从页面加载 → 输入 → 提交 → 错误处理 → 报告输出的全链路操作。<br />
+- 具备完善的错误捕获与证据留存机制（PDF 截图），便于后续复盘。<br />
+- 操作路径明确，每一步均有思考与评估，体现智能体的自主决策能力。</p>
+<p>⚠️ <strong>待改进点</strong>：<br />
+- 测试用例统计机制需完善，应将此类完整流程纳入“用例”范畴。<br />
+- Agent 思考日志需与实际操作保持严格一致，避免误导性描述。<br />
+- 建议增加“密码预校验”或“账户状态查询”前置步骤，提升测试效率。</p>
+<p>📌 <strong>结论</strong>：<br />
+本次测试失败非因系统功能缺陷或自动化脚本错误，而是由于<strong>密码不匹配</strong>导致。建议优先核对测试账号密码，再重新执行测试。若密码无误，则需排查后端认证服务是否存在异常。</p>
+<hr />
+<p>✅ <strong>下一步行动建议</strong>：<br />
+1. 联系系统管理员确认账号 <code>2022900116</code> 的当前密码。<br />
+2. 更新测试脚本中的密码字段。<br />
+3. 重新运行测试，验证登录功能是否正常。</p>
+<hr />
+<p><strong>报告生成时间</strong>：2025-12-12<br />
+<strong>测试执行者</strong>：AI Agent (ID: 29c9...)<br />
+<strong>报告撰写人</strong>：AI 测试报告生成专家</p></div>
+    </div>
+</body>
+</html>
