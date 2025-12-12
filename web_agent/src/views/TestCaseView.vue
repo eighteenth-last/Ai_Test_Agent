@@ -113,21 +113,110 @@
 
     <!-- 详情对话框 -->
     <el-dialog v-model="dialogVisible" title="测试用例详情" width="800px">
+      <template #header>
+        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%">
+          <span>测试用例详情</span>
+          <div>
+            <el-button 
+              v-if="!editMode" 
+              type="primary" 
+              size="small" 
+              @click="enterEditMode"
+            >
+              编辑
+            </el-button>
+            <template v-else>
+              <el-button size="small" @click="cancelEdit">取消</el-button>
+              <el-button type="primary" size="small" @click="saveEdit" :loading="saving">保存</el-button>
+            </template>
+          </div>
+        </div>
+      </template>
+      
       <el-descriptions :column="1" border v-if="currentCase">
-        <el-descriptions-item label="ID">{{ currentCase.id }}</el-descriptions-item>
-        <el-descriptions-item label="模块">{{ currentCase.module }}</el-descriptions-item>
-        <el-descriptions-item label="用例名称">{{ currentCase.title }}</el-descriptions-item>
-        <el-descriptions-item label="前置条件">{{ currentCase.precondition || '无' }}</el-descriptions-item>
+        <el-descriptions-item label="ID">
+          {{ currentCase.id }}
+        </el-descriptions-item>
+        
+        <el-descriptions-item label="模块">
+          <span v-if="!editMode">{{ currentCase.module }}</span>
+          <el-input v-else v-model="editForm.module" size="small" />
+        </el-descriptions-item>
+        
+        <el-descriptions-item label="用例名称">
+          <span v-if="!editMode">{{ currentCase.title }}</span>
+          <el-input v-else v-model="editForm.title" size="small" />
+        </el-descriptions-item>
+        
+        <el-descriptions-item label="前置条件">
+          <span v-if="!editMode">{{ currentCase.precondition || '无' }}</span>
+          <el-input v-else v-model="editForm.precondition" type="textarea" :rows="2" size="small" />
+        </el-descriptions-item>
+        
         <el-descriptions-item label="测试步骤">
-          <div v-for="(step, index) in currentCase.steps" :key="index">
-            {{ index + 1 }}. {{ step }}
+          <div v-if="!editMode">
+            <div v-for="(step, index) in currentCase.steps" :key="index">
+              {{ index + 1 }}. {{ step }}
+            </div>
+          </div>
+          <div v-else>
+            <div v-for="(step, index) in editForm.steps" :key="index" style="margin-bottom: 8px; display: flex; gap: 8px; align-items: center">
+              <span style="min-width: 20px">{{ index + 1 }}.</span>
+              <el-input 
+                v-model="editForm.steps[index]" 
+                size="small"
+                style="flex: 1"
+              />
+              <el-button 
+                type="danger" 
+                size="small" 
+                @click="removeStep(index)"
+                :disabled="editForm.steps.length === 1"
+              >
+                删除
+              </el-button>
+            </div>
+            <el-button type="primary" size="small" @click="addStep" style="margin-top: 8px">
+              添加步骤
+            </el-button>
           </div>
         </el-descriptions-item>
-        <el-descriptions-item label="预期结果">{{ currentCase.expected }}</el-descriptions-item>
-        <el-descriptions-item label="关键词">{{ currentCase.keywords }}</el-descriptions-item>
-        <el-descriptions-item label="优先级">{{ formatPriority(currentCase.priority) }}</el-descriptions-item>
-        <el-descriptions-item label="用例类型">{{ currentCase.case_type }}</el-descriptions-item>
-        <el-descriptions-item label="适用阶段">{{ currentCase.stage }}</el-descriptions-item>
+        
+        <el-descriptions-item label="预期结果">
+          <span v-if="!editMode">{{ currentCase.expected }}</span>
+          <el-input v-else v-model="editForm.expected" type="textarea" :rows="2" size="small" />
+        </el-descriptions-item>
+        
+        <el-descriptions-item label="关键词">
+          <span v-if="!editMode">{{ currentCase.keywords }}</span>
+          <el-input v-else v-model="editForm.keywords" size="small" />
+        </el-descriptions-item>
+        
+        <el-descriptions-item label="优先级">
+          <span v-if="!editMode">{{ formatPriority(currentCase.priority) }}</span>
+          <el-select v-else v-model="editForm.priority" size="small" style="width: 100%">
+            <el-option label="1级（冒烟）" value="1" />
+            <el-option label="2级（核心）" value="2" />
+            <el-option label="3级（一般）" value="3" />
+            <el-option label="4级（优化）" value="4" />
+          </el-select>
+        </el-descriptions-item>
+        
+        <el-descriptions-item label="用例类型">
+          <span v-if="!editMode">{{ currentCase.case_type }}</span>
+          <el-select v-else v-model="editForm.case_type" size="small" style="width: 100%">
+            <el-option label="功能测试" value="功能测试" />
+            <el-option label="单元测试" value="单元测试" />
+            <el-option label="接口测试" value="接口测试" />
+            <el-option label="安全测试" value="安全测试" />
+            <el-option label="性能测试" value="性能测试" />
+          </el-select>
+        </el-descriptions-item>
+        
+        <el-descriptions-item label="适用阶段">
+          <span v-if="!editMode">{{ currentCase.stage }}</span>
+          <el-input v-else v-model="editForm.stage" size="small" />
+        </el-descriptions-item>
       </el-descriptions>
     </el-dialog>
   </div>
@@ -148,6 +237,12 @@ const dialogVisible = ref(false)
 const currentCase = ref(null)
 const selectedFile = ref(null)
 const uploadRef = ref(null)
+
+// 编辑相关状态
+const editMode = ref(false)
+const editForm = ref(null)
+const editFormRef = ref(null)
+const saving = ref(false)
 
 // 分页状态
 const currentPage = ref(1)
@@ -303,7 +398,94 @@ const refreshData = async () => {
 // 查看详情
 const viewDetail = (row) => {
   currentCase.value = row
+  editMode.value = false
   dialogVisible.value = true
+}
+
+// 进入编辑模式
+const enterEditMode = () => {
+  if (!currentCase.value) return
+  
+  // 深拷贝当前用例数据到编辑表单
+  editForm.value = {
+    id: currentCase.value.id,
+    module: currentCase.value.module,
+    title: currentCase.value.title,
+    precondition: currentCase.value.precondition || '',
+    steps: [...currentCase.value.steps],
+    expected: currentCase.value.expected,
+    keywords: currentCase.value.keywords || '',
+    priority: String(currentCase.value.priority),
+    case_type: currentCase.value.case_type || '',
+    stage: currentCase.value.stage || '',
+  }
+  editMode.value = true
+}
+
+// 添加步骤
+const addStep = () => {
+  if (editForm.value) {
+    editForm.value.steps.push('')
+  }
+}
+
+// 删除步骤
+const removeStep = (index) => {
+  if (editForm.value && editForm.value.steps.length > 1) {
+    editForm.value.steps.splice(index, 1)
+  }
+}
+
+// 取消编辑
+const cancelEdit = () => {
+  editMode.value = false
+  editForm.value = null
+}
+
+// 保存编辑
+const saveEdit = async () => {
+  if (!editForm.value) return
+  
+  // 验证必填字段
+  if (!editForm.value.module || !editForm.value.title || !editForm.value.expected) {
+    ElMessage.warning('请填写必填字段')
+    return
+  }
+  
+  if (editForm.value.steps.length === 0 || editForm.value.steps.some(s => !s.trim())) {
+    ElMessage.warning('请填写所有测试步骤')
+    return
+  }
+  
+  saving.value = true
+  try {
+    const result = await testCaseAPI.update(editForm.value.id, {
+      module: editForm.value.module,
+      title: editForm.value.title,
+      precondition: editForm.value.precondition,
+      steps: editForm.value.steps,
+      expected: editForm.value.expected,
+      keywords: editForm.value.keywords,
+      priority: editForm.value.priority,
+      case_type: editForm.value.case_type,
+      stage: editForm.value.stage,
+    })
+    
+    if (result.success) {
+      ElMessage.success('保存成功')
+      editMode.value = false
+      editForm.value = null
+      dialogVisible.value = false
+      refreshData()  // 刷新列表
+    } else {
+      ElMessage.error(result.message || '保存失败')
+    }
+  } catch (error) {
+    ElMessage.error('保存失败')
+    console.error(error)
+  } finally {
+    saving.value = false
+  }
 }
 
 onMounted(() => {

@@ -37,6 +37,9 @@ export const testCaseAPI = {
   getById(id) {
     return api.get(`/test-cases/${id}`)
   },
+  update(id, data) {
+    return api.put(`/test-cases/${id}`, data)
+  },
   uploadFile(file) {
     const formData = new FormData()
     formData.append('file', file)

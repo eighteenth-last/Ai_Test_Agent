@@ -16,7 +16,7 @@
           >
             <el-menu-item index="/">
               <el-icon><Document /></el-icon>
-              <span>测试用例</span>
+              <span>生成用例</span>
             </el-menu-item>
             <el-menu-item index="/execute-case">
               <el-icon><VideoPlay /></el-icon>

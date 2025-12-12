@@ -91,8 +91,11 @@ class BrowserUseService:
                 "message": f"测试用例 ID {test_case_id} 不存在"
             }
         
-        # 2. 构建任务描述
-        task_description = BrowserUseService._build_task_description(test_case)
+        # 2. 检查是否需要答题
+        need_answer = BrowserUseService._need_auto_answer(test_case)
+        
+        # 3. 构建任务描述（根据是否需要答题调整提示）
+        task_description = BrowserUseService._build_task_description(test_case, enable_auto_answer=need_answer)
         
         start_time = time.time()
         
@@ -135,17 +138,28 @@ class BrowserUseService:
             # 5. 创建 Controller 并注册自定义 actions
             controller = Controller()
             
-            # 检查是否需要答题，如果需要则注册自定义答题 action
-            need_answer = BrowserUseService._need_auto_answer(test_case)
+            # 根据之前的检测结果决定是否注册答题 action
             if need_answer:
-                print("[BrowserUse] 该测试用例需要答题，注册自定义答题 action")
+                print("[BrowserUse] ✅ 该测试用例需要答题，注册自定义答题 action")
                 register_custom_actions(controller)
             else:
-                print("[BrowserUse] 该测试用例不需要答题")
+                print("[BrowserUse] ⚠️ 该测试用例不需要答题（或明确要求不答题）")
             
             # 6. 创建 Agent（使用 browser-use 原生的 Agent）
             print(f"[BrowserUse] 🚀 开始执行测试: {test_case.title}")
             print(f"[BrowserUse] ⚙️  配置: max_steps={max_steps}, vision={use_vision}, headless={headless}")
+            
+            # 添加中文系统提示
+            chinese_system_message = """
+重要提示：
+1. 请使用中文进行思考和描述
+2. 所有的 thinking（思考过程）、evaluation（评估）、memory（记忆）、next_goal（下一步目标）都必须使用中文
+3. 在描述操作时，使用清晰的中文说明
+4. 例如：
+   - thinking: "我需要点击登录按钮来完成登录操作"
+   - next_goal: "输入用户名和密码"
+   - evaluation: "上一步成功访问了登录页面"
+"""
             
             agent = Agent(
                 task=task_description,
@@ -154,6 +168,7 @@ class BrowserUseService:
                 controller=controller,  # 使用自定义 controller
                 use_vision=use_vision,
                 max_actions_per_step=max_actions,
+                extend_system_message=chinese_system_message,  # 添加中文提示
             )
             
             # 7. 执行测试（使用 Task 以支持取消）
@@ -384,8 +399,14 @@ class BrowserUseService:
             task_manager.remove_task(test_case_id)
     
     @staticmethod
-    def _build_task_description(test_case: TestCase) -> str:
-        """构建给 Agent 的任务描述"""
+    def _build_task_description(test_case: TestCase, enable_auto_answer: bool = False) -> str:
+        """
+        构建给 Agent 的任务描述
+        
+        Args:
+            test_case: 测试用例
+            enable_auto_answer: 是否启用自动答题功能
+        """
         steps_list = json.loads(test_case.steps) if test_case.steps else []
         test_data = test_case.test_data or {}
         
@@ -415,6 +436,12 @@ class BrowserUseService:
         # 构建任务描述，如果有URL则添加导航指令
         url_instruction = f"\n⚠️ 首先立即访问目标网址：{target_url}\n" if target_url else ""
         
+        # 根据是否启用答题功能，生成不同的提示
+        if enable_auto_answer:
+            answer_instruction = "6. ⚠️ **重要：如果测试步骤要求答题，进入答题页面后使用 auto_answer 动作自动完成所有题目，然后继续执行后续步骤（如点击提交）**"
+        else:
+            answer_instruction = '6. ⚠️ **重要：严格按照测试步骤执行，不要主动答题。如果步骤要求"不作答"或"直接提交"，请严格遵守**'
+        
         task = f"""
 【测试任务】
 标题：{test_case.title}
@@ -437,7 +464,7 @@ class BrowserUseService:
 3. ⚠️ 如果页面显示错误提示（如"密码错误"）后元素消失，等待2-3秒让页面恢复，或者点击页面空白处关闭提示
 4. ⚠️ 如果元素未找到，先尝试：等待2秒 → 滚动页面 → 点击关闭弹窗 → 刷新页面，不要重复执行已完成的步骤
 5. ⚠️ 绝对不要使用 go_back()，这会导致页面变成空白
-6. ⚠️ **重要：如果进入答题页面（URL包含practiceId或页面有题目列表），使用 auto_answer 动作自动完成所有题目，然后继续执行后续步骤（如点击提交）**
+{answer_instruction}
 7. 关键步骤建议使用 save_screenshot 保存截图验证（PNG格式）
 8. ⚠️ 重要：如果测试失败或遇到错误，必须先使用 save_screenshot 保存当前页面截图，然后再调用 done 动作
 9. 完成所有步骤后明确说明"测试完成"
@@ -449,12 +476,149 @@ class BrowserUseService:
         return task.strip()
     
     @staticmethod
+    def _translate_thinking(thinking_text: str) -> str:
+        """
+        翻译 AI 思考内容为中文
+        如果已经是中文则直接返回
+        """
+        if not thinking_text:
+            return ""
+        
+        # 简单判断：如果包含中文字符，认为已经是中文
+        if any('\u4e00' <= char <= '\u9fff' for char in thinking_text):
+            return thinking_text
+        
+        # 常见英文短语翻译映射
+        translations = {
+            "I have successfully completed": "我已成功完成",
+            "by clicking on": "通过点击",
+            "The page has transitioned to": "页面已转换到",
+            "which appears to be": "看起来是",
+            "According to the user request": "根据用户请求",
+            "I now need to proceed to": "我现在需要继续",
+            "which is to": "即",
+            "Since the current view shows": "由于当前视图显示",
+            "I need to look for": "我需要查找",
+            "which may require": "这可能需要",
+            "I will first attempt to": "我将首先尝试",
+            "to see if": "看看是否",
+            "becomes visible": "变得可见",
+            "course button": "课程按钮",
+            "option": "选项",
+            "within this course interface": "在此课程界面中",
+            "study plan reminders": "学习计划提醒",
+            "scrolling or waiting for additional elements to load": "滚动或等待其他元素加载",
+        }
+        
+        # 应用翻译
+        result = thinking_text
+        for en, zh in translations.items():
+            result = result.replace(en, zh)
+        
+        return result
+    
+    @staticmethod
+    def _format_action_name(action_dict: dict) -> str:
+        """
+        格式化动作名称为可读的中文描述
+        
+        Args:
+            action_dict: 动作字典
+            
+        Returns:
+            格式化后的动作名称
+        """
+        # 动作类型映射
+        action_type_map = {
+            "click": "点击",
+            "input_text": "输入文本",
+            "go_to_url": "访问网址",
+            "scroll": "滚动页面",
+            "wait": "等待",
+            "done": "完成",
+            "save_screenshot": "保存截图",
+            "extract_content": "提取内容",
+            "go_back": "返回",
+            "switch_tab": "切换标签页",
+            "open_tab": "打开新标签页",
+            "close_tab": "关闭标签页",
+            "auto_answer": "自动答题",
+        }
+        
+        # 获取动作类型
+        action_keys = list(action_dict.keys())
+        if not action_keys:
+            return "未知动作"
+        
+        # 第一个键通常是动作类型
+        action_type = action_keys[0]
+        action_name = action_type_map.get(action_type, action_type)
+        
+        # 添加详细信息
+        action_data = action_dict.get(action_type, {})
+        
+        if action_type == "click":
+            if isinstance(action_data, dict):
+                index = action_data.get("index", "")
+                if index:
+                    action_name = f"点击元素 (索引 {index})"
+        
+        elif action_type == "input_text":
+            if isinstance(action_data, dict):
+                index = action_data.get("index", "")
+                text = action_data.get("text", "")
+                if index and text:
+                    # 隐藏密码
+                    display_text = "******" if "密码" in str(text) or "password" in str(text).lower() else text[:20]
+                    action_name = f"输入文本 (索引 {index}): {display_text}"
+        
+        elif action_type == "go_to_url":
+            if isinstance(action_data, dict):
+                url = action_data.get("url", "")
+                if url:
+                    action_name = f"访问: {url[:50]}"
+        
+        elif action_type == "scroll":
+            if isinstance(action_data, dict):
+                direction = action_data.get("direction", "down")
+                direction_map = {"down": "向下", "up": "向上"}
+                action_name = f"滚动{direction_map.get(direction, direction)}"
+        
+        elif action_type == "done":
+            if isinstance(action_data, dict):
+                text = action_data.get("text", "")
+                if text:
+                    action_name = f"完成: {text[:30]}"
+        
+        return action_name
+    
+    @staticmethod
     def _need_auto_answer(test_case: TestCase) -> bool:
         """
         分析测试用例是否需要自动答题
         通过检查步骤中的关键词判断
+        
+        规则：
+        1. 如果明确要求"不作答"、"不答题"、"直接提交"等，则不启用答题
+        2. 如果包含答题关键词且没有"不作答"等否定词，则启用答题
         """
         steps = json.loads(test_case.steps) if test_case.steps else []
+        
+        # 否定关键词（明确要求不答题）
+        NEGATIVE_KEYWORDS = [
+            '不作答', '不答题', '不做题', '不回答',
+            '直接提交', '直接点击提交', '跳过答题',
+            '不填写', '不选择', '空白提交',
+            '未作答', '未答题',
+        ]
+        
+        # 首先检查是否有否定关键词
+        for i, step in enumerate(steps):
+            for neg_keyword in NEGATIVE_KEYWORDS:
+                if neg_keyword in step:
+                    print(f"[BrowserUse] 步骤 {i+1} 包含否定关键词 '{neg_keyword}': {step}")
+                    print("[BrowserUse] ❌ 测试用例明确要求不答题，不注册答题 action")
+                    return False
         
         # 检查步骤中是否包含答题关键词
         for i, step in enumerate(steps):
@@ -555,16 +719,20 @@ class BrowserUseService:
             
             # 提取 Agent 的思考过程
             if h.model_output:
-                step_data["thinking"] = h.model_output.current_state.thinking
+                # 翻译思考内容为中文（如果是英文）
+                thinking_text = h.model_output.current_state.thinking
+                step_data["thinking"] = BrowserUseService._translate_thinking(thinking_text)
                 step_data["evaluation"] = h.model_output.current_state.evaluation_previous_goal
                 step_data["memory"] = h.model_output.current_state.memory
                 step_data["next_goal"] = h.model_output.current_state.next_goal
                 
-                # 提取执行的动作
-                step_data["actions"] = [
-                    action.model_dump(exclude_none=True)
-                    for action in h.model_output.action
-                ]
+                # 提取并格式化执行的动作
+                step_data["actions"] = []
+                for action in h.model_output.action:
+                    action_dict = action.model_dump(exclude_none=True)
+                    # 添加可读的动作名称
+                    action_dict["action_name"] = BrowserUseService._format_action_name(action_dict)
+                    step_data["actions"].append(action_dict)
             else:
                 step_data["actions"] = []
             

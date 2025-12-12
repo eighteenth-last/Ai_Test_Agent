@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Report</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px;
+            line-height: 1.8;
+            background-color: #f5f7fa;
+        }
+        
+        #content {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #2c3e50;
+            font-size: 32px;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #4CAF50;
+        }
+        
+        h2 {
+            color: #34495e;
+            font-size: 24px;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            padding-top: 20px;
+        }
+        
+        h3 {
+            color: #555;
+            font-size: 20px;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        h4 {
+            color: #666;
+            font-size: 18px;
+            margin-top: 25px;
+            margin-bottom: 12px;
+        }
+        
+        p {
+            margin: 15px 0;
+            color: #333;
+        }
+        
+        ul, ol {
+            margin: 20px 0;
+            padding-left: 30px;
+        }
+        
+        li {
+            margin: 10px 0;
+            line-height: 1.8;
+        }
+        
+        hr {
+            border: none;
+            border-top: 2px solid #e0e0e0;
+            margin: 40px 0;
+        }
+        
+        blockquote {
+            background-color: #fff3cd;
+            border-left: 5px solid #ffc107;
+            padding: 20px 25px;
+            margin: 25px 0;
+            border-radius: 4px;
+        }
+        
+        code {
+            background-color: #f4f4f4;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 30px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        th, td {
+            border: 1px solid #ddd;
+            padding: 15px 20px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: #4CAF50;
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        
+        .pass {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        
+        .fail {
+            color: #f44336;
+            font-weight: bold;
+        }
+        
+        strong {
+            color: #2c3e50;
+        }
+    </style>
+</head>
+<body>
+    <div id="content">
+        <div class="markdown- report"><pre><code class="language-markdown"># 测试报告
+
+---
+
+## 1. 测试用例详细情况
+
+- **用例 ID**: 119  
+- **测试状态**: ✅ Pass  
+- **执行时间**: 2025-12-12T20:35:21（耗时 129 秒）  
+- **目标 URL**: `http://123.56.3.98:81/stu/#pages_login_student`  
+- **测试目的**: 验证学生用户登录系统 → 选择“测试1”课程 → 进入错题集 → 点击“错题再练” → 不作答直接提交，系统应提示“请完成所有题目后再提交！”
+
+---
+
+## 2. 详细行为分析（Agent 执行路径与思考过程）
+
+本测试由 AI Agent 自动执行，共经历 **12 个步骤**，完整覆盖从登录到提交验证的全流程。以下为关键操作路径及 Agent 的语义化思考逻辑：
+
+### 步骤 1：访问登录页面
+- **操作**：导航至 `http://123.56.3.98:81/stu/#pages_login_student`
+- **思考**：初始页面为空白，需立即跳转至目标登录页以启动流程。
+- **结果**：成功加载登录页面，但内容尚未完全渲染。
+
+### 步骤 2：等待页面加载
+- **操作**：等待 3 秒，确保 DOM 元素稳定。
+- **思考**：页面虽已跳转，但未显示表单元素，需等待加载完成，避免后续操作失败。
+- **结果**：页面标题变为“登录”，确认进入正确界面。
+
+### 步骤 3：输入账号密码并登录
+- **操作**：
+  - 在索引 0 输入账号 `2022900116`
+  - 在索引 1 输入密码 `900116`
+  - 点击索引 6 的“登录”按钮
+- **思考**：已识别登录表单结构，按顺序填入凭证并触发登录。
+- **结果**：成功跳转至课程选择页面（URL 变更为 `/CourseSelection/index`），进入下一阶段。
+
+### 步骤 4：尝试定位“测试1”课程
+- **操作**：点击索引 12 的学年选择框，意图展开筛选菜单。
+- **思考**：当前页面未直接展示“测试1”课程，推测需通过筛选功能定位。
+- **结果**：点击后未改变课程列表，说明该课程可能无需筛选即可看到。
+
+### 步骤 5：点击“测试1”课程进入按钮
+- **操作**：点击索引 20 的“点击进入”按钮。
+- **思考**：在课程列表中明确找到“测试1”对应的入口，直接点击进入详情页。
+- **结果**：成功跳转至课程学习页面（URL 变更为 `/SelfStudy/index`）。
+
+### 步骤 6：点击“错题集”选项
+- **操作**：点击索引 16 的“点击进入”按钮（实际为“错题集”入口）。
+- **思考**：根据任务要求，需进入错题集模块，当前页面已提供相关入口。
+- **结果**：页面仍停留在课程详情，未跳转，说明点击对象非目标元素。
+
+&gt; ⚠️ **此处存在误判**：Agent 将“点击进入”按钮误认为是“错题集”入口，实际应在后续步骤中点击索引 13 的“错题集”标签。
+
+### 步骤 7：纠正操作 —— 点击“错题集”标签
+- **操作**：点击索引 13 的“错题集”按钮。
+- **思考**：重新评估页面结构，确认“错题集”为独立功能入口，需单独点击。
+- **结果**：成功进入错题集页面（URL 变更为 `/WrongQuestions/index?courseId=...`）。
+
+### 步骤 8：点击“错题再练”
+- **操作**：点击索引 19 的“错题再练”按钮。
+- **思考**：当前页面已展示“错题再练”功能，点击后应进入答题页面。
+- **结果**：跳转至答题页面（URL 变更为 `/practice/exercises?practiceId=...`），但未立即显示“提交”按钮。
+
+### 步骤 9：滚动页面查找“提交”按钮
+- **操作**：向下滚动 500 像素。
+- **思考**：页面顶部仅显示学习计划提醒，目标按钮可能位于下方，需手动滚动定位。
+- **结果**：滚动后成功发现“提交”按钮（索引 30）。
+
+### 步骤 10 &amp; 11：点击“提交”按钮并验证提示
+- **操作**：两次点击索引 30 的“提交”按钮（第二次为确认操作）。
+- **思考**：不作答任何题目直接提交，预期系统应弹出“请完成所有题目后再提交！”提示。
+- **结果**：页面正确显示提示信息，符合预期功能逻辑。
+
+### 步骤 12：标记任务完成
+- **操作**：调用 `done` 动作，标记测试成功。
+- **思考**：所有步骤均已执行完毕，系统响应符合预期，可结束测试。
+- **结果**：最终状态标记为 `success: true`，测试报告生成完成。
+
+---
+
+## 3. 失败原因诊断与修复建议
+
+✅ **本测试用例无失败**，所有关键节点均按预期执行并通过验证。
+
+📌 **潜在优化点**：
+- **步骤 6 的误判**：Agent 初次点击了错误的“点击进入”按钮（索引 16），而非真正的“错题集”入口（索引 13）。虽然后续纠正，但增加了冗余步骤。
+  - **建议**：增强元素语义识别能力，优先匹配文本内容（如“错题集”）而非仅依赖索引位置。
+- **页面加载判断机制**：步骤 2 中等待 3 秒后即认为页面加载完成，但实际部分元素仍需动态渲染。
+  - **建议**：引入“元素可见性等待”机制（如等待特定按钮出现），替代固定时间等待，提升稳定性。
+
+---
+
+## 4. 测试总结
+
+本次测试完整验证了学生端核心业务流程：
+1. 成功登录系统；
+2. 准确选择“测试1”课程；
+3. 正确进入错题集模块；
+4. 完成“错题再练”功能跳转；
+5. 在未答题情况下提交，系统准确拦截并提示“请完成所有题目后再提交！”，功能逻辑完全符合设计预期。
+
+Agent 行为整体稳健，虽在中间步骤出现一次误操作，但能自我修正并最终达成目标，体现了良好的容错与恢复能力。建议在后续测试中优化元素识别策略，减少因索引依赖导致的误操作风险。
+
+✅ **结论：测试通过，系统功能正常。**
+</code></pre></div>
+    </div>
+</body>
+</html>

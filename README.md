@@ -13,6 +13,7 @@
 | 功能 | 描述 |
 |------|------|
 | **测试用例生成** | 输入需求描述或上传文档（支持 MD/TXT/PDF/DOC/DOCX），AI 自动生成结构化测试用例 |
+| **用例编辑管理** | 支持在线编辑测试用例，包括模块、标题、步骤、优先级、用例类型等字段 |
 | **AI 智能执行** | Browser-Use + LLM 实时决策，无需编写代码，支持暂停/恢复/停止控制 |
 | **自动答题功能** | 内置智能答题，支持单选、多选、判断、填空等 6 种题型，平均 0.5 秒/题 |
 | **自动报告生成** | 执行完成自动分析日志，生成专业测试报告，支持 HTML 格式下载 |
@@ -34,6 +35,9 @@
 - ✅ **Bug 管理**：自动分析 Bug 严重程度（一级~四级），智能提取复现步骤和截图
 - ✅ **智能决策**：一级/二级 Bug 中止测试，三级/四级 Bug 继续执行并记录
 - ✅ **自动答题**：内置智能答题功能，支持单选、多选、判断、填空等多种题型
+- ✅ **用例编辑**：支持在线编辑测试用例，标准化用例类型（功能/单元/接口/安全/性能）
+- ✅ **提示词管理**：所有 LLM 提示词集中在 `prompts.py` 统一管理，易于维护和优化
+- ✅ **架构优化**：使用 Browser-Use 原生 API，移除 LangChain 依赖，简化集成
 
 ---
 
@@ -67,8 +71,8 @@
 Ai_Test_Agent/
 ├── Agent_server/                   # 后端主目录
 │   ├── Api_request/                # LLM 客户端
-│   │   ├── llm_client.py          # Qwen API 封装（生成用例/代码/报告）
-│   │   └── prompts.py             # Prompt 模板库
+│   │   ├── llm_client.py          # Qwen API 封装（生成用例/报告/Bug分析）
+│   │   └── prompts.py             # Prompt 模板库（统一管理所有提示词）
 │   │
 │   ├── Build_tests/                # 测试用例生成模块
 │   │   ├── service.py             # 业务逻辑（调用 LLM）
@@ -294,6 +298,21 @@ SAVE_FOLDER_DIR=../save_floder
 - 测试步骤（列表形式）
 - 预期结果、优先级、用例类型
 
+**用例类型标准化**：
+系统支持 5 种标准用例类型，LLM 会根据需求内容智能选择：
+- **功能测试**：测试系统功能是否符合需求（默认）
+- **单元测试**：测试单个模块或函数
+- **接口测试**：测试 API 接口
+- **安全测试**：测试系统安全性
+- **性能测试**：测试系统性能和负载
+
+**在线编辑功能**：
+1. 在测试用例列表中点击 **查看详情**
+2. 点击 **编辑** 按钮进入编辑模式
+3. 修改模块、标题、步骤、优先级、用例类型等字段
+4. 支持添加/删除测试步骤
+5. 点击 **保存** 提交修改
+
 ### 场景 2️⃣：执行测试用例（AI 智能执行）
 
 1. 打开 Web UI → **执行用例** 选项卡
@@ -344,16 +363,17 @@ SAVE_FOLDER_DIR=../save_floder
 4. 点击 **下载报告** 按钮导出 HTML 文件
 
 **报告内容包含**：
-- 测试概览（通过数、失败数、总耗时）
+- 测试概览（仅多用例执行时显示：通过数、失败数、总耗时）
 - 每个用例的执行详情
-- 失败原因分析和修复建议
-- Agent 的行为路径描述
+- 详细的 Agent 行为分析（思考过程和操作路径）
+- 失败原因诊断和修复建议
 
 **报告特性**：
 - 📊 现代化设计，间距合理，阅读体验佳
 - 🎨 使用卡片布局和颜色标识
 - 📥 支持一键下载 HTML 格式
 - 💾 离线可查看，包含完整样式
+- 🎯 智能适配：单用例不显示概览，多用例显示完整统计
 
 ### 场景 4️⃣：自动答题功能
 
@@ -459,6 +479,20 @@ GET /api/test-cases/list?limit=20&offset=0
 
 GET /api/test-cases/{case_id}
   响应: {"success": true, "data": {...}}
+
+PUT /api/test-cases/{case_id}
+  请求: {
+    "module": "模块名",
+    "title": "用例标题",
+    "precondition": "前置条件",
+    "steps": ["步骤1", "步骤2"],
+    "expected": "预期结果",
+    "keywords": "关键词",
+    "priority": "3",
+    "case_type": "功能测试",
+    "stage": "功能测试阶段"
+  }
+  响应: {"success": true, "message": "测试用例更新成功"}
 ```
 
 ### 测试执行相关
@@ -621,19 +655,52 @@ MD5加密：e10adc3949ba59abbe56e057f20f883e
 
 ### 添加新的 LLM 调用
 
+**步骤 1：在 `prompts.py` 中定义提示词模板**
+
+编辑 `Agent_server/Api_request/prompts.py`：
+
+```python
+# 新功能的系统提示词
+YOUR_FEATURE_SYSTEM = """你是 AI XXX 专家。..."""
+
+# 新功能的用户提示词模板
+YOUR_FEATURE_USER_TEMPLATE = """根据以下输入生成结果：
+
+输入内容：{input_param}
+
+输出格式：
+{{
+  "result": "..."
+}}
+"""
+```
+
+**步骤 2：在 `llm_client.py` 中实现方法**
+
 编辑 `Agent_server/Api_request/llm_client.py`：
 
 ```python
+from Api_request.prompts import YOUR_FEATURE_SYSTEM, YOUR_FEATURE_USER_TEMPLATE
+
 def your_new_method(self, param1, param2):
     """你的方法描述"""
+    user_prompt = YOUR_FEATURE_USER_TEMPLATE.format(
+        input_param=param1
+    )
+    
     messages = [
-        {"role": "system", "content": "系统提示词"},
-        {"role": "user", "content": f"用户提示词：{param1}"}
+        {"role": "system", "content": YOUR_FEATURE_SYSTEM},
+        {"role": "user", "content": user_prompt}
     ]
     
     response = self.chat(messages=messages)
     return response
 ```
+
+**优势**：
+- 提示词集中管理，易于维护和版本控制
+- 代码逻辑与提示词分离，职责清晰
+- 便于团队协作和提示词优化
 
 ### 添加新的 API 路由
 
@@ -652,6 +719,9 @@ app.include_router(xxx_router)
 - **异步编程**：使用 `async/await`，避免 `asyncio.run()`（ASGI 环境）
 - **密码处理**：自动 MD5 加密
 - **字符编码**：使用 UTF-8（含 BOM）
+- **提示词管理**：所有 LLM 提示词必须在 `prompts.py` 中定义，不要硬编码在业务代码中
+- **用例类型**：必须使用标准的 5 种类型（功能/单元/接口/安全/性能测试）
+- **优先级**：使用数字 1-4 表示，1 级最高，4 级最低
 
 ---
 
@@ -685,6 +755,39 @@ app.include_router(xxx_router)
 ---
 
 ## 🔧 技术难点与解决方案
+
+### 问题 0：答题功能误触发
+
+**问题描述**：
+- 测试用例明确要求"不作答任何题目，直接点击提交按钮"
+- 但系统因检测到"错题再练"关键词而注册了答题 action
+- 导致大模型在页面提示后主动调用答题方法，违背测试意图
+
+**根本原因**：
+- 只检测正向关键词（错题再练、答题等），未考虑否定场景
+- 没有识别"不作答"、"直接提交"等否定指令
+
+**解决方案**：
+- ✅ 在 `_need_auto_answer` 方法中添加否定关键词检测
+- ✅ 否定关键词包括：不作答、不答题、直接提交、跳过答题等
+- ✅ 如果检测到否定关键词，则不注册答题 action
+- ✅ 根据是否启用答题功能，生成不同的任务提示词
+
+**关键代码**：
+```python
+@staticmethod
+def _need_auto_answer(test_case: TestCase) -> bool:
+    """检查是否需要自动答题（考虑否定关键词）"""
+    steps_text = ' '.join(test_case.steps).lower()
+    
+    # 否定关键词
+    negative_keywords = ['不作答', '不答题', '直接提交', '跳过答题', '不要答题']
+    if any(keyword in steps_text for keyword in negative_keywords):
+        return False
+    
+    # 正向关键词
+    return any(keyword in steps_text for keyword in ANSWER_KEYWORDS)
+```
 
 ### 问题 1：Browser-Use 与 LLM 集成兼容性
 
@@ -787,6 +890,94 @@ agent = Agent(
 **参考文档**：
 - [答题功能集成完成说明](./答题功能集成完成说明.md)
 - [自定义 Actions 实现](./Ai_Test_Agent/Agent_server/Build_test_code/custom_actions.py)
+
+### 问题 5：AI 思考内容英文化
+
+**问题描述**：
+- Browser-Use Agent 的思考过程（thinking）显示为英文
+- 执行动作名称也是英文，不符合中文优先原则
+
+**解决方案**：
+- ✅ 在创建 Agent 时添加 `extend_system_message` 参数，明确要求使用中文
+- ✅ 添加 `_format_action_name` 方法，将动作名称格式化为中文描述
+- ✅ 在执行日志中显示中文化的思考和动作
+
+**关键代码**：
+```python
+# 中文化系统提示
+chinese_instruction = """
+重要：你必须使用中文进行思考和回复。
+所有的思考过程（thinking）必须用中文表达。
+"""
+
+agent = Agent(
+    task=task_description,
+    llm=llm,
+    browser=browser,
+    controller=controller,
+    extend_system_message=chinese_instruction
+)
+
+# 格式化动作名称
+@staticmethod
+def _format_action_name(action_name: str) -> str:
+    """将动作名称格式化为中文描述"""
+    action_map = {
+        'go_to_url': '访问页面',
+        'click_element': '点击元素',
+        'input_text': '输入文本',
+        # ...
+    }
+    return action_map.get(action_name, action_name)
+```
+
+### 问题 6：测试报告概览显示逻辑
+
+**问题描述**：
+- 单个测试用例执行时，报告仍显示"测试概览"（总用例数 0 个等）
+- 这在单用例场景下显得冗余和不专业
+
+**解决方案**：
+- ✅ 修改 `generate_test_report` 方法，根据用例数量选择不同的 prompt 模板
+- ✅ 单个用例：使用 `REPORT_USER_SINGLE_CASE`，不生成测试概览
+- ✅ 多个用例：使用 `REPORT_USER_MULTIPLE_CASES`，显示完整概览
+
+**关键代码**：
+```python
+def generate_test_report(self, test_results, summary, format_type="markdown"):
+    total_cases = summary.get('total', len(test_results))
+    is_single_case = total_cases == 1
+    
+    if is_single_case:
+        user_prompt = REPORT_USER_SINGLE_CASE.format(
+            test_results=test_results_json,
+            format_type=format_type.upper()
+        )
+    else:
+        user_prompt = REPORT_USER_MULTIPLE_CASES.format(
+            total=summary.get('total', 0),
+            pass_count=summary.get('pass', 0),
+            # ...
+        )
+```
+
+### 问题 7：提示词管理混乱
+
+**问题描述**：
+- `llm_client.py` 中硬编码了大量提示词
+- `prompts.py` 中有专门的模板但未被使用
+- 提示词分散在多个文件，难以维护和优化
+
+**解决方案**：
+- ✅ 将所有提示词迁移到 `prompts.py` 统一管理
+- ✅ 添加了 `REPORT_SYSTEM`, `REPORT_USER_SINGLE_CASE`, `REPORT_USER_MULTIPLE_CASES`, `BUG_ANALYSIS_SYSTEM`
+- ✅ `llm_client.py` 导入并使用这些模板，通过 `.format()` 填充参数
+
+**优势**：
+- 统一管理：所有提示词在一个文件中，便于查找和修改
+- 易于维护：修改提示词不需要改动业务逻辑代码
+- 代码整洁：业务代码专注于逻辑，提示词专注于内容
+- 版本控制：提示词变更历史清晰可追溯
 
 ---
 
@@ -901,17 +1092,20 @@ python test_llm_connection.py
 
 ## 📊 项目统计
 
-- **后端代码行数**：~3000+
-- **前端代码行数**：~2000+
-- **支持的测试场景**：功能测试、接口测试、UI 自动化
+- **后端代码行数**：~3500+
+- **前端代码行数**：~2500+
+- **支持的测试场景**：功能测试、单元测试、接口测试、安全测试、性能测试
 - **平均执行速度**：20-30 秒/个测试用例
 - **成功率**：≥ 85%（取决于网页复杂度）
-- **Browser-Use 版本**：0.3.3（稳定版）
+- **Browser-Use 版本**：0.3.3（稳定版，使用原生 API）
 - **LLM 支持**：Qwen 3 VL（通过 OpenAI 兼容接口）
 - **支持文档格式**：MD / TXT / PDF / DOC / DOCX
 - **任务控制**：支持暂停/恢复/停止
-- **报告格式**：HTML（优化布局，支持下载）
+- **报告格式**：HTML（优化布局，支持下载，智能适配单/多用例）
 - **自动答题**：支持 6 种题型，平均 0.5 秒/题
+- **用例类型**：5 种标准类型（功能/单元/接口/安全/性能）
+- **提示词模板**：10+ 个专业模板，集中管理
+- **Bug 分析**：4 级严重程度，自动决策是否中止测试
 
 ---
 
@@ -938,11 +1132,12 @@ python test_llm_connection.py
 10. **智能提取复现步骤，自动保存失败截图**
 11. **集成自动答题功能，作为 Browser-Use 的内置 Action**
 12. **支持 6 种题型，无需独立脚本和 CDP 连接**
-6. 实现任务管理器，支持暂停/恢复/停止
-7. 优化报告布局，支持 HTML 下载
-8. 数据库字段升级为 LONGTEXT，支持大量日志
-9. **新增 Bug 智能管理系统，自动分析和跟踪**
-10. **智能提取复现步骤，自动保存失败截图**
+13. **实现测试用例在线编辑功能**
+14. **标准化用例类型为 5 种（功能/单元/接口/安全/性能）**
+15. **提示词统一管理，迁移到 `prompts.py`**
+16. **修复答题功能误触发问题，支持否定关键词检测**
+17. **AI 思考内容中文化，优化用户体验**
+18. **智能报告生成：单用例不显示概览，多用例显示统计**
 
 ---
 
@@ -959,9 +1154,15 @@ python test_llm_connection.py
 ### v1.2.1 (2025-12-12)
 - ✨ 新增自动答题功能，作为 Browser-Use 的内置 Action
 - ✨ 支持 6 种题型：单选、多选、判断、填空、简答、下拉框
+- ✨ 新增测试用例在线编辑功能，支持修改所有字段
+- ✨ 标准化用例类型为 5 种：功能/单元/接口/安全/性能测试
 - 🔧 使用 Playwright API 直接操作页面，无需 CDP 连接
-- 🔧 移除独立答题脚本和监控线程，简化架构
+- � 移除独立答题题脚本和监控线程，简化架构
+- 🔧 提示词统一迁移到 `prompts.py` 集中管理
+- 🔧 优化报告生成逻辑：单用例不显示概览，多用例显示完整统计
+- 🔧 修复答题功能误触发问题：检测否定关键词（不作答、直接提交等）
 - 🤖 大模型可直接调用 `auto_answer` action
+- 🎨 AI 思考内容中文化，添加动作名称格式化
 - 📝 完善自动答题文档和使用说明
 - 🎯 智能检测答题页面，自动注册答题功能
 

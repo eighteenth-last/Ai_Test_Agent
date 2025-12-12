@@ -387,3 +387,91 @@ class TestCaseService:
             return "错误：需要安装 textract 库。请运行: pip install textract"
         except Exception as e:
             return f"DOC解析错误: {str(e)}。提示：.doc格式较老，建议转换为.docx格式"
+
+    
+    @staticmethod
+    def update_test_case(
+        db: Session,
+        case_id: int,
+        module: str,
+        title: str,
+        precondition: str,
+        steps: List[str],
+        expected: str,
+        keywords: str,
+        priority: str,
+        case_type: str,
+        stage: str
+    ) -> Dict[str, Any]:
+        """
+        更新测试用例
+        
+        Args:
+            db: 数据库会话
+            case_id: 测试用例 ID
+            module: 模块名称
+            title: 用例标题
+            precondition: 前置条件
+            steps: 测试步骤列表
+            expected: 预期结果
+            keywords: 关键词
+            priority: 优先级
+            case_type: 用例类型
+            stage: 适用阶段
+        
+        Returns:
+            更新结果
+        """
+        try:
+            # 查找测试用例
+            case = db.query(TestCase).filter(TestCase.id == case_id).first()
+            
+            if not case:
+                return {
+                    "success": False,
+                    "message": f"测试用例 ID {case_id} 不存在"
+                }
+            
+            # 更新字段
+            case.module = module
+            case.title = title
+            case.precondition = precondition
+            case.steps = json.dumps(steps, ensure_ascii=False)
+            case.expected = expected
+            case.keywords = keywords
+            case.priority = priority
+            case.case_type = case_type
+            case.stage = stage
+            
+            # 提交更改
+            db.commit()
+            db.refresh(case)
+            
+            return {
+                "success": True,
+                "message": "测试用例更新成功",
+                "data": {
+                    "id": case.id,
+                    "module": case.module,
+                    "title": case.title,
+                    "precondition": case.precondition,
+                    "steps": json.loads(case.steps) if case.steps else [],
+                    "expected": case.expected,
+                    "keywords": case.keywords,
+                    "priority": case.priority,
+                    "case_type": case.case_type,
+                    "stage": case.stage,
+                    "updated_at": case.updated_at.isoformat() if case.updated_at else None
+                }
+            }
+        
+        except Exception as e:
+            db.rollback()
+            import traceback
+            error_trace = traceback.format_exc()
+            print(f"[ERROR] 更新测试用例失败: {str(e)}")
+            print(error_trace)
+            return {
+                "success": False,
+                "message": f"更新测试用例失败: {str(e)}"
+            }

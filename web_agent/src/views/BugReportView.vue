@@ -218,7 +218,7 @@ const allBugs = ref([])
 const severityColors = {
   '一级': '#f56c6c',
   '二级': '#e6a23c',
-  '三级': '#fdf6ec',
+  '三级': '#0337a1',
   '四级': '#808080'
 }
 

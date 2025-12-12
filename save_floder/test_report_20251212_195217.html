@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Report</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px;
+            line-height: 1.8;
+            background-color: #f5f7fa;
+        }
+        
+        #content {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #2c3e50;
+            font-size: 32px;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #4CAF50;
+        }
+        
+        h2 {
+            color: #34495e;
+            font-size: 24px;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            padding-top: 20px;
+        }
+        
+        h3 {
+            color: #555;
+            font-size: 20px;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        h4 {
+            color: #666;
+            font-size: 18px;
+            margin-top: 25px;
+            margin-bottom: 12px;
+        }
+        
+        p {
+            margin: 15px 0;
+            color: #333;
+        }
+        
+        ul, ol {
+            margin: 20px 0;
+            padding-left: 30px;
+        }
+        
+        li {
+            margin: 10px 0;
+            line-height: 1.8;
+        }
+        
+        hr {
+            border: none;
+            border-top: 2px solid #e0e0e0;
+            margin: 40px 0;
+        }
+        
+        blockquote {
+            background-color: #fff3cd;
+            border-left: 5px solid #ffc107;
+            padding: 20px 25px;
+            margin: 25px 0;
+            border-radius: 4px;
+        }
+        
+        code {
+            background-color: #f4f4f4;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 30px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        th, td {
+            border: 1px solid #ddd;
+            padding: 15px 20px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: #4CAF50;
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        
+        .pass {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        
+        .fail {
+            color: #f44336;
+            font-weight: bold;
+        }
+        
+        strong {
+            color: #2c3e50;
+        }
+    </style>
+</head>
+<body>
+    <div id="content">
+        <div class="markdown- report"><pre><code class="language-markdown"># 测试报告
+
+## 1. 测试用例详细情况
+
+- **用例 ID**: 115  
+- **测试状态**: ✅ Pass  
+- **执行时间**: 2025-12-12T19:51:36（耗时 78 秒）  
+- **目标 URL**: `http://123.56.3.98:81/stu/#pages_login_loginx`  
+- **测试目的**: 验证系统在输入错误密码时能否正确提示“密码错误”，并完成登录失败流程的完整交互。
+
+---
+
+## 2. 详细行为分析（Agent 执行路径与思考过程）
+
+本测试由 AI Agent 自动执行，共完成 7 个步骤，完整模拟了用户登录失败的典型场景。以下是每一步的语义化行为分析：
+
+### 步骤 1：导航至登录页面
+- **思考过程**：Agent 初始处于空白页，首要任务是访问指定登录地址。它明确规划：“第一步必须是导航到指定的登录页面”，以确保后续操作有界面可交互。
+- **操作**：调用 `go_to_url` 访问 `http://123.56.3.98:81/stu/#pages_login_loginx`。
+- **结果**：成功跳转，但页面尚未渲染完成，进入等待阶段。
+
+&gt; 📌 **关键点**：Agent 在首次访问后未立即操作，而是识别到页面加载状态，为后续稳定交互预留缓冲。
+
+---
+
+### 步骤 2：等待页面加载完成
+- **思考过程**：页面显示为空白，Agent 判断可能是加载延迟，决定“等待3秒让页面完全加载”。若仍无内容，将考虑滚动或刷新。
+- **操作**：执行 `wait(3)` 操作。
+- **结果**：等待结束后，页面成功渲染出登录表单，标题变为“登录”。
+
+&gt; 📌 **关键点**：Agent 具备动态感知能力，能根据页面状态调整策略，避免因元素未就绪导致操作失败。
+
+---
+
+### 步骤 3：输入账号
+- **思考过程**：确认页面已加载，定位到第一个输入框（索引0），计划输入指定账号 `2022900116`。
+- **操作**：调用 `input_text(index=0, text=&quot;2022900116&quot;)`。
+- **结果**：账号输入成功，界面显示已填充内容。
+
+&gt; 📌 **关键点**：Agent 准确识别输入框顺序，无需依赖 DOM 名称或 ID，体现其基于视觉/结构索引的鲁棒性。
+
+---
+
+### 步骤 4：输入错误密码
+- **思考过程**：按计划输入错误密码 `wrongpassword` 至第二个输入框（索引1），为触发登录失败做准备。
+- **操作**：调用 `input_text(index=1, text=&quot;wrongpassword&quot;)`。
+- **结果**：密码输入成功，界面显示掩码字符。
+
+&gt; 📌 **关键点**：Agent 严格遵循测试脚本逻辑，故意输入错误凭证以验证系统容错机制。
+
+---
+
+### 步骤 5：点击登录按钮
+- **思考过程**：已完成账号密码输入，下一步是点击“登录”按钮（索引6），预期触发错误提示。
+- **操作**：调用 `click_element_by_index(index=6)`。
+- **结果**：点击成功，页面响应并弹出“密码错误”提示。
+
+&gt; 📌 **关键点**：Agent 成功触发业务逻辑，验证了前端对错误凭证的拦截和反馈机制。
+
+---
+
+### 步骤 6：保存当前页面状态
+- **思考过程**：页面已显示“密码错误”，符合预期。由于无直接截图功能，Agent 选择使用 `save_pdf` 保存当前页面作为证据。
+- **操作**：调用 `save_pdf()`，生成文件 `123-56-3-98-81-stu-pages-login-student.pdf`。
+- **结果**：PDF 文件成功保存，包含完整错误提示界面。
+
+&gt; 📌 **关键点**：Agent 具备结果归档意识，即使无截图工具，也能通过替代方案（PDF）满足审计需求。
+
+---
+
+### 步骤 7：标记任务完成
+- **思考过程**：所有步骤均按计划执行完毕，且结果符合预期。调用 `done` 动作提交最终报告，并附上 PDF 文件。
+- **操作**：调用 `done(success=true, text=&quot;...&quot;, files=[&quot;...&quot;])`。
+- **结果**：测试标记为成功，最终状态记录为 `success: true`。
+
+&gt; 📌 **关键点**：Agent 主动封装成果，提供可交付物（PDF），体现自动化测试的闭环能力。
+
+---
+
+## 3. 失败原因诊断与修复建议
+
+✅ **本测试用例未失败**，所有操作均成功执行，且最终结果符合预期（显示“密码错误”提示）。无需修复建议。
+
+---
+
+## 4. 测试总结
+
+本次测试完整验证了系统在用户输入错误密码时的行为表现：
+- Agent 成功导航、等待、输入、点击、截图、归档，全流程自动化执行；
+- 系统响应符合设计预期，错误提示清晰准确；
+- Agent 展现出良好的环境适应能力（如等待加载）、元素定位能力（基于索引）、以及结果归档能力（PDF 保存）；
+- 整体测试过程流畅，无中断、无误操作，充分证明该登录模块在异常输入场景下的稳定性与可用性。
+
+📌 **建议后续扩展**：
+- 增加更多异常密码组合（如空密码、超长密码、特殊字符）进行边界测试；
+- 验证错误提示是否具备防暴力破解机制（如多次失败锁定账户）；
+- 可引入 OCR 或视觉比对技术，自动校验错误提示文本是否精确匹配预期内容。
+</code></pre></div>
+    </div>
+</body>
+</html>
