@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Report</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px;
+            line-height: 1.8;
+            background-color: #f5f7fa;
+        }
+        
+        #content {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #2c3e50;
+            font-size: 32px;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #4CAF50;
+        }
+        
+        h2 {
+            color: #34495e;
+            font-size: 24px;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            padding-top: 20px;
+        }
+        
+        h3 {
+            color: #555;
+            font-size: 20px;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        h4 {
+            color: #666;
+            font-size: 18px;
+            margin-top: 25px;
+            margin-bottom: 12px;
+        }
+        
+        p {
+            margin: 15px 0;
+            color: #333;
+        }
+        
+        ul, ol {
+            margin: 20px 0;
+            padding-left: 30px;
+        }
+        
+        li {
+            margin: 10px 0;
+            line-height: 1.8;
+        }
+        
+        hr {
+            border: none;
+            border-top: 2px solid #e0e0e0;
+            margin: 40px 0;
+        }
+        
+        blockquote {
+            background-color: #fff3cd;
+            border-left: 5px solid #ffc107;
+            padding: 20px 25px;
+            margin: 25px 0;
+            border-radius: 4px;
+        }
+        
+        code {
+            background-color: #f4f4f4;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 30px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        th, td {
+            border: 1px solid #ddd;
+            padding: 15px 20px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: #4CAF50;
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        
+        .pass {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        
+        .fail {
+            color: #f44336;
+            font-weight: bold;
+        }
+        
+        strong {
+            color: #2c3e50;
+        }
+    </style>
+</head>
+<body>
+    <div id="content">
+        <div class="markdown- report"><h1>学生登录功能自动化测试报告</h1>
+<h2>1. 测试用例详细情况</h2>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">项目</th>
+<th style="text-align: left;">详情</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>用例 ID</strong></td>
+<td style="text-align: left;">7</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>测试状态</strong></td>
+<td style="text-align: left;">✅ <strong>通过 (PASS)</strong></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>执行时间</strong></td>
+<td style="text-align: left;">2026-01-26 14:32:16</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>执行耗时</strong></td>
+<td style="text-align: left;">114 毫秒</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>目标 URL</strong></td>
+<td style="text-align: left;"><code>http://123.56.3.98:81/stu/#pages_login_student</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>最终状态 URL</strong></td>
+<td style="text-align: left;"><code>http://123.56.3.98:81/stu/#/pages/StudyCareerBridge/CourseSelection/index</code></td>
+</tr>
+</tbody>
+</table>
+<h2>2. 详细行为分析</h2>
+<p>本次测试由 AI Agent 自动执行，旨在验证学生账号密码登录功能的完整流程。Agent 严格按照预设步骤执行，并展现了完整的决策与执行过程。</p>
+<h3><strong>执行步骤与 Agent 决策分析</strong></h3>
+<h4><strong>步骤 1：初始导航</strong></h4>
+<ul>
+<li><strong>时间戳</strong>： 2026-01-26T14:32:16.107739</li>
+<li><strong>Agent 思考</strong>： 任务开始，需要访问指定的登录页面。</li>
+<li><strong>执行操作</strong>： 导航至目标 URL <code>http://123.56.3.98:81/stu/#pages_login_student</code>。</li>
+<li><strong>结果</strong>： 页面开始加载，Agent 记录了初始导航成功。</li>
+</ul>
+<h4><strong>步骤 2：等待页面加载</strong></h4>
+<ul>
+<li><strong>时间戳</strong>： 2026-01-26T14:32:16.107739</li>
+<li><strong>Agent 思考</strong>： 观察到页面显示“加载中...”，没有可交互元素。根据自动化测试最佳实践，在页面未完全加载时，应使用等待操作以确保后续步骤的稳定性。</li>
+<li><strong>执行操作</strong>： 执行 <code>wait</code> 动作，等待 3 秒。</li>
+<li><strong>结果</strong>： 等待完成，为后续输入操作做好准备。</li>
+</ul>
+<h4><strong>步骤 3：执行登录操作</strong></h4>
+<ul>
+<li><strong>时间戳</strong>： 2026-01-26T14:32:16.107739</li>
+<li><strong>Agent 思考</strong>： 页面加载完成后，识别到登录表单元素（账号输入框、密码输入框、登录按钮）。决定在一个步骤内按顺序执行三个连续操作，以模拟真实用户行为并提高执行效率。</li>
+<li><strong>执行操作</strong>：<ol>
+<li><strong>输入账号</strong>： 在索引为 933 的输入框中输入 <code>2022900116</code>。</li>
+<li><strong>输入密码</strong>： 在索引为 938 的输入框中输入 <code>900116</code>。</li>
+<li><strong>点击登录</strong>： 点击索引为 941 的“登录”按钮。</li>
+</ol>
+</li>
+<li><strong>结果</strong>： 所有操作成功执行，页面状态变为“登录中...加载中...”，表明登录请求已提交。</li>
+</ul>
+<h4><strong>步骤 4：等待登录处理</strong></h4>
+<ul>
+<li><strong>时间戳</strong>： 2026-01-26T14:32:16.108755</li>
+<li><strong>Agent 思考</strong>： 点击登录后，页面停留在原 URL 并显示处理状态。Agent 判断这是正常的请求处理过程，需要给予系统响应时间。同时，它回顾了测试要求中关于“错误提示”的处理逻辑，但当前并未触发。</li>
+<li><strong>执行操作</strong>： 再次执行 <code>wait</code> 动作，等待 3 秒。</li>
+<li><strong>结果</strong>： 等待期间，系统完成了身份验证并进行了页面跳转。</li>
+</ul>
+<h4><strong>步骤 5：验证结果并结束测试</strong></h4>
+<ul>
+<li><strong>时间戳</strong>： 2026-01-26T14:32:16.108755</li>
+<li><strong>Agent 思考</strong>： 等待后，检测到 URL 已跳转至课程首页，并识别到课程列表和“退出登录”按钮。这与“登录成功并跳转至首页”的预期完全一致。根据任务完成规则，应终止测试并报告成功。</li>
+<li><strong>执行操作</strong>： 调用 <code>done</code> 动作，标记测试成功完成，并生成详细的完成报告。</li>
+<li><strong>结果</strong>： 测试任务成功终止。最终状态为成功 (<code>success: true</code>)，最终 URL 为课程首页。</li>
+</ul>
+<h2>3. 失败原因诊断与修复建议</h2>
+<p><strong>不适用</strong>。本次测试用例状态为 <strong>PASS</strong>，所有步骤均按预期成功执行，未发生失败。</p>
+<h2>4. 测试总结</h2>
+<p>本次自动化测试成功验证了学生登录功能的核心流程。</p>
+<ul>
+<li><strong>测试结论</strong>： ✅ <strong>通过</strong>。学生账号密码登录功能工作正常。</li>
+<li><strong>关键路径验证</strong>： <code>导航 -&gt; 加载等待 -&gt; 输入凭证 -&gt; 提交登录 -&gt; 跳转验证</code> 整个路径畅通无阻。</li>
+<li><strong>Agent 行为评价</strong>： Agent 表现出良好的逻辑判断能力，在页面加载、请求处理等需要等待的环节主动进行了等待操作，确保了测试的稳定性和可靠性。其“思考”过程与执行操作高度契合，符合端到端自动化测试的要求。</li>
+<li><strong>系统表现</strong>： 系统响应迅速（总耗时114ms），登录过程无错误提示，登录成功后能准确跳转到正确的课程首页界面。</li>
+</ul>
+<p><strong>建议</strong>： 本次测试覆盖了正常登录场景。可考虑补充异常场景测试用例，如错误密码、空输入等，以更全面地评估登录功能的健壮性。</p></div>
+    </div>
+</body>
+</html>

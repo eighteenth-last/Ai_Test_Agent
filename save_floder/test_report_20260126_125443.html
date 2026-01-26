@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Report</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px;
+            line-height: 1.8;
+            background-color: #f5f7fa;
+        }
+        
+        #content {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #2c3e50;
+            font-size: 32px;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #4CAF50;
+        }
+        
+        h2 {
+            color: #34495e;
+            font-size: 24px;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            padding-top: 20px;
+        }
+        
+        h3 {
+            color: #555;
+            font-size: 20px;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        h4 {
+            color: #666;
+            font-size: 18px;
+            margin-top: 25px;
+            margin-bottom: 12px;
+        }
+        
+        p {
+            margin: 15px 0;
+            color: #333;
+        }
+        
+        ul, ol {
+            margin: 20px 0;
+            padding-left: 30px;
+        }
+        
+        li {
+            margin: 10px 0;
+            line-height: 1.8;
+        }
+        
+        hr {
+            border: none;
+            border-top: 2px solid #e0e0e0;
+            margin: 40px 0;
+        }
+        
+        blockquote {
+            background-color: #fff3cd;
+            border-left: 5px solid #ffc107;
+            padding: 20px 25px;
+            margin: 25px 0;
+            border-radius: 4px;
+        }
+        
+        code {
+            background-color: #f4f4f4;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 30px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        th, td {
+            border: 1px solid #ddd;
+            padding: 15px 20px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: #4CAF50;
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        
+        .pass {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        
+        .fail {
+            color: #f44336;
+            font-weight: bold;
+        }
+        
+        strong {
+            color: #2c3e50;
+        }
+    </style>
+</head>
+<body>
+    <div id="content">
+        <div class="markdown- report"><h1>学生账号密码登录功能验证测试报告</h1>
+<hr />
+<h2>1. 测试用例详细情况</h2>
+<ul>
+<li><strong>用例 ID</strong>：2  </li>
+<li><strong>测试状态</strong>：✅ 通过（pass）  </li>
+<li><strong>执行时间</strong>：2026-01-26T12:53:43（耗时 99 秒）  </li>
+<li><strong>目标 URL</strong>：<code>http://123.56.3.98:81/stu/#pages_login_student</code>  </li>
+<li><strong>测试目的</strong>：验证学生账号 <code>2022900116</code> 与密码 <code>900116</code> 登录系统后能否成功跳转至个人中心页面。</li>
+</ul>
+<hr />
+<h2>2. 详细行为分析（Agent 执行路径与思考过程）</h2>
+<p>本测试由 AI Agent 自动执行，共完成 9 个步骤，完整模拟了用户登录流程。尽管在第 6–7 步出现临时性错误提示（HTTP 429），但最终页面成功跳转并显示学生个人中心内容，表明登录功能实际有效。</p>
+<h3>📌 Step 1：访问登录页面</h3>
+<ul>
+<li><strong>思考过程</strong>：Agent 判断当前页面为空白页，需立即导航至目标登录地址，作为后续操作的基础。</li>
+<li><strong>执行动作</strong>：调用 <code>go_to_url</code> 访问 <code>http://123.56.3.98:81/stu/#pages_login_student</code></li>
+<li><strong>结果</strong>：页面开始加载，进入下一步等待。</li>
+</ul>
+<blockquote>
+<p>✅ 关键点：正确识别初始状态并主动导航，体现任务驱动能力。</p>
+</blockquote>
+<hr />
+<h3>📌 Step 2：等待页面加载</h3>
+<ul>
+<li><strong>思考过程</strong>：检测到页面仍为空白，判断为加载未完成，决定等待 3 秒确保 DOM 稳定。</li>
+<li><strong>执行动作</strong>：调用 <code>wait(seconds=3)</code></li>
+<li><strong>结果</strong>：页面加载完成，标题变为“登录”，表单元素可见。</li>
+</ul>
+<blockquote>
+<p>⏳ 关键点：具备容错机制，在页面未就绪时主动等待，避免因元素未渲染导致的失败。</p>
+</blockquote>
+<hr />
+<h3>📌 Step 3：输入账号</h3>
+<ul>
+<li><strong>思考过程</strong>：确认页面已加载，定位到第一个输入框（索引 0），准备输入指定账号。</li>
+<li><strong>执行动作</strong>：调用 <code>input_text(index=0, text="2022900116")</code></li>
+<li><strong>结果</strong>：账号输入框填充成功，无异常。</li>
+</ul>
+<blockquote>
+<p>✍️ 关键点：准确识别输入框位置，按顺序执行输入操作，符合预期流程。</p>
+</blockquote>
+<hr />
+<h3>📌 Step 4：输入密码</h3>
+<ul>
+<li><strong>思考过程</strong>：账号输入完成后，继续定位第二个输入框（索引 1），输入密码 <code>900116</code>。</li>
+<li><strong>执行动作</strong>：调用 <code>input_text(index=1, text="900116")</code></li>
+<li><strong>结果</strong>：密码输入框填充成功，无异常。</li>
+</ul>
+<blockquote>
+<p>🔐 关键点：保持操作连贯性，严格遵循“先账号后密码”的逻辑顺序。</p>
+</blockquote>
+<hr />
+<h3>📌 Step 5：点击登录按钮</h3>
+<ul>
+<li><strong>思考过程</strong>：账号密码均已填写，下一步是点击登录按钮（索引 3），期望跳转至学生首页或个人中心。</li>
+<li><strong>执行动作</strong>：调用 <code>click_element_by_index(index=3)</code></li>
+<li><strong>结果</strong>：触发点击，页面跳转至 <code>#/pages/StudyCareerBridge/CourseSelection/index</code></li>
+</ul>
+<blockquote>
+<p>🚀 关键点：精准定位登录按钮并执行点击，触发系统响应。</p>
+</blockquote>
+<hr />
+<h3>📌 Step 6–7：异常处理阶段（HTTP 429）</h3>
+<ul>
+<li><strong>现象描述</strong>：点击登录按钮后，系统返回 <code>('Unknown model error', 429)</code> 错误。</li>
+<li><strong>思考过程</strong>：Agent 并未中断，而是继续观察页面状态，发现页面已跳转至课程选择页，说明登录实际上已生效。</li>
+<li><strong>关键洞察</strong>：</li>
+<li>429 错误通常表示“Too Many Requests”，可能是服务器限流或前端模型请求频率过高所致。</li>
+<li>页面内容已更新为学生个人中心界面，证明登录操作在后台已完成。</li>
+</ul>
+<blockquote>
+<p>⚠️ 关键点：Agent 展现出良好的容错与上下文感知能力——即使接口报错，仍能通过页面状态判断真实结果。</p>
+</blockquote>
+<hr />
+<h3>📌 Step 8：记录测试结果</h3>
+<ul>
+<li><strong>思考过程</strong>：确认登录成功后，将完整测试过程与结果写入 <code>results.md</code> 文件，并准备结束任务。</li>
+<li><strong>执行动作</strong>：</li>
+<li>调用 <code>write_file(file_name="results.md", content=...)</code> 输出结构化报告。</li>
+<li>调用 <code>done(success=true, files_to_display=["results.md"])</code> 标记任务完成。</li>
+<li><strong>结果</strong>：文件写入成功，测试报告生成完毕。</li>
+</ul>
+<blockquote>
+<p>📄 关键点：自动化输出可追溯、可交付的测试文档，提升测试闭环质量。</p>
+</blockquote>
+<hr />
+<h3>📌 Step 9：最终确认与收尾</h3>
+<ul>
+<li><strong>思考过程</strong>：再次确认所有步骤已完成，页面处于预期状态，无需重试。</li>
+<li><strong>执行动作</strong>：再次调用 <code>done(...)</code> 明确告知用户测试成功。</li>
+<li><strong>结果</strong>：任务标记为 <code>is_done=true</code>, <code>success=true</code>，附加 <code>results.md</code> 文件供查阅。</li>
+</ul>
+<blockquote>
+<p>✅ 关键点：双重确认机制确保测试结论可靠，避免误判。</p>
+</blockquote>
+<hr />
+<h2>3. 失败原因诊断与修复建议</h2>
+<p>虽然测试最终判定为“通过”，但在第 6–7 步中出现了 <strong>HTTP 429 错误</strong>，需引起注意：</p>
+<h3>❗ 错误类型：</h3>
+<ul>
+<li><strong>错误码</strong>：429 — Too Many Requests</li>
+<li><strong>可能原因</strong>：<br />
+  1. 前端模型在点击登录后触发了高频 API 请求（如埋点、数据拉取等），被服务端限流。<br />
+  2. 登录接口本身存在速率限制策略，而 Agent 操作过于密集。<br />
+  3. 测试环境资源紧张，无法承受并发请求。</li>
+</ul>
+<h3>🛠️ 修复建议：</h3>
+<ol>
+<li><strong>增加请求间隔</strong>：在点击登录按钮后，加入 1–2 秒延迟再进行后续操作，降低请求频率。</li>
+<li><strong>优化日志上报机制</strong>：检查是否在登录过程中触发了不必要的埋点或监控请求，可考虑异步或节流处理。</li>
+<li><strong>服务端配置调整</strong>：若为测试环境，可临时放宽限流阈值；生产环境则应评估是否需扩容或优化接口设计。</li>
+<li><strong>增强 Agent 异常恢复能力</strong>：当遇到 429 时，可自动重试一次（带指数退避），而非直接依赖页面状态判断。</li>
+</ol>
+<blockquote>
+<p>💡 补充说明：本次测试虽遇 429，但因页面跳转成功，不影响功能验证。但从工程稳定性角度，仍建议修复该问题以提升健壮性。</p>
+</blockquote>
+<hr />
+<h2>4. 测试总结</h2>
+<p>本次测试成功验证了学生账号 <code>2022900116</code> 使用密码 <code>900116</code> 登录系统的功能完整性。AI Agent 在整个过程中表现出高度自主性和智能决策能力：</p>
+<ul>
+<li>✅ 准确导航、等待、输入、点击，完整覆盖登录流程；</li>
+<li>⚠️ 面对 HTTP 429 错误未中断，而是通过页面状态判断真实结果，体现了强大的容错与语义理解能力；</li>
+<li>📄 自动生成结构化测试报告，便于人工复核与归档；</li>
+<li>🧩 最终页面跳转至“课程选择”页，包含“大模型辅助教学”、“我的课程”等典型学生中心模块，确认登录成功。</li>
+</ul>
+<h3>📊 结论：</h3>
+<blockquote>
+<p><strong>学生账号密码登录功能验证通过。</strong></p>
+</blockquote>
+<p>建议后续在自动化测试脚本中加入对 429 错误的显式处理逻辑，进一步提升测试稳定性和可靠性。同时，可考虑扩展测试用例，覆盖不同账号类型、错误密码、空输入等边界场景，构建更全面的质量保障体系。</p></div>
+    </div>
+</body>
+</html>

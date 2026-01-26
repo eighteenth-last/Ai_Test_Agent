@@ -1,0 +1,160 @@
+<template>
+  <div class="flex h-screen overflow-hidden">
+    <!-- 侧边栏导航 -->
+    <aside class="sidebar-gradient text-white flex flex-col flex-shrink-0 shadow-xl z-50" style="width: 240px">
+      <div class="p-6 flex items-center gap-3 border-b border-white/10">
+        <div class="bg-white rounded-full shadow-lg overflow-hidden flex items-center justify-center w-11 h-11">
+          <img :src="logo" alt="御策天检" class="w-10 h-10 object-contain" />
+        </div>
+        <span class="text-xl font-bold tracking-tight">御策天检</span>
+      </div>
+
+      <nav class="flex-1 overflow-y-auto pt-4">
+        <MenuItem
+          v-for="menu in menuList"
+          :key="menu.id"
+          :menu="menu"
+          :isOpen="openMenus.includes(menu.id)"
+          :currentPath="currentPath"
+          @toggle="toggleMenu"
+        />
+      </nav>
+    </aside>
+
+    <!-- 主内容区 -->
+    <main class="flex-1 flex flex-col h-full overflow-hidden">
+      <!-- Top Bar -->
+      <header class="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 flex-shrink-0">
+        <h2 class="text-lg font-bold text-slate-700">{{ currentTitle }}</h2>
+        <div class="flex items-center gap-4">
+          <div class="flex items-center gap-2 text-xs text-slate-500 bg-slate-100 px-3 py-1.5 rounded-full">
+            <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+            Browser-use 引擎就绪
+          </div>
+          <n-badge :value="3" :max="99">
+            <n-button circle quaternary>
+              <template #icon>
+                <i class="fas fa-bell text-[#007857]"></i>
+              </template>
+            </n-button>
+          </n-badge>
+        </div>
+      </header>
+
+      <!-- Content Area -->
+      <div class="flex-1 overflow-y-auto p-8">
+        <router-view v-slot="{ Component }">
+          <transition name="fade-slide" mode="out-in">
+            <component :is="Component" />
+          </transition>
+        </router-view>
+      </div>
+    </main>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import { NBadge, NButton } from 'naive-ui'
+import MenuItem from '@/components/MenuItem.vue'
+import logo from '@/assets/logo.png'
+
+const route = useRoute()
+
+const menuList = [
+  {
+    id: 'dashboard',
+    icon: 'fa-chart-line',
+    label: '数据看板',
+    path: '/dashboard'
+  },
+  {
+    id: 'test',
+    icon: 'fa-vials',
+    label: '测试模块',
+    children: [
+      { label: '功能测试', path: '/test/func' },
+      { label: '压力测试', path: '/test/press' },
+      { label: '安全测试', path: '/test/security' },
+      { label: '接口测试', path: '/test/api' }
+    ]
+  },
+  {
+    id: 'mail',
+    icon: 'fa-envelope',
+    label: '邮件通知模块',
+    children: [
+      { label: '联系人管理', path: '/mail/contacts' },
+      { label: '邮件发送', path: '/mail/send' },
+      { label: '邮件配置', path: '/mail/config' }
+    ]
+  },
+  {
+    id: 'model',
+    icon: 'fa-brain',
+    label: '模型管理模块',
+    children: [
+      { label: '模型信息与切换', path: '/model/manage' }
+    ]
+  },
+  {
+    id: 'case',
+    icon: 'fa-clipboard-list',
+    label: '测试用例生成',
+    children: [
+      { label: '用例自动生成', path: '/case/generate' },
+      { label: '用例管理', path: '/case/manage' }
+    ]
+  },
+  {
+    id: 'prompt',
+    icon: 'fa-terminal',
+    label: '提示词模块',
+    children: [
+      { label: '提示词仓库', path: '/prompt/list' }
+    ]
+  },
+  {
+    id: 'report',
+    icon: 'fa-file-alt',
+    label: '测试报告模块',
+    children: [
+      { label: 'Bug测试报告', path: '/report/bug' },
+      { label: '运行测试报告', path: '/report/run' },
+      { label: '综合测试报告', path: '/report/mixed' }
+    ]
+  }
+]
+
+const openMenus = ref(['test'])
+const currentPath = computed(() => route.path)
+const currentTitle = computed(() => route.meta?.title || '请选择功能模块')
+
+// 根据路由自动展开对应菜单（手风琴效果）
+watch(
+  () => route.meta?.menu,
+  (menuId) => {
+    if (menuId) {
+      openMenus.value = [menuId]
+    } else {
+      openMenus.value = []
+    }
+  },
+  { immediate: true }
+)
+
+const toggleMenu = (menuId) => {
+  if (openMenus.value[0] === menuId) {
+    openMenus.value = []
+  } else {
+    openMenus.value = [menuId]
+  }
+}
+</script>
+
+<style scoped>
+.sidebar-gradient {
+  background: linear-gradient(180deg, #007857 0%, #004d38 100%);
+}
+</style>
