@@ -1,6 +1,8 @@
 # AI Test Agent - 智能自动化测试平台（重构版）
 
-![AI Test Agent](save_floder/img/Snipaste_2026-01-26_19-46-06.png)
+![License](https://img.shields.io/badge/License-MIT-blue.svg)
+![Python](https://img.shields.io/badge/Python-3.8%2B-green.svg)
+![Node.js](https://img.shields.io/badge/Node.js-16%2B-green.svg)
 
 ## 项目简介
 
@@ -113,8 +115,7 @@ Ai_Test_Agent/
 ## 功能模块
 
 ### 1. Dashboard 仪表板
-![Dashboard](save_floder/img/Snipaste_2026-01-26_19-46-35.png)
-
+![Dashboard](save_floder/img/Snipaste_2026-01-26_19-46-06.png)
 提供测试概况、统计图表和快速操作入口，包括：
 - 测试用例统计
 - 测试执行趋势
@@ -122,7 +123,7 @@ Ai_Test_Agent/
 - Token 使用量统计
 
 ### 2. 测试用例管理
-![用例管理](save_floder/img/Snipaste_2026-01-26_19-46-52.png)
+![用例管理](save_floder/img/Snipaste_2026-01-26_19-48-00.png)
 
 - 测试用例列表查看和筛选
 - 支持按模块、优先级、关键词搜索
@@ -130,7 +131,7 @@ Ai_Test_Agent/
 - CSV 文件导出
 
 ### 3. 测试用例生成
-![用例生成](save_floder/img/Snipaste_2026-01-26_19-47-05.png)
+![用例生成](save_floder/img/Snipaste_2026-01-26_19-47-47.png)
 
 - 自然语言需求输入
 - 文件上传支持（TXT、PDF、DOCX、DOC）
@@ -138,7 +139,7 @@ Ai_Test_Agent/
 - 批量生成支持
 
 ### 4. 测试执行
-![测试执行](save_floder/img/Snipaste_2026-01-26_19-47-20.png)
+![测试执行](save_floder/img/Snipaste_2026-01-26_19-46-35.png)
 
 - 选择测试用例执行
 - 实时查看执行进度
@@ -146,15 +147,15 @@ Ai_Test_Agent/
 - 执行日志和截图查看
 
 ### 5. 测试报告
-![测试报告](save_floder/img/Snipaste_2026-01-26_19-47-30.png)
+![测试报告](save_floder/img/Snipaste_2026-01-26_19-48-15.png)
 
 - 测试报告列表
 - 报告详情查看
 - 支持多种格式（Markdown、HTML）
 - 综合评估报告生成
 
-### 6. Bug 报告
-![Bug报告](save_floder/img/Snipaste_2026-01-26_19-47-47.png)
+### 6. Bug 报告 
+![Bug报告](save_floder/img/Snipaste_2026-01-26_19-48-08.png)
 
 - Bug 列表查看
 - 按严重程度筛选
@@ -162,7 +163,7 @@ Ai_Test_Agent/
 - Bug 状态跟踪
 
 ### 7. 模型管理
-![模型管理](save_floder/img/Snipaste_2026-01-26_19-48-00.png)
+![模型管理](save_floder/img/Snipaste_2026-01-26_19-47-30.png)
 
 - 多模型配置
 - 模型激活/切换
@@ -170,7 +171,7 @@ Ai_Test_Agent/
 - 模型利用率管理
 
 ### 8. 邮件配置
-![邮件配置](save_floder/img/Snipaste_2026-01-26_19-48-08.png)
+![邮件配置](save_floder/img/Snipaste_2026-01-26_19-47-20.png)
 
 - 邮件服务商配置（Resend、阿里云）
 - 测试模式支持
@@ -178,7 +179,7 @@ Ai_Test_Agent/
 - 自动接收 Bug 设置
 
 ### 9. 联系人管理
-![联系人管理](save_floder/img/Snipaste_2026-01-26_19-48-15.png)
+![联系人管理](save_floder/img/Snipaste_2026-01-26_19-46-52.png)
 
 - 联系人列表管理
 - 角色设置
@@ -186,7 +187,6 @@ Ai_Test_Agent/
 
 ### 10. 综合报告
 ![综合报告](save_floder/img/Snipaste_2026-01-26_19-48-53.png)
-
 - 多测试报告综合分析
 - Bug 统计和分析
 - LLM 智能评估
