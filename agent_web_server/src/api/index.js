@@ -67,6 +67,14 @@ export const testCodeAPI = {
       use_vision
     })
   },
+  executeBatchBrowserUse(test_case_ids, headless = true, max_steps = 50, use_vision = false) {
+    return api.post('/test-code/execute-batch-browser-use', {
+      test_case_ids,
+      headless,
+      max_steps,
+      use_vision
+    })
+  },
   pauseTask(task_id) {
     return api.post(`/test-code/pause-task/${task_id}`)
   },
@@ -143,13 +151,21 @@ export const modelAPI = {
   },
   getActive() {
     return api.get('/models/active/current')
+  },
+  getProviders() {
+    return api.get('/models/providers')
   }
 }
 
 // Contact API - 联系人相关
 export const contactAPI = {
-  getList() {
-    return api.get('/contacts')
+  getList(params) {
+    // 如果没有参数，使用旧接口保持兼容性
+    if (!params || Object.keys(params).length === 0) {
+      return api.get('/contacts')
+    }
+    // 如果有分页参数，使用新接口
+    return api.get('/contacts/list', { params })
   },
   add(data) {
     return api.post('/contacts', data)
@@ -231,8 +247,8 @@ export const dashboardAPI = {
   getTestTrend(days = 30) {
     return api.get('/dashboard/test-trend', { params: { days } })
   },
-  getModuleStats() {
-    return api.get('/dashboard/module-stats')
+  getCaseTypeStats() {
+    return api.get('/dashboard/case-type-stats')
   },
   getEmailStats() {
     return api.get('/dashboard/email-stats')

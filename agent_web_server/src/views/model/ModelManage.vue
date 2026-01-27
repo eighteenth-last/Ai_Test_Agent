@@ -14,9 +14,9 @@
     </div>
 
     <!-- 统计信息卡片 -->
-    <div class="grid grid-cols-2 gap-5 mb-6">
+    <div class="grid grid-cols-4 gap-5 mb-6">
       <!-- 当前活动模型 -->
-      <div class="stat-card-modern bg-gradient-to-br from-green-50 to-emerald-50 border border-green-100">
+      <div class="stat-card-modern bg-gradient-to-br from-green-50 to-emerald-50 border border-green-100 col-span-2">
         <div class="flex items-start justify-between">
           <div class="flex-1">
             <div class="flex items-center gap-2 mb-1">
@@ -29,11 +29,34 @@
               {{ activeModel?.model_name || '未激活' }}
             </p>
             <p class="text-xs text-slate-500 mt-1">
-              {{ activeModel?.provider ? `供应商: ${activeModel.provider}` : '请激活模型' }}
+              {{ activeModel?.provider_display_name || activeModel?.provider ? `供应商: ${activeModel.provider_display_name || activeModel.provider}` : '请激活模型' }}
             </p>
           </div>
           <div class="flex items-center justify-center w-12 h-12 rounded-full bg-green-100">
             <i class="fas fa-robot text-green-600 text-xl"></i>
+          </div>
+        </div>
+      </div>
+
+      <!-- 总消耗 TOKEN -->
+      <div class="stat-card-modern bg-gradient-to-br from-purple-50 to-violet-50 border border-purple-100">
+        <div class="flex items-start justify-between">
+          <div class="flex-1">
+            <div class="flex items-center gap-2 mb-1">
+              <div class="w-8 h-8 rounded-lg bg-purple-500 flex items-center justify-center">
+                <i class="fas fa-database text-white text-sm"></i>
+              </div>
+              <span class="text-sm font-medium text-slate-600">总消耗 TOKEN</span>
+            </div>
+            <p class="text-2xl font-bold text-slate-800 mt-2">
+              {{ formatNumber(totalTokens) }}
+            </p>
+            <p class="text-xs text-slate-500 mt-1">
+              累计消耗
+            </p>
+          </div>
+          <div class="flex items-center justify-center w-12 h-12 rounded-full bg-purple-100">
+            <i class="fas fa-chart-area text-purple-600 text-xl"></i>
           </div>
         </div>
       </div>
@@ -99,7 +122,7 @@
             <p class="text-slate-500">暂无模型配置</p>
           </div>
           
-          <div v-else class="space-y-4">
+          <div v-else class="grid grid-cols-1 gap-5">
             <div
               v-for="model in models"
               :key="model.id"
@@ -128,8 +151,8 @@
                       </h3>
                     </div>
                     <div class="flex items-center gap-2 text-sm text-slate-500">
-                      <span v-if="model.provider" class="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs rounded">
-                        {{ model.provider }}
+                      <span v-if="model.provider_display_name || model.provider" class="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs rounded">
+                        {{ model.provider_display_name || model.provider }}
                       </span>
                       <span class="text-slate-400">|</span>
                       <span :class="model.status === 'active' ? 'text-green-600 font-medium' : ''">
@@ -173,7 +196,7 @@
               </div>
 
               <!-- 下半部分：统计信息 -->
-              <div class="grid grid-cols-3 gap-4 pt-4 border-t border-slate-200">
+              <div class="grid grid-cols-4 gap-4 pt-4 border-t border-slate-200">
                 <!-- 利用率 -->
                 <div>
                   <span class="text-xs text-slate-500">利用率额度</span>
@@ -188,6 +211,15 @@
                     <span class="text-sm font-semibold text-slate-700 w-10 text-right">{{ model.utilization }}%</span>
                   </div>
                   <p v-if="model.utilization < 10" class="text-xs text-red-500 mt-1">即将触发切换</p>
+                </div>
+                
+                <!-- 总消耗 -->
+                <div>
+                  <span class="text-xs text-slate-500">总消耗</span>
+                  <p class="text-base font-semibold text-slate-700 mt-2">
+                    {{ formatNumber(model.tokens_used_total || 0) }}
+                  </p>
+                  <p class="text-xs text-slate-400 mt-1">tokens</p>
                 </div>
                 
                 <!-- 今日消耗 -->
@@ -315,7 +347,6 @@ import { modelAPI } from '@/api'
 const message = useMessage()
 const dialog = useDialog()
 
-// 数据
 const models = ref([])
 const loading = ref(false)
 const modalVisible = ref(false)
@@ -324,13 +355,14 @@ const submitting = ref(false)
 const formRef = ref(null)
 const autoSwitch = ref(true)
 
-// 系统日志
-const systemLogs = ref([
-  { type: 'system', message: '[SYSTEM] 检测到 Gemini 2.5 额度不足(低于5%)...' },
-  { type: 'progress', message: '[PROGRESS] 正在总结当前对话至指定步数 (Step 15/20)...' },
-  { type: 'snapshot', message: '[SNAPSHOT] 测试快照已生成并储存至数据库 Redis.' },
-  { type: 'action', message: '[ACTION] 正在自动切换至备用模型：DeepSeek V3...' }
-])
+const systemLogs = ref([])
+
+const addSystemLog = (type, message) => {
+  systemLogs.value.unshift({ type, message })
+  if (systemLogs.value.length > 50) {
+    systemLogs.value.pop()
+  }
+}
 
 // 表单数据
 const formData = reactive({
@@ -343,16 +375,8 @@ const formData = reactive({
   utilization: 100
 })
 
-// 供应商选项
-const providerOptions = [
-  { label: 'OpenAI', value: 'OpenAI' },
-  { label: 'Anthropic', value: 'Anthropic' },
-  { label: 'Google (Gemini)', value: 'Google' },
-  { label: 'DeepSeek', value: 'DeepSeek' },
-  { label: 'Alibaba (通义千问)', value: 'Alibaba' },
-  { label: 'Baidu (文心一言)', value: 'Baidu' },
-  { label: '其他', value: 'Other' }
-]
+// 供应商选项（动态加载）
+const providerOptions = ref([])
 
 // 表单验证规则
 const formRules = {
@@ -364,6 +388,9 @@ const formRules = {
 
 // 计算属性
 const activeModel = computed(() => models.value.find(m => m.is_active === 1))
+const totalTokens = computed(() => {
+  return models.value.reduce((sum, m) => sum + (m.tokens_used_total || 0), 0)
+})
 const todayTokens = computed(() => {
   return models.value.reduce((sum, m) => sum + (m.tokens_used_today || 0), 0)
 })
@@ -379,10 +406,9 @@ const formatNumber = (num) => {
   return num.toString()
 }
 
-// 处理自动切换状态变更
 const handleAutoSwitchChange = (value) => {
   message.success(`自动切换已${value ? '开启' : '关闭'}`)
-  // TODO: 调用后端API保存设置
+  addSystemLog('action', `[ACTION] 自动切换已${value ? '开启' : '关闭'}`)
   console.log('自动切换状态:', value)
 }
 
@@ -394,19 +420,62 @@ const getPriorityType = (priority) => {
   return 'default'
 }
 
-// 加载模型列表
+// 加载供应商列表
+const loadProviders = async () => {
+  try {
+    const result = await modelAPI.getProviders()
+    console.log('供应商API返回结果:', result)
+    if (result.success && Array.isArray(result.data)) {
+      providerOptions.value = result.data.map(p => ({
+        label: p.display_name,
+        value: p.code
+      }))
+      console.log('供应商列表已加载:', providerOptions.value)
+      addSystemLog('system', `[SYSTEM] 已加载 ${providerOptions.value.length} 个模型供应商`)
+    } else {
+      console.warn('供应商数据格式错误:', result)
+      addSystemLog('system', '[SYSTEM] 供应商数据格式错误，使用默认选项')
+      useFallbackProviders()
+    }
+  } catch (error) {
+    console.error('加载供应商列表失败:', error)
+    addSystemLog('system', `[SYSTEM] 加载供应商失败: ${error.message}`)
+    useFallbackProviders()
+  }
+}
+
+// 使用默认供应商选项
+const useFallbackProviders = () => {
+  providerOptions.value = [
+    { label: 'OpenAI', value: 'openai' },
+    { label: 'Anthropic', value: 'anthropic' },
+    { label: 'Google (Gemini)', value: 'google' },
+    { label: 'DeepSeek', value: 'deepseek' },
+    { label: 'Alibaba (通义千问)', value: 'alibaba' },
+    { label: 'Baidu (文心一言)', value: 'baidu' },
+    { label: '其他', value: 'other' }
+  ]
+}
+
 const loadModels = async () => {
   loading.value = true
   try {
     const result = await modelAPI.getList()
     if (Array.isArray(result)) {
       models.value = result
+      addSystemLog('system', `[SYSTEM] 模型列表已加载，共 ${models.value.length} 个配置`)
+      const active = models.value.find(m => m.is_active === 1)
+      if (active) {
+        addSystemLog('system', `[SYSTEM] 当前激活模型：${active.model_name}`)
+      }
     } else {
       message.error('获取模型列表失败')
+      addSystemLog('system', '[SYSTEM] 获取模型列表失败，返回数据格式异常')
     }
   } catch (error) {
     message.error('获取模型列表失败: ' + (error.message || '未知错误'))
     console.error(error)
+    addSystemLog('system', `[SYSTEM] 获取模型列表失败: ${error.message || '未知错误'}`)
   } finally {
     loading.value = false
   }
@@ -443,7 +512,6 @@ const resetFormData = () => {
   formData.utilization = 100
 }
 
-// 提交表单
 const submitForm = async () => {
   try {
     await formRef.value?.validate()
@@ -464,18 +532,24 @@ const submitForm = async () => {
       message.success(isEditing.value ? '更新成功' : '添加成功')
       modalVisible.value = false
       loadModels()
+      if (isEditing.value) {
+        addSystemLog('action', `[ACTION] 已更新模型：${formData.model_name}`)
+      } else {
+        addSystemLog('action', `[ACTION] 已添加模型：${formData.model_name}`)
+      }
     } else {
       message.error(result.message || '操作失败')
+      addSystemLog('system', `[SYSTEM] 模型保存失败: ${result.message || '未知错误'}`)
     }
   } catch (error) {
     message.error('操作失败: ' + (error.message || '未知错误'))
     console.error(error)
+    addSystemLog('system', `[SYSTEM] 模型保存异常: ${error.message || '未知错误'}`)
   } finally {
     submitting.value = false
   }
 }
 
-// 激活模型
 const activateModel = async (model) => {
   try {
     const result = await modelAPI.activate(model.id)
@@ -483,21 +557,18 @@ const activateModel = async (model) => {
       message.success(`模型 ${model.model_name} 已激活`)
       loadModels()
       
-      // 添加系统日志
-      systemLogs.value.unshift({
-        type: 'action',
-        message: `[ACTION] 手动切换至模型：${model.model_name}`
-      })
+      addSystemLog('action', `[ACTION] 手动切换至模型：${model.model_name}`)
     } else {
       message.error(result.message || '激活失败')
+      addSystemLog('system', `[SYSTEM] 激活模型失败: ${result.message || '未知错误'}`)
     }
   } catch (error) {
     message.error('激活失败: ' + (error.message || '未知错误'))
     console.error(error)
+    addSystemLog('system', `[SYSTEM] 激活模型异常: ${error.message || '未知错误'}`)
   }
 }
 
-// 删除模型
 const deleteModel = (model) => {
   if (model.is_active === 1) {
     message.warning('无法删除激活中的模型')
@@ -515,18 +586,23 @@ const deleteModel = (model) => {
         if (result.success) {
           message.success('删除成功')
           loadModels()
+          addSystemLog('action', `[ACTION] 已删除模型：${model.model_name}`)
         } else {
           message.error(result.message || '删除失败')
+          addSystemLog('system', `[SYSTEM] 删除模型失败: ${result.message || '未知错误'}`)
         }
       } catch (error) {
         message.error('删除失败: ' + (error.message || '未知错误'))
         console.error(error)
+        addSystemLog('system', `[SYSTEM] 删除模型异常: ${error.message || '未知错误'}`)
       }
     }
   })
 }
 
 onMounted(() => {
+  addSystemLog('system', '[SYSTEM] 模型管理控制台已就绪')
+  loadProviders()
   loadModels()
 })
 </script>
@@ -550,22 +626,28 @@ onMounted(() => {
 
 /* 模型卡片 */
 .model-card-modern {
-  padding: 1.5rem;
-  background: linear-gradient(to right, #fafafa, #ffffff);
+  padding: 1.75rem;
+  background: white;
   border: 1px solid #e5e7eb;
-  border-radius: 0.75rem;
-  transition: all 0.3s ease;
+  border-radius: 1rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .model-card-modern:hover {
   border-color: #007857;
-  box-shadow: 0 4px 12px rgba(0, 120, 87, 0.1);
+  box-shadow: 0 8px 24px rgba(0, 120, 87, 0.12);
+  transform: translateY(-2px);
 }
 
 .model-card-modern.active {
-  background: linear-gradient(to right, #ecfdf5, #f0fdf4);
+  background: linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%);
   border: 2px solid #10b981;
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+  box-shadow: 0 8px 24px rgba(16, 185, 129, 0.2);
+}
+
+.model-card-modern.active:hover {
+  box-shadow: 0 12px 32px rgba(16, 185, 129, 0.3);
 }
 
 .status-badge-active {

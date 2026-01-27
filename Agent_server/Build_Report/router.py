@@ -101,13 +101,16 @@ async def get_reports(
     db: Session = Depends(get_db)
 ):
     """
-    Get test report list
+    Get test report list with pagination
     """
-    reports = TestReportService.get_reports(db=db, limit=limit, offset=offset)
+    result = TestReportService.get_reports(db=db, limit=limit, offset=offset)
     return {
         "success": True,
-        "data": reports,
-        "total": len(reports)
+        "data": result['data'],
+        "total": result['total'],
+        "limit": limit,
+        "offset": offset,
+        "has_more": (offset + limit) < result['total']
     }
 
 

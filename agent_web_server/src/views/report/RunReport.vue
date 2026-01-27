@@ -277,7 +277,36 @@ const formatExecutionLog = (log) => {
 // 表格列定义
 const columns = [
   { title: 'ID', key: 'id', width: 80 },
-  { title: '测试用例', key: 'case_name', width: 400, ellipsis: { tooltip: true } },
+  { title: '测试用例', key: 'case_name', width: 350, ellipsis: { tooltip: true } },
+  { 
+    title: '测试类型', 
+    key: 'case_type', 
+    width: 120,
+    render(row) {
+      const type = row.case_type || '功能测试'
+      const typeMap = {
+        '功能测试': 'info',
+        '接口测试': 'warning',
+        '单元测试': 'success',
+        '性能测试': 'error',
+        '安全测试': 'error'
+      }
+      return h(NTag, { type: typeMap[type] || 'default', size: 'small' }, 
+        { default: () => type }
+      )
+    }
+  },
+  { 
+    title: '执行模式', 
+    key: 'execution_mode', 
+    width: 100,
+    render(row) {
+      const mode = row.execution_mode || '单量'
+      return h(NTag, { type: mode === '批量' ? 'warning' : 'default', size: 'small' }, 
+        { default: () => mode }
+      )
+    }
+  },
   { 
     title: '状态', 
     key: 'status', 
@@ -288,13 +317,24 @@ const columns = [
       )
     }
   },
-  { title: '总步数', key: 'total_steps', width: 80 },
-  { title: '耗时(秒)', key: 'duration', width: 100 },
-  { title: '执行时间', key: 'created_at', width: 180 },
+  { 
+    title: '执行时间', 
+    key: 'created_at', 
+    width: 200,
+    render(row) {
+      if (!row.created_at) return '-'
+      try {
+        const date = new Date(row.created_at)
+        return date.toLocaleString()
+      } catch (e) {
+        return row.created_at
+      }
+    }
+  },
   {
     title: '操作',
     key: 'actions',
-    width: 200,
+    width: 220,
     fixed: 'right',
     render(row) {
       return h(NSpace, {}, {
@@ -382,7 +422,9 @@ const loadReports = async () => {
           status: status,
           duration: summary.duration || 0,
           total_steps: totalSteps,
-          case_name: report.title || '-'
+          case_name: report.title || '-',
+          case_type: report.case_type || '功能测试',
+          execution_mode: report.execution_mode || '单量'
         }
       })
 

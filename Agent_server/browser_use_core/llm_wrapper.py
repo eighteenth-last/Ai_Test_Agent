@@ -157,6 +157,9 @@ class LLMWrapper:
                 # 解析 JSON
                 data = json.loads(content)
                 
+                # 修正常见的 LLM 输出格式错误（特别是 Qwen 模型）
+                data = self._fix_action_format(data)
+                
                 # 构造 output_format 对象
                 result = output_format(**data)
                 logger.debug(f"[LLMWrapper] 成功构造 {output_format.__name__} 对象")
@@ -169,6 +172,59 @@ class LLMWrapper:
                 raise
         else:
             return await self._original_ainvoke(converted_messages, **kwargs)
+    
+    def _fix_action_format(self, data):
+        """
+        修正 LLM 输出的 action 格式错误
+        
+        常见错误:
+        1. {'wait': 3} -> {'wait': {'seconds': 3}}
+        2. {'input': {'index': 509, 'value': 'xxx'}} -> {'input': {'index': 509, 'text': 'xxx'}}
+        """
+        if 'action' not in data:
+            return data
+        
+        actions = data.get('action', [])
+        if not isinstance(actions, list):
+            return data
+        
+        fixed_actions = []
+        for action in actions:
+            if not isinstance(action, dict):
+                fixed_actions.append(action)
+                continue
+            
+            fixed_action = {}
+            for key, value in action.items():
+                # 修正 wait 格式: {'wait': 3} -> {'wait': {'seconds': 3}}
+                if key == 'wait':
+                    if isinstance(value, (int, float)):
+                        fixed_action['wait'] = {'seconds': int(value)}
+                        logger.debug(f"[LLMWrapper] 修正 wait 格式: {value} -> {{'seconds': {int(value)}}}")
+                    elif isinstance(value, dict) and 'seconds' in value:
+                        fixed_action['wait'] = value
+                    else:
+                        fixed_action['wait'] = {'seconds': 3}  # 默认等待3秒
+                
+                # 修正 input 格式: {'index': x, 'value': y} -> {'index': x, 'text': y}
+                elif key == 'input':
+                    if isinstance(value, dict):
+                        fixed_input = value.copy()
+                        if 'value' in fixed_input and 'text' not in fixed_input:
+                            fixed_input['text'] = fixed_input.pop('value')
+                            logger.debug(f"[LLMWrapper] 修正 input 格式: 'value' -> 'text'")
+                        fixed_action['input'] = fixed_input
+                    else:
+                        fixed_action['input'] = value
+                
+                # 其他 action 保持不变
+                else:
+                    fixed_action[key] = value
+            
+            fixed_actions.append(fixed_action)
+        
+        data['action'] = fixed_actions
+        return data
     
     def __getattr__(self, name):
         """委托属性访问到原始 LLM"""

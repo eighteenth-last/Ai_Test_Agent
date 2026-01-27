@@ -71,8 +71,8 @@
     </div>
 
     <div class="charts-row">
-      <!-- 模块测试覆盖 -->
-      <n-card class="chart-card" title="模块用例分布">
+      <!-- 用例类型分布 -->
+      <n-card class="chart-card" title="测试用例类型分布">
         <div ref="moduleChartRef" class="chart-container"></div>
       </n-card>
       
@@ -356,8 +356,8 @@ const loadTrendChart = async () => {
 // 加载模块分布
 const loadModuleChart = async () => {
   try {
-    const result = await dashboardAPI.getModuleStats()
-    console.log('[Dashboard] 模块数据:', result)
+    const result = await dashboardAPI.getCaseTypeStats()
+    console.log('[Dashboard] 用例类型数据:', result)
     
     if (result.success && moduleChartRef.value) {
       if (!moduleChart) {
@@ -379,13 +379,13 @@ const loadModuleChart = async () => {
           bottom: 20
         },
         series: [{
-          name: '模块分布',
+          name: '用例类型分布',
           type: 'pie',
           radius: '65%',
           center: ['40%', '50%'],
           data: data.map((item, index) => ({
             value: item.count,
-            name: item.module || '未分类',
+            name: item.case_type || '未分类',
             itemStyle: {
               color: ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc8452', '#9a60b4'][index % 8]
             }

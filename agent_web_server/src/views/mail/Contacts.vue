@@ -151,7 +151,16 @@ const columns = [
   }
 ]
 
-const pagination = { pageSize: 10 }
+const pageSize = 10
+const pagination = computed(() => {
+  const total = filteredContacts.value.length
+  if (!total || total <= pageSize) {
+    return false
+  }
+  return {
+    pageSize
+  }
+})
 
 // 加载联系人列表
 const loadContacts = async () => {

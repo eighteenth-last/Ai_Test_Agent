@@ -14,7 +14,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from database.connection import BugReport, TestCase, TestResult
+from database.connection import BugReport, TestCase, TestRecord
 
 
 class BugAnalysisService:
@@ -51,20 +51,22 @@ class BugAnalysisService:
     @staticmethod
     async def analyze_bug_from_execution(
         test_case_id: int,
-        test_result_id: int,
+        test_record_id: int,
         execution_history: Dict[str, Any],
         error_message: str,
-        db: Session
+        db: Session,
+        execution_mode: str = '单量'
     ) -> Optional[Dict[str, Any]]:
         """
         从测试执行结果中分析 Bug
         
         Args:
             test_case_id: 测试用例ID
-            test_result_id: 测试结果ID
+            test_record_id: 执行记录ID
             execution_history: 执行历史
             error_message: 错误信息
             db: 数据库会话
+            execution_mode: 执行模式（单量/批量）
         
         Returns:
             Bug 分析结果
@@ -135,11 +137,20 @@ class BugAnalysisService:
                 duplicate_count=duplicate_count
             )
             
+            # 获取测试用例类型
+            case_type = test_case.case_type or '功能测试'
+            
+            # 生成问题描述
+            if execution_mode == '批量':
+                description = f"【批量测试】测试用例【{test_case.title}】(ID: {test_case_id}) 执行失败。\n预期结果：{test_case.expected}\n实际结果：{bug_data.get('actual_result', error_message)}"
+            else:
+                description = f"测试用例【{test_case.title}】执行失败。\n预期结果：{test_case.expected}\n实际结果：{bug_data.get('actual_result', error_message)}"
+            
             # 保存 Bug 到数据库
             bug_report = BugReport(
                 bug_name=test_case.title,
+                test_record_id=test_record_id,
                 test_case_id=test_case_id,
-                test_result_id=test_result_id,
                 location_url=location_url,
                 error_type=error_type,
                 severity_level=severity_level,
@@ -148,6 +159,9 @@ class BugAnalysisService:
                 result_feedback=bug_data.get('result_feedback', ''),
                 expected_result=test_case.expected,
                 actual_result=bug_data.get('actual_result', error_message),
+                description=description,
+                case_type=case_type,
+                execution_mode=execution_mode,
                 status='待处理'
             )
             
@@ -760,6 +774,9 @@ class BugAnalysisService:
                     "result_feedback": bug.result_feedback,
                     "expected_result": bug.expected_result,
                     "actual_result": bug.actual_result,
+                    "description": bug.description or '',
+                    "case_type": bug.case_type or '功能测试',
+                    "execution_mode": bug.execution_mode or '单量',
                     "status": bug.status,
                     "created_at": bug.created_at.isoformat() if bug.created_at else None
                 }
@@ -794,6 +811,9 @@ class BugAnalysisService:
                 "result_feedback": bug.result_feedback,
                 "expected_result": bug.expected_result,
                 "actual_result": bug.actual_result,
+                "description": bug.description or '',
+                "case_type": bug.case_type or '功能测试',
+                "execution_mode": bug.execution_mode or '单量',
                 "status": bug.status,
                 "created_at": bug.created_at.isoformat() if bug.created_at else None,
                 "updated_at": bug.updated_at.isoformat() if bug.updated_at else None

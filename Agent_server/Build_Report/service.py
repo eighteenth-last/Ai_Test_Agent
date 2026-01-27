@@ -8,7 +8,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from database.connection import TestReport, TestResult, TestCode, TestCase
+from database.connection import TestReport, TestRecord, ExecutionCase, ExecutionBatch, TestResult, TestCase
+from Api_request.prompts import MIXED_REPORT_ANALYSIS_TEMPLATE, MIXED_REPORT_ANALYSIS_SYSTEM
 # MCP integration removed - using direct formatting if needed
 
 load_dotenv()
@@ -67,19 +68,32 @@ class TestReportService:
                 
                 total_duration += result.duration or 0
                 
-                # 获取测试用例信息
+                # 获取测试用例信息（通过 test_case_id 关联 execution_cases 表）
                 if result.test_case_id and not test_case_title:
-                    test_case = db.query(TestCase).filter(TestCase.id == result.test_case_id).first()
-                    if test_case:
-                        test_case_title = test_case.title
+                    execution_case = db.query(ExecutionCase).filter(
+                        ExecutionCase.id == result.test_case_id
+                    ).first()
+                    if execution_case:
+                        test_case_title = execution_case.title
+                
+                # 获取批次号（通过 batch_id 关联 execution_batches 表）
+                batch_str = None
+                if result.batch_id:
+                    execution_batch = db.query(ExecutionBatch).filter(
+                        ExecutionBatch.id == result.batch_id
+                    ).first()
+                    if execution_batch:
+                        batch_str = execution_batch.batch
                 
                 # 尝试解析 execution_log (如果是 JSON 格式的 Agent 历史)
                 log_content = result.execution_log
+                log_data = None  # 初始化 log_data
+                screenshots = []  # 初始化 screenshots
                 try:
                     if log_content and (log_content.startswith('{') or log_content.startswith('[')):
                         log_data = json.loads(log_content)
                         log_content = log_data
-                        # 从 execution_log 提取步数
+                        # 从 execution_log 提取步数和截图
                         if isinstance(log_data, dict):
                             if 'steps' in log_data and isinstance(log_data['steps'], list):
                                 total_steps += len(log_data['steps'])
@@ -87,15 +101,18 @@ class TestReportService:
                                 total_steps += log_data['total_steps']
                             elif 'step_count' in log_data:
                                 total_steps += log_data['step_count']
+                            # 提取截图
+                            screenshots = log_data.get('screenshots', [])
                 except Exception:
                     pass  # 保持原样如果是普通文本或解析失败
 
                 results_data.append({
                     "id": result.id,
-                    "test_code_id": result.test_code_id,
+                    "batch": batch_str,
+                    "execution_mode": result.execution_mode,
                     "status": result.status,
                     "execution_log": log_content,
-                    "screenshots": result.screenshots,
+                    "screenshots": screenshots,
                     "error_message": result.error_message,
                     "duration": result.duration,
                     "executed_at": result.executed_at.isoformat() if result.executed_at else None
@@ -400,9 +417,9 @@ class TestReportService:
         db: Session,
         limit: int = 20,
         offset: int = 0
-    ) -> List[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
         """
-        Get test report list
+        Get test report list with pagination
         
         Args:
             db: Database session
@@ -410,26 +427,50 @@ class TestReportService:
             offset: Offset
         
         Returns:
-            Test report list
+            Dict with data and total count
         """
         from database.connection import TestResult
+        from sqlalchemy import func
         
+        # Get total count
+        total = db.query(func.count(TestReport.id)).scalar()
+        
+        # Get paginated reports
         reports = db.query(TestReport).order_by(
             TestReport.id.desc()
         ).limit(limit).offset(offset).all()
         
         result = []
         for report in reports:
-            # 尝试查找关联的测试结果（通过标题匹配）
+            # 尝试查找关联的测试结果（通过标题匹配 execution_cases）
             execution_log = None
-            test_result = db.query(TestResult).join(
-                TestCase, TestResult.test_case_id == TestCase.id
-            ).filter(TestCase.title == report.title).order_by(
-                TestResult.executed_at.desc()
-            ).first()
+            case_type = None
+            execution_mode = "单量"  # 默认为单量
             
-            if test_result:
-                execution_log = test_result.execution_log
+            # 先查找最新的 execution_case
+            execution_case = db.query(ExecutionCase).filter(
+                ExecutionCase.title == report.title
+            ).order_by(ExecutionCase.created_at.desc()).first()
+            
+            if execution_case:
+                case_type = execution_case.case_type
+                
+                # 通过 execution_case.id 查找对应的 test_result 获取 execution_mode
+                test_result = db.query(TestResult).filter(
+                    TestResult.test_case_id == execution_case.id
+                ).order_by(TestResult.executed_at.desc()).first()
+                if test_result:
+                    execution_mode = test_result.execution_mode or "单量"
+                    execution_log = test_result.execution_log
+            else:
+                # 兼容旧数据：尝试从 test_result 获取
+                test_result = db.query(TestResult).order_by(
+                    TestResult.executed_at.desc()
+                ).first()
+                
+                if test_result:
+                    execution_log = test_result.execution_log
+                    execution_mode = getattr(test_result, 'execution_mode', '单量') or '单量'
             
             result.append({
                 "id": report.id,
@@ -439,10 +480,15 @@ class TestReportService:
                 "format_type": report.format_type,
                 "total_steps": report.total_steps or 0,
                 "execution_log": execution_log,
+                "case_type": case_type or "功能测试",
+                "execution_mode": execution_mode,
                 "created_at": report.created_at.isoformat() if report.created_at else None
             })
         
-        return result
+        return {
+            "data": result,
+            "total": total
+        }
     
     @staticmethod
     def get_report_by_id(
@@ -459,8 +505,6 @@ class TestReportService:
         Returns:
             Full report data including details/content
         """
-        from database.connection import TestResult
-        
         report = db.query(TestReport).filter(TestReport.id == report_id).first()
         
         if not report:
@@ -469,16 +513,35 @@ class TestReportService:
                 "message": "Report not found"
             }
         
-        # 尝试查找关联的测试结果（通过标题匹配）
+        # 尝试查找关联的测试结果（通过标题匹配 execution_cases）
         execution_log = None
-        test_result = db.query(TestResult).join(
-            TestCase, TestResult.test_case_id == TestCase.id
-        ).filter(TestCase.title == report.title).order_by(
-            TestResult.executed_at.desc()
-        ).first()
+        case_type = None
+        execution_mode = "单量"
         
-        if test_result:
-            execution_log = test_result.execution_log
+        # 先查找最新的 execution_case
+        execution_case = db.query(ExecutionCase).filter(
+            ExecutionCase.title == report.title
+        ).order_by(ExecutionCase.created_at.desc()).first()
+        
+        if execution_case:
+            case_type = execution_case.case_type
+            
+            # 通过 test_case_id 查找对应的 test_result 获取 execution_mode
+            test_result = db.query(TestResult).filter(
+                TestResult.test_case_id == execution_case.id
+            ).order_by(TestResult.executed_at.desc()).first()
+            if test_result:
+                execution_mode = test_result.execution_mode or "单量"
+                execution_log = test_result.execution_log
+        else:
+            # 兼容旧数据
+            test_result = db.query(TestResult).order_by(
+                TestResult.executed_at.desc()
+            ).first()
+            
+            if test_result:
+                execution_log = test_result.execution_log
+                execution_mode = getattr(test_result, 'execution_mode', '单量') or '单量'
         
         return {
             "success": True,
@@ -489,6 +552,8 @@ class TestReportService:
                 "details": report.details,
                 "file_path": report.file_path,
                 "format_type": report.format_type,
+                "case_type": case_type or "功能测试",
+                "execution_mode": execution_mode,
                 "total_steps": report.total_steps or 0,
                 "execution_log": execution_log,
                 "created_at": report.created_at.isoformat() if report.created_at else None
@@ -594,65 +659,30 @@ class TestReportService:
             # 5. 构建 LLM 提示词
             pass_rate = round((pass_tests / total_tests * 100), 1) if total_tests > 0 else 0
             
-            prompt = f"""请作为专业的测试分析师，对以下测试数据进行综合评估分析：
-
-## 测试数据概览
-- 总测试用例数：{total_tests}
-- 通过数：{pass_tests}
-- 失败数：{fail_tests}
-- 通过率：{pass_rate}%
-- 总执行时长：{total_duration}秒
-- 总执行步数：{total_steps}
-- 测试时间：{datetime.now().strftime('%Y年%m月%d日')}
-
-## 详细测试报告
-{json.dumps(test_data, ensure_ascii=False, indent=2)}
-
-## Bug 分析
-- 总 Bug 数：{len(bugs)}
-- 一级（严重）：{severity_stats['一级']}个
-- 二级（重要）：{severity_stats['二级']}个
-- 三级（一般）：{severity_stats['三级']}个
-- 四级（轻微）：{severity_stats['四级']}个
-
-### Bug 详情
-{json.dumps(bug_data[:10], ensure_ascii=False, indent=2)}
-
-## 请提供以下内容：
-
-1. **测试概要**（150-200字）
-   - 简要描述本次测试的整体情况
-   - 提及覆盖的主要功能模块
-   - 说明测试周期和执行情况
-
-2. **质量评估**
-   - 根据通过率给出质量评级（优秀/良好/一般/较差）
-   - 分析通过率和 Bug 数量的关系
-   - 指出主要的质量问题
-
-3. **AI 分析结论**（200-300字）
-   - 深入分析测试结果揭示的问题
-   - 评估系统稳定性和可靠性
-   - 针对严重 Bug 给出优先级建议
-   - 提供改进建议和下一步行动建议
-
-请用专业、客观的语言，提供有洞察力的分析。输出格式为 JSON：
-{{
-  "summary": "测试概要文字",
-  "quality_rating": "优秀/良好/一般/较差",
-  "pass_rate": {pass_rate},
-  "bug_count": {len(bugs)},
-  "duration": "{total_duration // 60}min {total_duration % 60}s",
-  "conclusion": "AI 分析结论文字"
-}}
-"""
+            prompt = MIXED_REPORT_ANALYSIS_TEMPLATE.format(
+                total_tests=total_tests,
+                pass_tests=pass_tests,
+                fail_tests=fail_tests,
+                pass_rate=pass_rate,
+                total_duration=total_duration,
+                total_steps=total_steps,
+                test_date=datetime.now().strftime('%Y年%m月%d日'),
+                test_data=json.dumps(test_data, ensure_ascii=False, indent=2),
+                bug_count=len(bugs),
+                severity_1=severity_stats['一级'],
+                severity_2=severity_stats['二级'],
+                severity_3=severity_stats['三级'],
+                severity_4=severity_stats['四级'],
+                bug_data=json.dumps(bug_data[:10], ensure_ascii=False, indent=2),
+                duration=f"{total_duration // 60}min {total_duration % 60}s"
+            )
             
             # 6. 调用 LLM 生成分析
             print("[MixedReport] 正在调用 LLM 生成综合分析...")
             
             llm_client = LLMClient()
             messages = [
-                {"role": "system", "content": "你是一位专业的测试分析师，擅长从测试数据中提炼关键信息和洞察。"},
+                {"role": "system", "content": MIXED_REPORT_ANALYSIS_SYSTEM},
                 {"role": "user", "content": prompt}
             ]
             

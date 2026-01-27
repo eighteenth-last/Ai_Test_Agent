@@ -2,13 +2,13 @@
 BrowserUseAgent - 适配 browser-use 0.11.1 的增强 Agent
 
 主要功能:
-- Token 统计和成本计算
+- Token 统计和成本计算（基于 browser-use 0.11.1）
 - 截图自动保存
 - 支持多种 LLM Provider
 - 增强的错误处理
 
 作者: Ai_Test_Agent Team
-版本: 3.0 (browser-use 0.11.1)
+版本: 4.0 (browser-use 0.11.1 + 新 TokenTracker)
 """
 from __future__ import annotations
 
@@ -32,54 +32,15 @@ from browser_use.agent.views import (
 )
 from browser_use.utils import time_execution_async
 
+# 导入新的 TokenTracker
+from utils.token_tracker import TokenTracker, TokenUsage
+
 load_dotenv()
 logger = logging.getLogger(__name__)
 
 # 截图保存目录
 BUG_IMG_SAVE_PATH = Path(r"R:\Code\Python\Python_selenium_test_Agent\Ai_Test_Agent\save_floder\bug_img")
 BUG_IMG_SAVE_PATH.mkdir(parents=True, exist_ok=True)
-
-
-class TokenUsageTracker:
-    """Token 使用量跟踪器"""
-    
-    def __init__(self):
-        self.prompt_tokens: int = 0
-        self.completion_tokens: int = 0
-        self.total_tokens: int = 0
-        self.cached_tokens: int = 0
-        self.invocations: int = 0
-        self.start_time: datetime = datetime.now()
-        self.usage_history: List[Dict[str, Any]] = []
-    
-    def add_usage(self, prompt_tokens: int, completion_tokens: int, cached_tokens: int = 0):
-        """添加一次 token 使用记录"""
-        self.prompt_tokens += prompt_tokens
-        self.completion_tokens += completion_tokens
-        self.total_tokens += prompt_tokens + completion_tokens
-        self.cached_tokens += cached_tokens
-        self.invocations += 1
-        
-        self.usage_history.append({
-            "timestamp": datetime.now().isoformat(),
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "cached_tokens": cached_tokens,
-            "total": prompt_tokens + completion_tokens
-        })
-    
-    def get_summary(self) -> Dict[str, Any]:
-        """获取使用量摘要"""
-        elapsed_time = (datetime.now() - self.start_time).total_seconds()
-        return {
-            "prompt_tokens": self.prompt_tokens,
-            "completion_tokens": self.completion_tokens,
-            "total_tokens": self.total_tokens,
-            "cached_tokens": self.cached_tokens,
-            "invocations": self.invocations,
-            "elapsed_seconds": elapsed_time,
-            "tokens_per_second": self.total_tokens / elapsed_time if elapsed_time > 0 else 0
-        }
 
 
 class ScreenshotManager:
@@ -143,41 +104,49 @@ class BrowserUseAgent(Agent):
         # 调用父类初始化
         super().__init__(*args, **kwargs)
         
-        # 初始化 Token 跟踪器
-        self.token_tracker = TokenUsageTracker()
+        # 初始化新的 Token 跟踪器
+        self.token_tracker = TokenTracker()
         
         # 初始化截图管理器
         self.screenshot_manager = ScreenshotManager(self.screenshot_save_dir)
         
-        # 初始化 token 计数器
-        self._last_prompt_tokens = 0
-        self._last_completion_tokens = 0
-        self._last_cached_tokens = 0
-        
         logger.info(f"[BrowserUseAgent] 初始化完成 - Token跟踪: {self.enable_token_tracking}, 自动截图: {self.enable_auto_screenshot}")
     
-    async def _track_token_usage(self):
-        """从 token_cost_service 提取使用量"""
+    async def _track_token_usage(self, step_number: Optional[int] = None):
+        """
+        从 Agent 的 message_manager 提取 token 使用量
+        
+        Args:
+            step_number: 当前步骤编号
+        """
         if not self.enable_token_tracking:
             return
         
         try:
-            # 获取所有注册的 LLM 的使用量
-            if hasattr(self, 'token_cost_service') and self.token_cost_service:
-                for instance_id, llm in self.token_cost_service.registered_llms.items():
-                    usage = self.token_cost_service.get_usage_tokens_for_model(llm.model)
-                    if usage.total_tokens > 0:
-                        # 更新跟踪器（增量计算）
-                        new_prompt = usage.prompt_tokens - self._last_prompt_tokens
-                        new_completion = usage.completion_tokens - self._last_completion_tokens
-                        new_cached = usage.prompt_cached_tokens - self._last_cached_tokens
+            # 设置当前步骤
+            if step_number is not None:
+                self.token_tracker.set_current_step(step_number)
+            
+            # 从 message_manager 获取最近的 token 使用情况
+            if hasattr(self, 'message_manager') and hasattr(self.message_manager, 'state'):
+                # 获取最后一条消息的 usage 信息
+                messages = self.message_manager.state.history
+                if messages and len(messages) > 0:
+                    last_message = messages[-1]
+                    
+                    # 检查是否有 usage 信息（从 LLM 响应中获取）
+                    if hasattr(last_message, 'usage') and last_message.usage:
+                        usage = last_message.usage
                         
-                        if new_prompt > 0 or new_completion > 0:
-                            self.token_tracker.add_usage(new_prompt, new_completion, new_cached)
-                        
-                        self._last_prompt_tokens = usage.prompt_tokens
-                        self._last_completion_tokens = usage.completion_tokens
-                        self._last_cached_tokens = usage.prompt_cached_tokens
+                        # 添加到 tracker
+                        self.token_tracker.add_usage(
+                            model_name=self.llm.model if hasattr(self.llm, 'model') else 'unknown',
+                            prompt_tokens=usage.prompt_tokens,
+                            completion_tokens=usage.completion_tokens,
+                            prompt_cached_tokens=getattr(usage, 'prompt_cached_tokens', None),
+                            prompt_cache_creation_tokens=getattr(usage, 'prompt_cache_creation_tokens', None),
+                            action_type=None  # 可以从 agent state 获取当前 action
+                        )
         except Exception as e:
             logger.debug(f"Token 跟踪失败: {e}")
     
@@ -187,14 +156,15 @@ class BrowserUseAgent(Agent):
             return None
         
         try:
-            # 获取当前页面
-            if hasattr(self, 'browser_session') and self.browser_session:
-                page = await self.browser_session.get_current_page()
-                if page:
-                    # 清理前缀中的特殊字符
-                    safe_prefix = "".join(c if c.isalnum() or c in "_-" else "_" for c in error_message[:20]) if error_message else "error"
-                    prefix = f"error_{safe_prefix}" if safe_prefix else "error"
-                    return await self.screenshot_manager.save_screenshot(page, prefix)
+            if not hasattr(self, 'browser') or not self.browser:
+                return None
+            
+            page = await self.browser.get_current_page()
+            if not page:
+                return None
+            
+            prefix = f"error_{error_message.replace(' ', '_')}"
+            return await self.screenshot_manager.save_screenshot(page, prefix)
         except Exception as e:
             logger.debug(f"自动截图失败: {e}")
         
@@ -215,11 +185,6 @@ class BrowserUseAgent(Agent):
         - 错误时自动截图
         """
         logger.info(f"[BrowserUseAgent] 开始执行任务，最大步数: {max_steps}")
-        
-        # 重置 token 计数器
-        self._last_prompt_tokens = 0
-        self._last_completion_tokens = 0
-        self._last_cached_tokens = 0
         
         try:
             # 调用父类的 run 方法
@@ -252,13 +217,13 @@ class BrowserUseAgent(Agent):
         执行单步操作
         
         增强:
-        - 每步后跟踪 token 使用量
+        - 每步后跟踪 token 使用量（带步骤编号）
         """
         try:
             await super().step(step_info)
             
-            # 每步后跟踪 token 使用量
-            await self._track_token_usage()
+            # 每步后跟踪 token 使用量，传递步骤编号
+            await self._track_token_usage(step_number=step_info.step_number)
             
         except Exception as e:
             logger.error(f"[BrowserUseAgent] 步骤 {step_info.step_number} 执行失败: {e}")
@@ -269,8 +234,37 @@ class BrowserUseAgent(Agent):
             raise
     
     def get_token_usage(self) -> Dict[str, Any]:
-        """获取 Token 使用量统计"""
-        return self.token_tracker.get_summary()
+        """
+        获取 Token 使用量统计（兼容旧格式）
+        
+        Returns:
+            Dict: {'prompt_tokens': xxx, 'completion_tokens': xxx, 'total_tokens': xxx, ...}
+        """
+        summary = self.token_tracker.get_summary()
+        
+        # 转换为旧格式兼容字典
+        return {
+            'prompt_tokens': summary.total_prompt_tokens,
+            'completion_tokens': summary.total_completion_tokens,
+            'total_tokens': summary.total_tokens,
+            'cached_tokens': summary.total_cached_tokens,
+            'cache_creation_tokens': summary.total_cache_creation_tokens,
+            'invocations': summary.total_invocations,
+            'cache_hit_rate': summary.cache_hit_rate,
+            'by_model': {
+                model: {
+                    'prompt_tokens': stats.prompt_tokens,
+                    'completion_tokens': stats.completion_tokens,
+                    'total_tokens': stats.total_tokens,
+                    'cached_tokens': stats.cached_tokens,
+                    'cache_creation_tokens': stats.cache_creation_tokens,
+                    'invocations': stats.invocations,
+                    'cache_hit_rate': stats.cache_hit_rate,
+                    'average_tokens_per_call': stats.average_tokens_per_call
+                }
+                for model, stats in summary.by_model.items()
+            }
+        }
     
     def get_screenshots(self) -> List[str]:
         """获取所有截图路径"""

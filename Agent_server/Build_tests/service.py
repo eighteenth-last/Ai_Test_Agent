@@ -48,10 +48,9 @@ class TestCaseService:
             
             llm_client = get_llm_client()
             
-            # 调用 LLM 生成测试用例（默认优先级为3级）
+            # 调用 LLM 生成测试用例（让模型根据需求复杂度自行决定生成数量）
             result = llm_client.generate_test_cases(
                 requirement=requirement,
-                count=3,
                 priority="3"
             )
             
@@ -189,7 +188,8 @@ class TestCaseService:
         offset: int = 0,
         module: str = None,
         search: str = None,
-        priority: str = None
+        priority: str = None,
+        case_type: str = None
     ) -> Dict[str, Any]:
         """
         Get test case list with filters
@@ -201,6 +201,7 @@ class TestCaseService:
             module: Filter by module name
             search: Search by case title
             priority: Filter by priority level
+            case_type: Filter by case type
         
         Returns:
             Dict with data and total count
@@ -217,6 +218,9 @@ class TestCaseService:
         
         if priority:
             query = query.filter(TestCase.priority == priority)
+        
+        if case_type:
+            query = query.filter(TestCase.case_type == case_type)
         
         # 获取总数
         total = query.count()

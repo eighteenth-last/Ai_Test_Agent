@@ -4,7 +4,7 @@ from typing import List
 from pydantic import BaseModel
 from datetime import datetime
 
-from database.connection import get_db, LLMModel
+from database.connection import get_db, LLMModel, ModelProvider
 
 router = APIRouter(
     prefix="/api/models",
@@ -42,10 +42,12 @@ class ModelResponse(BaseModel):
     api_key: str
     base_url: str = None
     provider: str = None
+    provider_display_name: str = None  # 供应商显示名称
     is_active: int
     priority: int
     utilization: int
-    tokens_used_today: int
+    tokens_used_total: int = 0
+    tokens_used_today: int = 0
     status: str
     created_at: datetime
     updated_at: datetime = None
@@ -56,12 +58,92 @@ class ModelResponse(BaseModel):
 
 @router.get("/", response_model=List[ModelResponse])
 async def get_models(db: Session = Depends(get_db)):
-    """获取所有模型列表"""
+    """获取所有模型列表（带供应商信息关联）"""
     try:
         models = db.query(LLMModel).order_by(LLMModel.priority).all()
-        return models
+        
+        # 获取所有供应商信息用于映射
+        providers = db.query(ModelProvider).all()
+        provider_map = {p.code: p.display_name for p in providers}
+        
+        # 为每个模型补充供应商显示名称
+        result = []
+        for model in models:
+            model_dict = {
+                "id": model.id,
+                "model_name": model.model_name,
+                "api_key": model.api_key,
+                "base_url": model.base_url,
+                "provider": model.provider,
+                "provider_display_name": provider_map.get(model.provider, model.provider),
+                "is_active": model.is_active,
+                "priority": model.priority,
+                "utilization": model.utilization,
+                "tokens_used_total": model.tokens_used_total or 0,
+                "tokens_used_today": model.tokens_used_today or 0,
+                "status": model.status,
+                "created_at": model.created_at,
+                "updated_at": model.updated_at
+            }
+            result.append(ModelResponse(**model_dict))
+        
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取模型列表失败: {str(e)}")
+
+
+@router.get("/providers", response_model=dict)
+async def get_model_providers(db: Session = Depends(get_db)):
+    """获取所有模型供应商列表"""
+    try:
+        providers = db.query(ModelProvider).filter(ModelProvider.is_active == 1).order_by(ModelProvider.sort_order).all()
+        
+        provider_list = [
+            {
+                "id": p.id,
+                "name": p.name,
+                "code": p.code,
+                "display_name": p.display_name,
+                "default_base_url": p.default_base_url,
+                "sort_order": p.sort_order,
+                "description": p.description
+            }
+            for p in providers
+        ]
+        
+        return {
+            "success": True,
+            "data": provider_list
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取供应商列表失败: {str(e)}")
+
+
+@router.get("/active/current", response_model=dict)
+async def get_active_model(db: Session = Depends(get_db)):
+    """获取当前激活的模型"""
+    try:
+        active_model = db.query(LLMModel).filter(LLMModel.is_active == 1).first()
+        if not active_model:
+            return {
+                "success": True,
+                "data": None,
+                "message": "当前没有激活的模型"
+            }
+        
+        return {
+            "success": True,
+            "data": {
+                "id": active_model.id,
+                "model_name": active_model.model_name,
+                "provider": active_model.provider,
+                "status": active_model.status,
+                "tokens_used_total": active_model.tokens_used_total,
+                "tokens_used_today": active_model.tokens_used_today
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取激活模型失败: {str(e)}")
 
 
 @router.get("/{model_id}", response_model=ModelResponse)
@@ -91,6 +173,7 @@ async def create_model(model_data: ModelCreate, db: Session = Depends(get_db)):
             priority=model_data.priority,
             utilization=model_data.utilization,
             is_active=0,
+            tokens_used_total=0,
             tokens_used_today=0,
             status='待命'
         )
@@ -204,29 +287,3 @@ async def activate_model(model_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"激活模型失败: {str(e)}")
-
-
-@router.get("/active/current", response_model=dict)
-async def get_active_model(db: Session = Depends(get_db)):
-    """获取当前激活的模型"""
-    try:
-        active_model = db.query(LLMModel).filter(LLMModel.is_active == 1).first()
-        if not active_model:
-            return {
-                "success": True,
-                "data": None,
-                "message": "当前没有激活的模型"
-            }
-        
-        return {
-            "success": True,
-            "data": {
-                "id": active_model.id,
-                "model_name": active_model.model_name,
-                "provider": active_model.provider,
-                "status": active_model.status,
-                "tokens_used_today": active_model.tokens_used_today
-            }
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取激活模型失败: {str(e)}")

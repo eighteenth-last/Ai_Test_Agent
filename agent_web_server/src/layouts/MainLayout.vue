@@ -75,7 +75,7 @@ const menuList = [
     label: '测试模块',
     children: [
       { label: '功能测试', path: '/test/func' },
-      { label: '压力测试', path: '/test/press' },
+      { label: '性能测试', path: '/test/press' },
       { label: '安全测试', path: '/test/security' },
       { label: '接口测试', path: '/test/api' }
     ]
@@ -101,9 +101,9 @@ const menuList = [
   {
     id: 'case',
     icon: 'fa-clipboard-list',
-    label: '测试用例生成',
+    label: '用例生成模块',
     children: [
-      { label: '用例自动生成', path: '/case/generate' },
+      { label: '用例生成', path: '/case/generate' },
       { label: '用例管理', path: '/case/manage' }
     ]
   },
@@ -156,5 +156,30 @@ const toggleMenu = (menuId) => {
 <style scoped>
 .sidebar-gradient {
   background: linear-gradient(180deg, #007857 0%, #004d38 100%);
+}
+
+/* 页面切换动画 - 丝滑过渡效果 */
+.fade-slide-enter-active {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.fade-slide-leave-active {
+  transition: all 0.2s cubic-bezier(0.4, 0, 1, 1);
+}
+
+.fade-slide-enter-from {
+  opacity: 0;
+  transform: translateX(20px);
+}
+
+.fade-slide-leave-to {
+  opacity: 0;
+  transform: translateX(-20px);
+}
+
+.fade-slide-enter-to,
+.fade-slide-leave-from {
+  opacity: 1;
+  transform: translateX(0);
 }
 </style>

@@ -43,9 +43,63 @@ class ContactResponse(BaseModel):
         from_attributes = True
 
 
+@router.get("/list")
+async def get_contacts_list(
+    limit: int = 20,
+    offset: int = 0,
+    search: str = None,
+    db: Session = Depends(get_db)
+):
+    """获取联系人列表（分页）"""
+    try:
+        from sqlalchemy import func, or_
+        
+        # 基础查询
+        query = db.query(Contact)
+        
+        # 搜索筛选
+        if search:
+            search_term = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Contact.name.like(search_term),
+                    Contact.email.like(search_term),
+                    Contact.role.like(search_term)
+                )
+            )
+        
+        # 获取总数
+        total = query.with_entities(func.count(Contact.id)).scalar()
+        
+        # 分页查询
+        contacts = query.order_by(Contact.created_at.desc()).limit(limit).offset(offset).all()
+        
+        return {
+            "success": True,
+            "data": [
+                {
+                    "id": c.id,
+                    "name": c.name,
+                    "email": c.email,
+                    "role": c.role,
+                    "auto_receive_bug": c.auto_receive_bug,
+                    "created_at": c.created_at.isoformat() if c.created_at else None,
+                    "updated_at": c.updated_at.isoformat() if c.updated_at else None
+                }
+                for c in contacts
+            ],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "has_more": (offset + limit) < total
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取联系人列表失败: {str(e)}")
+
+
 @router.get("/", response_model=List[ContactResponse])
 async def get_contacts(db: Session = Depends(get_db)):
-    """获取所有联系人列表"""
+    """获取所有联系人列表（保持向后兼容）"""
     try:
         contacts = db.query(Contact).order_by(Contact.created_at.desc()).all()
         return contacts

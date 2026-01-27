@@ -61,13 +61,13 @@ class TokenStatisticsService:
             
             db.commit()
             
-            logger.info(f"[TokenStats] 记录 Token 使用: model={model.name}, tokens={total_tokens}")
+            logger.info(f"[TokenStats] 记录 Token 使用: model={model.model_name}, tokens={total_tokens}")
             
             return {
                 "success": True,
                 "data": {
                     "model_id": model_id,
-                    "model_name": model.name,
+                    "model_name": model.model_name,
                     "prompt_tokens": prompt_tokens,
                     "completion_tokens": completion_tokens,
                     "cached_tokens": cached_tokens,
@@ -186,10 +186,6 @@ class TokenStatisticsService:
                 ).first()
             
             if not model:
-                # 尝试通过 name 字段查找
-                model = db.query(LLMModel).filter(LLMModel.name == model_name).first()
-            
-            if not model:
                 logger.warning(f"[TokenStats] 未找到模型: {model_name}")
                 return {"success": False, "message": f"模型 {model_name} 不存在"}
             
@@ -203,14 +199,13 @@ class TokenStatisticsService:
             
             db.commit()
             
-            logger.info(f"[TokenStats] 更新 Token 使用: model={model.name}({model.model_name}), +{total_tokens}, total_today={model.tokens_used_today}")
+            logger.info(f"[TokenStats] 更新 Token 使用: model={model.model_name}, +{total_tokens}, total_today={model.tokens_used_today}")
             
             return {
                 "success": True,
                 "data": {
                     "model_id": model.id,
                     "model_name": model.model_name,
-                    "display_name": model.name,
                     "added_tokens": total_tokens,
                     "tokens_used_today": model.tokens_used_today
                 }
@@ -256,14 +251,13 @@ class TokenStatisticsService:
             
             db.commit()
             
-            logger.info(f"[TokenStats] 更新激活模型 Token: model={model.name}({model.model_name}), +{total_tokens}, total_today={model.tokens_used_today}")
+            logger.info(f"[TokenStats] 更新激活模型 Token: model={model.model_name}, +{total_tokens}, total_today={model.tokens_used_today}")
             
             return {
                 "success": True,
                 "data": {
                     "model_id": model.id,
                     "model_name": model.model_name,
-                    "display_name": model.name,
                     "added_tokens": total_tokens,
                     "tokens_used_today": model.tokens_used_today
                 }

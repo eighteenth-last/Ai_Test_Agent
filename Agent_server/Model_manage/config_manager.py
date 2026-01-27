@@ -113,7 +113,7 @@ class ModelConfigManager:
     
     def increment_token_usage(self, tokens: int):
         """
-        增加今日 Token 使用量
+        增加今日 Token 使用量和总 Token 使用量
         
         Args:
             tokens: 使用的 token 数量
@@ -123,6 +123,7 @@ class ModelConfigManager:
             active_model = db.query(LLMModel).filter(LLMModel.is_active == 1).first()
             if active_model:
                 active_model.tokens_used_today = (active_model.tokens_used_today or 0) + tokens
+                active_model.tokens_used_total = (active_model.tokens_used_total or 0) + tokens
                 db.commit()
         except Exception as e:
             print(f"[Warning] 更新 Token 使用量失败: {e}")

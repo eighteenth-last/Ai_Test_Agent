@@ -76,8 +76,8 @@
           :item-count="total"
           :page-sizes="[10, 20, 50]"
           show-size-picker
-          @update:page="loadTestCases"
-          @update:page-size="handlePageSizeChange"
+          @update:page="goToPage"
+          @update:page-size="changePageSize"
         />
       </div>
     </n-card>
@@ -209,29 +209,42 @@
 </template>
 
 <script setup>
-import { ref, h, reactive, onMounted, watch } from 'vue'
+import { ref, h, reactive, onMounted, computed } from 'vue'
 import { 
   NCard, NButton, NDataTable, NModal, NDescriptions, NDescriptionsItem, 
   NTag, NForm, NFormItem, NInput, NSelect, NSpace, NPagination,
   useMessage, useDialog
 } from 'naive-ui'
 import { testCaseAPI } from '@/api'
+import { useLazyLoad } from '@/composables/useLazyLoad'
 
 const message = useMessage()
 const dialog = useDialog()
-
-// 列表数据
-const testCases = ref([])
-const loading = ref(false)
-const currentPage = ref(1)
-const pageSize = ref(10)
-const total = ref(0)
 
 // 筛选条件
 const filters = reactive({
   module: '',
   search: '',
-  priority: null
+  priority: null,
+  case_type: null  // 添加用例类型筛选
+})
+
+// 使用懒加载
+const {
+  data: testCases,
+  loading,
+  currentPage,
+  pageSize,
+  total,
+  refresh,
+  goToPage,
+  changePageSize
+} = useLazyLoad({
+  fetchFunction: testCaseAPI.getList,
+  pageSize: 10,
+  filters,
+  autoLoad: true,
+  debounceDelay: 500
 })
 
 // 优先级选项
@@ -369,49 +382,9 @@ const columns = [
   }
 ]
 
-// 加载测试用例列表
-const loadTestCases = async () => {
-  loading.value = true
-  try {
-    const params = {
-      limit: pageSize.value,
-      offset: (currentPage.value - 1) * pageSize.value
-    }
-    
-    if (filters.module) {
-      params.module = filters.module
-    }
-    if (filters.search) {
-      params.search = filters.search
-    }
-    if (filters.priority) {
-      params.priority = filters.priority
-    }
-    
-    const result = await testCaseAPI.getList(params)
-    if (result.success) {
-      testCases.value = result.data || []
-      total.value = result.total || result.data?.length || 0
-    }
-  } catch (error) {
-    message.error('加载测试用例失败')
-    console.error(error)
-  } finally {
-    loading.value = false
-  }
-}
-
-// 监听筛选条件变化，自动查询
-watch(filters, () => {
-  currentPage.value = 1
-  loadTestCases()
-})
-
 // 处理分页大小改变
 const handlePageSizeChange = (size) => {
-  pageSize.value = size
-  currentPage.value = 1
-  loadTestCases()
+  changePageSize(size)
 }
 
 // 查看详情
@@ -493,7 +466,7 @@ const submitForm = async () => {
     if (result.success) {
       message.success(isEditing.value ? '更新成功' : '创建成功')
       editDialogVisible.value = false
-      loadTestCases()
+      refresh()
     } else {
       message.error(result.message || '操作失败')
     }
@@ -517,7 +490,7 @@ const deleteCase = (row) => {
         const result = await testCaseAPI.delete(row.id)
         if (result.success) {
           message.success('删除成功')
-          loadTestCases()
+          refresh()
         } else {
           message.error(result.message || '删除失败')
         }
@@ -529,9 +502,7 @@ const deleteCase = (row) => {
   })
 }
 
-onMounted(() => {
-  loadTestCases()
-})
+// useLazyLoad 已经自动加载数据，无需 onMounted
 </script>
 
 <style scoped>

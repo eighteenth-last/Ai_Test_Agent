@@ -1,9 +1,12 @@
 # AI Test Agent - 智能自动化测试平台（重构版）
 
-![License](https://img.shields.io/badge/License-MIT-blue.svg)
-![Python](https://img.shields.io/badge/Python-3.8%2B-green.svg)
-![Node.js](https://img.shields.io/badge/Node.js-16%2B-green.svg)
-
+<div align="center">
+  <img src="agent_web_server/src/assets/logo.png" alt="神阁卷藏Logo" width="200"/>
+    
+  ![License](https://img.shields.io/badge/License-MIT-blue.svg)
+  ![Python](https://img.shields.io/badge/Python-3.8%2B-green.svg)
+  ![Node.js](https://img.shields.io/badge/Node.js-16%2B-green.svg)
+</div>
 ## 项目简介
 
 AI Test Agent 是一个基于人工智能的自动化测试平台，利用大语言模型（LLM）和浏览器自动化技术，实现测试用例的智能生成、自动执行、Bug 分析和报告生成。平台支持多种 LLM 模型，提供完整的测试生命周期管理，大幅提升测试效率。

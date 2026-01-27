@@ -1,7 +1,7 @@
 <template>
   <div class="glass-card p-20 text-center text-slate-400 italic">
     <i class="fas fa-gauge-high text-4xl mb-4 block"></i>
-    压力测试模块功能正在准备中...
+    性能测试模块功能正在准备中...
   </div>
 </template>
 

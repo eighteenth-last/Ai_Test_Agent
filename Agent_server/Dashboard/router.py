@@ -2,6 +2,8 @@
 数据仪表盘路由模块
 提供系统统计数据的API接口
 """
+import calendar
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func, text
@@ -9,10 +11,24 @@ from datetime import datetime, timedelta
 
 from database.connection import get_db, TestCase, TestReport, BugReport, EmailRecord
 
+
 router = APIRouter(
     prefix="/api/dashboard",
     tags=["数据仪表盘"]
 )
+
+
+def _subtract_months(date: datetime, months: int) -> datetime:
+    year = date.year
+    month = date.month - months
+    while month <= 0:
+        month += 12
+        year -= 1
+    day = date.day
+    last_day = calendar.monthrange(year, month)[1]
+    if day > last_day:
+        day = last_day
+    return date.replace(year=year, month=month, day=day)
 
 
 @router.get("/stats")
@@ -126,10 +142,13 @@ async def get_test_trend(days: int = 30, db: Session = Depends(get_db)):
         if days not in [30, 90, 365]:
             days = 30
         
-        # 结束日期是今天的23:59:59
         end_date = datetime.now().replace(hour=23, minute=59, second=59)
-        # 开始日期是days天前的00:00:00
-        start_date = (end_date - timedelta(days=days-1)).replace(hour=0, minute=0, second=0)
+        if days == 365:
+            start_date = (end_date - timedelta(days=364)).replace(hour=0, minute=0, second=0)
+        elif days == 90:
+            start_date = _subtract_months(end_date, 3).replace(hour=0, minute=0, second=0)
+        else:
+            start_date = (end_date - timedelta(days=29)).replace(hour=0, minute=0, second=0)
         
         dates = []
         tests = []
@@ -180,8 +199,10 @@ async def get_test_trend(days: int = 30, db: Session = Depends(get_db)):
             ).scalar() or 0
             cases.append(case_count)
             
-            # 移动到下一个时间点
             current_date += timedelta(days=interval_days)
+        
+        if dates:
+            dates[-1] = end_date.strftime(date_format)
         
         # 如果所有数据都为0，检查数据库是否有记录
         if sum(tests) == 0 and sum(bugs) == 0 and sum(cases) == 0:
@@ -211,16 +232,16 @@ async def get_test_trend(days: int = 30, db: Session = Depends(get_db)):
         }
 
 
-@router.get("/module-stats")
-async def get_module_stats(db: Session = Depends(get_db)):
-    """获取模块用例分布统计"""
+@router.get("/case-type-stats")
+async def get_case_type_stats(db: Session = Depends(get_db)):
+    """获取测试用例类型分布统计"""
     try:
         result = db.query(
-            TestCase.module,
+            TestCase.case_type,
             func.count(TestCase.id).label('count')
-        ).group_by(TestCase.module).all()
+        ).group_by(TestCase.case_type).all()
         
-        data = [{"module": row.module or "未分类", "count": row.count} for row in result]
+        data = [{"case_type": row.case_type or "未分类", "count": row.count} for row in result]
         
         return {
             "success": True,

@@ -23,7 +23,7 @@ const routes = [
     path: '/test/press',
     name: 'TestPress',
     component: () => import('@/views/test/PressTest.vue'),
-    meta: { title: '压力测试', menu: 'test' }
+    meta: { title: '性能测试', menu: 'test' }
   },
   {
     path: '/test/security',
@@ -68,7 +68,7 @@ const routes = [
     path: '/case/generate',
     name: 'CaseGenerate',
     component: () => import('@/views/case/CaseGenerate.vue'),
-    meta: { title: '用例自动生成', menu: 'case' }
+    meta: { title: '用例生成模块', menu: 'case' }
   },
   {
     path: '/case/manage',

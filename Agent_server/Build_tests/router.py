@@ -73,6 +73,7 @@ async def get_test_cases(
     module: str = None,
     search: str = None,
     priority: str = None,
+    case_type: str = None,
     db: Session = Depends(get_db)
 ):
     """
@@ -84,6 +85,7 @@ async def get_test_cases(
         module: Filter by module name
         search: Search by case title
         priority: Filter by priority level
+        case_type: Filter by case type
         db: Database session
     """
     result = TestCaseService.get_test_cases(
@@ -92,7 +94,8 @@ async def get_test_cases(
         offset=offset,
         module=module,
         search=search,
-        priority=priority
+        priority=priority,
+        case_type=case_type
     )
     return {
         "success": True,

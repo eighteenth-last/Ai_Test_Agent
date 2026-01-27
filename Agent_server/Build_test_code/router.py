@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Optional, List
 import sys
 import os
 
@@ -21,6 +21,14 @@ class ExecuteBrowserUseRequest(BaseModel):
     test_case_id: int
     headless: bool = True
     max_steps: int = 20
+    use_vision: bool = False
+
+
+class ExecuteBatchBrowserUseRequest(BaseModel):
+    """Browser-Use 批量执行请求参数"""
+    test_case_ids: List[int]
+    headless: bool = True
+    max_steps: int = 50
     use_vision: bool = False
 
 
@@ -59,6 +67,49 @@ async def execute_with_browser_use(
     """
     result = await BrowserUseService.execute_test_with_browser_use(
         test_case_id=request.test_case_id,
+        db=db,
+        headless=request.headless,
+        max_steps=request.max_steps,
+        use_vision=request.use_vision
+    )
+    
+    if not result.get('success'):
+        raise HTTPException(status_code=500, detail=result.get('message'))
+    
+    return result
+
+
+@router.post("/execute-batch-browser-use")
+async def execute_batch_with_browser_use(
+    request: ExecuteBatchBrowserUseRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    批量执行多条测试用例（智能合并步骤）🤖
+    
+    这是AI驱动的批量测试执行方式：
+    - LLM 分析多条用例，找出共同步骤
+    - 智能合并避免重复操作（如多次登录）
+    - 按优化后的流程连续执行
+    
+    **适用场景**：
+    - 多条用例有共同前置步骤（如都需要先登录）
+    - 批量验证同一模块的多个功能
+    - 回归测试套件执行
+    
+    **参数说明**：
+    - test_case_ids: 测试用例 ID 列表
+    - headless: 是否无头模式
+    - max_steps: 最大执行步数（建议设置较大值）
+    - use_vision: 是否启用视觉能力
+    
+    **返回**：
+    - 合并后的执行步骤
+    - 每条用例的执行结果
+    - 完整的交互历史
+    """
+    result = await BrowserUseService.execute_batch_test_cases(
+        test_case_ids=request.test_case_ids,
         db=db,
         headless=request.headless,
         max_steps=request.max_steps,

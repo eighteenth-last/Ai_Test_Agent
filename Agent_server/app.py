@@ -2,6 +2,7 @@ import os
 import sys
 import asyncio
 import uvicorn
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
@@ -26,16 +27,63 @@ from Model_manage.router import router as model_router
 from Contact_manage.router import router as contact_router
 from Email_manage.router import router as email_router
 from Dashboard.router import router as dashboard_router
+# from scheduler_tasks import start_scheduler, stop_scheduler  # 模块不存在，暂时注释
 
 
-# Create FastAPI application with custom docs
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    loop = asyncio.get_running_loop()
+    print(f"\n[Debug] Current Event Loop: {type(loop)}")
+    if sys.platform == 'win32' and not isinstance(loop, asyncio.ProactorEventLoop):
+        print("[Warning] NOT using ProactorEventLoop on Windows! Subprocesses may fail.")
+    print("\n" + "="*80)
+    print("初始化数据库...")
+    init_db()
+    print("\n" + "="*80)
+    print("🤖 LLM 模型配置检查")
+    print("="*80)
+    try:
+        from Model_manage.config_manager import get_active_llm_config
+        config = get_active_llm_config()
+        print(f"  ✓ 使用数据库模型配置")
+        print(f"  ✓ 当前激活模型: {config['model_name']}")
+        print(f"  ✓ 供应商: {config.get('provider', 'N/A')}")
+        print(f"  ✓ Base URL: {config.get('base_url', 'N/A')}")
+    except Exception as e:
+        print(f"  ⚠️ 无法获取数据库模型配置: {e}")
+        print(f"  ⚠️ 将回退到环境变量配置")
+        print(f"  ⚠️ 请在模型管理页面添加并激活模型")
+    print("\n" + "="*80)
+    print("📚 API 文档访问地址：")
+    print("="*80)
+    print(f"  ✓ Swagger UI 文档: http://localhost:8000/docs")
+    print(f"  ✓ ReDoc 文档:       http://localhost:8000/redoc")
+    print(f"  ✓ OpenAPI JSON:    http://localhost:8000/openapi.json")
+    print("="*80)
+    print("\n💡 提示：")
+    print("  - 浏览器控制台的 content.js 错误可以忽略（Chrome 扩展兼容性问题）")
+    print("  - 如果 ReDoc 显示空白，请尝试刷新或清除浏览器缓存")
+    print("="*80)
+    # print("\n" + "="*80)
+    # print("⏰ 定时任务调度器")
+    # print("="*80)
+    # start_scheduler()  # 模块不存在，暂时注释
+    # print("="*80)
+    print("\n🚀 AI 自动化测试平台 API 已成功启动！")
+    print("="*80 + "\n")
+    yield
+    # print("\n正在关闭定时任务调度器...")
+    # stop_scheduler()  # 模块不存在，暂时注释
+    print("服务已安全关闭\n")
+
 app = FastAPI(
     title="AI Test Agent API",
     description="AI-powered automated testing platform",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url=None,  # 使用自定义 ReDoc 端点
-    openapi_url="/openapi.json"
+    redoc_url=None,
+    openapi_url="/openapi.json",
+    lifespan=lifespan
 )
 
 # CORS configuration
@@ -109,53 +157,6 @@ async def health_check():
         "status": "healthy",
         "service": "AI Test Agent"
     }
-
-
-@app.on_event("startup")
-async def startup_event():
-    """启动事件处理器"""
-    # Debug: Check Event Loop Type
-    loop = asyncio.get_running_loop()
-    print(f"\n[Debug] Current Event Loop: {type(loop)}")
-    if sys.platform == 'win32' and not isinstance(loop, asyncio.ProactorEventLoop):
-        print("[Warning] NOT using ProactorEventLoop on Windows! Subprocesses may fail.")
-
-    print("\n" + "="*80)
-    print("初始化数据库...")
-    init_db()
-    
-    # 检查并显示当前使用的模型配置
-    print("\n" + "="*80)
-    print("🤖 LLM 模型配置检查")
-    print("="*80)
-    try:
-        from Model_manage.config_manager import get_active_llm_config
-        config = get_active_llm_config()
-        print(f"  ✓ 使用数据库模型配置")
-        print(f"  ✓ 当前激活模型: {config['model_name']}")
-        print(f"  ✓ 供应商: {config.get('provider', 'N/A')}")
-        print(f"  ✓ Base URL: {config.get('base_url', 'N/A')}")
-    except Exception as e:
-        print(f"  ⚠️ 无法获取数据库模型配置: {e}")
-        print(f"  ⚠️ 将回退到环境变量配置")
-        print(f"  ⚠️ 请在模型管理页面添加并激活模型")
-    
-    # 输出API文档信息
-    print("\n" + "="*80)
-    print("📚 API 文档访问地址：")
-    print("="*80)
-    print(f"  ✓ Swagger UI 文档: http://localhost:8000/docs")
-    print(f"  ✓ ReDoc 文档:       http://localhost:8000/redoc")
-    print(f"  ✓ OpenAPI JSON:    http://localhost:8000/openapi.json")
-    print("="*80)
-    print("\n💡 提示：")
-    print("  - 浏览器控制台的 content.js 错误可以忽略（Chrome 扩展兼容性问题）")
-    print("  - 如果 ReDoc 显示空白，请尝试刷新或清除浏览器缓存")
-    print("="*80)
-    
-    print("\n🚀 AI 自动化测试平台 API 已成功启动！")
-    print("="*80 + "\n")
-
 
 if __name__ == "__main__":
     # Additional enforcement for Windows

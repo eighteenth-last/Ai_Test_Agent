@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from browser_use.agent.views import ActionResult
 from browser_use.browser.context import BrowserContext
 from browser_use.controller.service import Controller, DoneAction
-from browser_use.controller.registry.service import Registry, RegisteredAction
+from browser_use.tools.registry.service import Registry, RegisteredAction
 from browser_use.controller.views import (
     ClickElementAction,
     DoneAction,
@@ -38,7 +38,7 @@ from browser_use.agent.views import ActionModel, ActionResult
 
 # 导入 web-ui 的 MCP 工具 (需要复制到 Ai_Test_Agent)
 try:
-    from mcp_utils.mcp_client import create_tool_param_model, setup_mcp_client_and_tools
+    from utils.mcp_client import create_tool_param_model, setup_mcp_client_and_tools
     MCP_AVAILABLE = True
 except ImportError:
     # MCP 工具未安装，跳过

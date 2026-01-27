@@ -141,6 +141,16 @@
               <n-descriptions-item label="关联测试用例">
                 {{ currentBug.test_case_id ? `用例 #${currentBug.test_case_id}` : '-' }}
               </n-descriptions-item>
+              <n-descriptions-item label="测试类型">
+                <n-tag :type="getCaseTypeTag(currentBug.case_type)" size="small">
+                  {{ currentBug.case_type || '功能测试' }}
+                </n-tag>
+              </n-descriptions-item>
+              <n-descriptions-item label="执行模式">
+                <n-tag :type="currentBug.execution_mode === '批量' ? 'warning' : 'default'" size="small">
+                  {{ currentBug.execution_mode || '单量' }}
+                </n-tag>
+              </n-descriptions-item>
               <n-descriptions-item label="发现时间">{{ currentBug.created_at }}</n-descriptions-item>
               <n-descriptions-item label="更新时间">{{ currentBug.updated_at || '-' }}</n-descriptions-item>
               <n-descriptions-item label="错误类型">{{ currentBug.error_type || '-' }}</n-descriptions-item>
@@ -153,8 +163,8 @@
             <template #header>
               <strong>问题描述</strong>
             </template>
-            <div class="bug-description">
-              {{ currentBug.description || '暂无描述' }}
+            <div class="bug-description" style="white-space: pre-line;">
+              {{ currentBug.description || `测试用例【${currentBug.bug_name}】执行失败` }}
             </div>
           </n-card>
 
@@ -298,6 +308,18 @@ const getSeverityType = (severity) => {
   return typeMap[severity] || 'default'
 }
 
+// 测试类型标签映射
+const getCaseTypeTag = (caseType) => {
+  const typeMap = {
+    '功能测试': 'info',
+    '接口测试': 'warning',
+    '单元测试': 'success',
+    '性能测试': 'error',
+    '安全测试': 'error'
+  }
+  return typeMap[caseType] || 'default'
+}
+
 // 状态类型映射（兼容中英文状态值）
 const getStatusType = (status) => {
   const typeMap = {
@@ -351,11 +373,40 @@ const parseSteps = (steps) => {
 // 表格列定义
 const columns = [
   { title: 'ID', key: 'id', width: 80 },
-  { title: 'Bug 标题', key: 'bug_name', ellipsis: { tooltip: true } },
+  { title: 'Bug 标题', key: 'bug_name', width: 250, ellipsis: { tooltip: true } },
+  { 
+    title: '测试类型', 
+    key: 'case_type', 
+    width: 110,
+    render(row) {
+      const type = row.case_type || '功能测试'
+      const typeMap = {
+        '功能测试': 'info',
+        '接口测试': 'warning',
+        '单元测试': 'success',
+        '性能测试': 'error',
+        '安全测试': 'error'
+      }
+      return h(NTag, { type: typeMap[type] || 'default', size: 'small' }, 
+        { default: () => type }
+      )
+    }
+  },
+  { 
+    title: '执行模式', 
+    key: 'execution_mode', 
+    width: 90,
+    render(row) {
+      const mode = row.execution_mode || '单量'
+      return h(NTag, { type: mode === '批量' ? 'warning' : 'default', size: 'small' }, 
+        { default: () => mode }
+      )
+    }
+  },
   { 
     title: '严重程度', 
     key: 'severity_level', 
-    width: 120,
+    width: 100,
     render(row) {
       return h(NTag, { type: getSeverityType(row.severity_level), size: 'small' }, 
         { default: () => row.severity_level || '-' }
@@ -365,7 +416,7 @@ const columns = [
   { 
     title: '状态', 
     key: 'status', 
-    width: 100,
+    width: 90,
     render(row) {
       return h(NTag, { type: getStatusType(row.status), size: 'small' }, 
         { default: () => formatStatus(row.status) }
@@ -375,12 +426,12 @@ const columns = [
   { 
     title: '关联用例', 
     key: 'test_case_id', 
-    width: 150, 
+    width: 100, 
     render(row) {
       return row.test_case_id ? `用例 #${row.test_case_id}` : '-'
     }
   },
-  { title: '发现时间', key: 'created_at', width: 180 },
+  { title: '发现时间', key: 'created_at', width: 160 },
   {
     title: '操作',
     key: 'actions',

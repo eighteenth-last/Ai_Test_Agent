@@ -9,14 +9,33 @@
         </div>
       </template>
       <p class="text-gray-500">
-        使用 Browser-Use 直接执行测试用例，无需生成代码，LLM 实时决策操作网页
+        使用 Browser-Use 直接执行测试用例，无需生成代码，LLM 实时决策操作网页。
+        支持单条执行或多选批量执行（智能合并共同步骤）。
       </p>
     </n-card>
 
     <!-- 测试用例列表 -->
     <n-card style="margin-top: 20px">
       <template #header>
-        <span class="font-bold">测试用例列表</span>
+        <div class="flex items-center justify-between">
+          <span class="font-bold">测试用例列表</span>
+          <n-space>
+            <n-button 
+              v-if="selectedRowKeys.length > 1"
+              type="primary"
+              @click="executeBatchCases"
+              :loading="isBatchExecuting"
+            >
+              <template #icon>
+                <i class="fas fa-play-circle"></i>
+              </template>
+              批量执行 ({{ selectedRowKeys.length }} 条)
+            </n-button>
+            <n-tag v-if="selectedRowKeys.length > 0" type="info">
+              已选 {{ selectedRowKeys.length }} 条
+            </n-tag>
+          </n-space>
+        </div>
       </template>
 
       <n-data-table
@@ -24,8 +43,22 @@
         :data="testCases"
         :loading="loading"
         :row-key="row => row.id"
+        v-model:checked-row-keys="selectedRowKeys"
         striped
       />
+
+      <!-- 分页 -->
+      <div style="margin-top: 20px; display: flex; justify-content: flex-end;">
+        <n-pagination
+          v-model:page="currentPage"
+          v-model:page-size="pageSize"
+          :item-count="total"
+          :page-sizes="[10, 20, 50]"
+          show-size-picker
+          @update:page="goToPage"
+          @update:page-size="changePageSize"
+        />
+      </div>
     </n-card>
 
     <!-- 详情对话框 -->
@@ -256,6 +289,192 @@
         </n-space>
       </template>
     </n-modal>
+
+    <!-- 批量执行对话框 -->
+    <n-modal 
+      v-model:show="batchExecuteDialogVisible" 
+      preset="card" 
+      :title="isBatchExecuting ? '正在批量执行' : '批量执行用例'" 
+      style="width: 1200px"
+      :mask-closable="!isBatchExecuting"
+      :closable="!isBatchExecuting"
+    >
+      <!-- 选中的用例列表 -->
+      <n-card size="small" style="margin-bottom: 20px">
+        <template #header>
+          <div class="flex items-center justify-between">
+            <span><strong>已选择 {{ selectedBatchCases.length }} 条用例</strong></span>
+            <n-tag type="info">智能合并共同步骤执行</n-tag>
+          </div>
+        </template>
+        <n-collapse>
+          <n-collapse-item 
+            v-for="(tc, index) in selectedBatchCases" 
+            :key="tc.id"
+            :title="`用例 ${index + 1}: ${tc.title}`"
+            :name="tc.id"
+          >
+            <n-descriptions :column="1" size="small" label-placement="left" bordered>
+              <n-descriptions-item label="模块">{{ tc.module }}</n-descriptions-item>
+              <n-descriptions-item label="前置条件">{{ tc.precondition || '无' }}</n-descriptions-item>
+              <n-descriptions-item label="测试步骤">
+                <div v-for="(step, idx) in tc.steps" :key="idx" style="margin: 2px 0">
+                  {{ idx + 1 }}. {{ step }}
+                </div>
+              </n-descriptions-item>
+              <n-descriptions-item label="预期结果">{{ tc.expected }}</n-descriptions-item>
+            </n-descriptions>
+          </n-collapse-item>
+        </n-collapse>
+      </n-card>
+
+      <n-divider />
+
+      <!-- 执行配置 -->
+      <n-card v-if="!isBatchExecuting && !batchExecutionResult" size="small">
+        <template #header>
+          <strong>执行配置</strong>
+        </template>
+        <n-form :model="batchExecuteConfig" label-placement="left" label-width="120">
+          <n-form-item label="无头模式">
+            <n-switch v-model:value="batchExecuteConfig.headless" />
+            <span class="tip">关闭后可看到浏览器操作过程</span>
+          </n-form-item>
+          
+          <n-form-item label="最大步数">
+            <n-input-number 
+              v-model:value="batchExecuteConfig.max_steps" 
+              :min="10" 
+              :max="200" 
+            />
+            <span class="tip">批量执行建议设置较大值</span>
+          </n-form-item>
+          
+          <n-form-item label="视觉能力">
+            <n-switch v-model:value="batchExecuteConfig.use_vision" />
+            <span class="tip">启用后 LLM 可分析截图</span>
+          </n-form-item>
+        </n-form>
+      </n-card>
+
+      <!-- 执行中/执行完成状态显示 -->
+      <div v-if="isBatchExecuting || batchExecutionResult">
+        <n-card size="small">
+          <template #header>
+            <div class="flex items-center gap-2">
+              <i class="fas fa-microchip"></i>
+              <strong>批量执行状态</strong>
+              <n-tag v-if="isBatchExecuting" type="info" size="small">执行中...</n-tag>
+              <n-tag 
+                v-else-if="batchExecutionResult"
+                :type="batchExecutionResult.status === 'pass' ? 'success' : 'error'"
+                size="small"
+              >
+                {{ batchExecutionResult.status === 'pass' ? '执行成功' : '执行失败' }}
+              </n-tag>
+            </div>
+          </template>
+
+          <div class="agent-output">
+            <div v-if="isBatchExecuting" class="executing-status">
+              <n-spin size="large" />
+              <p class="mt-4">AI 代理正在批量执行测试...</p>
+              <p class="tip">正在智能分析并合并共同步骤</p>
+            </div>
+
+            <div v-else-if="batchExecutionResult">
+              <n-alert
+                :title="batchExecutionResult.status === 'pass' ? '✓ 批量测试执行成功' : '✗ 批量测试执行失败'"
+                :type="batchExecutionResult.status === 'pass' ? 'success' : 'error'"
+                style="margin-bottom: 20px"
+              >
+                <div class="mt-2">
+                  <p><strong>总步数:</strong> {{ batchExecutionResult.total_steps }}</p>
+                  <p><strong>耗时:</strong> {{ batchExecutionResult.duration }} 秒</p>
+                  <p v-if="batchExecutionResult.final_url"><strong>最终URL:</strong> {{ batchExecutionResult.final_url }}</p>
+                  <p v-if="batchExecutionResult.error_message" class="text-red-500 mt-2">
+                    <strong>错误信息:</strong> {{ batchExecutionResult.error_message }}
+                  </p>
+                </div>
+              </n-alert>
+
+              <!-- 执行步骤详情 -->
+              <n-collapse v-if="batchExecutionResult.history && batchExecutionResult.history.steps" accordion>
+                <n-collapse-item 
+                  v-for="(step, index) in batchExecutionResult.history.steps" 
+                  :key="index"
+                  :title="`步骤 ${step.step_number} - ${step.title || step.url || '执行中'}`"
+                  :name="index"
+                >
+                  <div class="step-detail">
+                    <p v-if="step.thinking">
+                      <strong>💭 AI 思考:</strong><br/>
+                      <span class="thinking-text">{{ step.thinking }}</span>
+                    </p>
+                    <p v-if="step.memory">
+                      <strong>📝 记忆:</strong><br/>
+                      <span class="memory-text">{{ step.memory }}</span>
+                    </p>
+                    <p v-if="step.url">
+                      <strong>🌐 页面:</strong> 
+                      <a :href="step.url" target="_blank" class="url-link">{{ step.url }}</a>
+                    </p>
+                    <p v-if="step.actions && step.actions.length > 0">
+                      <strong>⚡ 执行动作:</strong><br/>
+                      <n-tag 
+                        v-for="(action, idx) in step.actions" 
+                        :key="idx"
+                        size="small"
+                        style="margin: 4px 4px 0 0"
+                      >
+                        {{ action.action_name }}
+                      </n-tag>
+                    </p>
+                  </div>
+                </n-collapse-item>
+              </n-collapse>
+            </div>
+          </div>
+        </n-card>
+
+        <!-- 任务输出 JSON -->
+        <n-card v-if="batchExecutionResult" size="small" style="margin-top: 20px">
+          <template #header>
+            <strong>任务输出</strong>
+          </template>
+          <n-tabs type="line">
+            <n-tab-pane name="history" tab="代理历史 JSON">
+              <div class="json-output">
+                <pre>{{ JSON.stringify(batchExecutionResult.history, null, 2) }}</pre>
+              </div>
+            </n-tab-pane>
+          </n-tabs>
+        </n-card>
+      </div>
+
+      <!-- 底部按钮 -->
+      <template #footer>
+        <n-space justify="end">
+          <n-button v-if="!isBatchExecuting && !batchExecutionResult" @click="batchExecuteDialogVisible = false">
+            取消
+          </n-button>
+          <n-button 
+            v-if="!isBatchExecuting && !batchExecutionResult" 
+            type="primary" 
+            @click="confirmBatchExecute"
+            :loading="isBatchExecuting"
+          >
+            <template #icon>
+              <i class="fas fa-play-circle"></i>
+            </template>
+            开始批量执行
+          </n-button>
+          <n-button v-if="batchExecutionResult" @click="closeBatchDialog">
+            关闭
+          </n-button>
+        </n-space>
+      </template>
+    </n-modal>
   </div>
 </template>
 
@@ -264,16 +483,37 @@ import { ref, h, reactive, onMounted } from 'vue'
 import { 
   NCard, NButton, NDataTable, NModal, NDescriptions, NDescriptionsItem, 
   NTag, NForm, NFormItem, NSwitch, NInputNumber, NSpace, NDivider,
-  NAlert, NCollapse, NCollapseItem, NTabs, NTabPane, NSpin,
+  NAlert, NCollapse, NCollapseItem, NTabs, NTabPane, NSpin, NPagination,
   useMessage, useDialog
 } from 'naive-ui'
 import { testCaseAPI, testCodeAPI } from '@/api'
+import { useLazyLoad } from '@/composables/useLazyLoad'
 
 const message = useMessage()
 const dialog = useDialog()
 
-const testCases = ref([])
-const loading = ref(false)
+// 筛选条件
+const filters = reactive({
+  case_type: '功能测试'
+})
+
+// 使用懒加载
+const {
+  data: testCases,
+  loading,
+  currentPage,
+  pageSize,
+  total,
+  refresh,
+  goToPage,
+  changePageSize
+} = useLazyLoad({
+  fetchFunction: testCaseAPI.getList,
+  pageSize: 10,
+  filters,
+  autoLoad: true
+})
+
 const dialogVisible = ref(false)
 const currentCase = ref(null)
 const executingCases = ref({})
@@ -287,9 +527,22 @@ const resumeLoading = ref(false)
 const stopLoading = ref(false)
 const currentTaskId = ref(null)
 
+// 批量执行相关
+const selectedRowKeys = ref([])
+const isBatchExecuting = ref(false)
+const batchExecuteDialogVisible = ref(false)
+const selectedBatchCases = ref([])
+const batchExecutionResult = ref(null)
+
 const executeConfig = reactive({
   headless: true,
   max_steps: 20,
+  use_vision: false
+})
+
+const batchExecuteConfig = reactive({
+  headless: true,
+  max_steps: 50,
   use_vision: false
 })
 
@@ -309,6 +562,7 @@ const formatPriority = (priority) => {
 
 // 表格列定义
 const columns = [
+  { type: 'selection' },
   { title: 'ID', key: 'id', width: 80 },
   { title: '模块', key: 'module', width: 120 },
   { title: '用例名称', key: 'title', width: 200, ellipsis: { tooltip: true } },
@@ -356,22 +610,6 @@ const columns = [
     }
   }
 ]
-
-// 加载测试用例列表
-const loadTestCases = async () => {
-  loading.value = true
-  try {
-    const result = await testCaseAPI.getList({ limit: 20, offset: 0 })
-    if (result.success) {
-      testCases.value = result.data
-    }
-  } catch (error) {
-    message.error('加载测试用例失败')
-    console.error(error)
-  } finally {
-    loading.value = false
-  }
-}
 
 // 查看详情
 const viewDetail = (row) => {
@@ -510,9 +748,83 @@ const confirmExecute = async () => {
   }
 }
 
-onMounted(() => {
-  loadTestCases()
-})
+// 批量执行用例
+const executeBatchCases = async () => {
+  if (selectedRowKeys.value.length < 2) {
+    message.warning('请至少选择2条用例进行批量执行')
+    return
+  }
+  
+  // 从后端获取选中的所有用例详情（支持跨页选择）
+  try {
+    loading.value = true
+    const promises = selectedRowKeys.value.map(id => testCaseAPI.getById(id))
+    const results = await Promise.all(promises)
+    selectedBatchCases.value = results.map(res => res.data || res)
+    batchExecutionResult.value = null
+    isBatchExecuting.value = false
+    batchExecuteDialogVisible.value = true
+  } catch (error) {
+    message.error('获取用例详情失败')
+    console.error(error)
+  } finally {
+    loading.value = false
+  }
+}
+
+// 确认批量执行
+const confirmBatchExecute = async () => {
+  const caseIds = selectedRowKeys.value
+  
+  isBatchExecuting.value = true
+  
+  try {
+    message.info(`🤖 AI 正在批量执行 ${caseIds.length} 条测试用例...`)
+    
+    const result = await testCodeAPI.executeBatchBrowserUse(
+      caseIds,
+      batchExecuteConfig.headless,
+      batchExecuteConfig.max_steps,
+      batchExecuteConfig.use_vision
+    )
+    
+    if (result.success) {
+      message.success('批量执行完成！')
+      batchExecutionResult.value = result.data
+    } else {
+      message.error(result.message || '批量执行失败')
+      
+      batchExecutionResult.value = {
+        status: 'fail',
+        error_message: result.message,
+        total_steps: 0,
+        duration: 0,
+        history: null
+      }
+    }
+  } catch (error) {
+    message.error('批量执行失败: ' + (error.message || '未知错误'))
+    console.error(error)
+    
+    batchExecutionResult.value = {
+      status: 'fail',
+      error_message: error.message || '未知错误',
+      total_steps: 0,
+      duration: 0,
+      history: null
+    }
+  } finally {
+    isBatchExecuting.value = false
+  }
+}
+
+// 关闭批量执行对话框
+const closeBatchDialog = () => {
+  batchExecuteDialogVisible.value = false
+  selectedRowKeys.value = []
+}
+
+// 注：useLazyLoad 已经设置 autoLoad: true，不需要 onMounted 手动加载
 </script>
 
 <style scoped>
@@ -562,6 +874,16 @@ onMounted(() => {
   display: block;
   margin-top: 4px;
   border-left: 3px solid #007857;
+}
+
+.memory-text {
+  color: #409eff;
+  background-color: #ecf5ff;
+  padding: 8px 12px;
+  border-radius: 4px;
+  display: block;
+  margin-top: 4px;
+  border-left: 3px solid #409eff;
 }
 
 .url-link {

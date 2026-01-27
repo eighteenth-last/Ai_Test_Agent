@@ -36,16 +36,16 @@ Base = declarative_base()
 
 
 # 数据库模型
-class TestCase(Base):
-    """测试用例表"""
-    __tablename__ = 'test_cases'
+class ExecutionCase(Base):
+    """用例详情表 - 存储所有测试用例（替代原 test_cases 表）"""
+    __tablename__ = 'execution_cases'
     
     # 主键ID，自动递增
     id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
-    # 所属模块名称
-    module = Column(String(100), comment='所属模块')
     # 用例标题，必填
     title = Column(String(200), nullable=False, comment='用例标题')
+    # 所属模块名称
+    module = Column(String(100), comment='所属模块')
     # 前置条件描述
     precondition = Column(Text, comment='前置条件')
     # 测试步骤，格式为JSON数组
@@ -54,64 +54,74 @@ class TestCase(Base):
     expected = Column(Text, nullable=False, comment='预期结果')
     # 关键词标签
     keywords = Column(String(200), comment='关键词')
-    # 优先级：1-4级（1级最高，3级为默认）
-    priority = Column(String(20), comment='优先级', default='3')
     # 用例类型：功能测试/接口测试/单元测试等
     case_type = Column(String(50), comment='用例类型')
+    # 优先级：1-4级（1级最高，3级为默认）
+    priority = Column(String(20), comment='优先级', default='3')
     # 适用测试阶段
     stage = Column(String(50), comment='适用阶段')
     # 测试数据JSON对象
     test_data = Column(JSON, comment='测试数据（JSON格式）')
+    # 对应的CSV文件路径
+    csv_file_path = Column(String(500), comment='CSV文件路径')
     # 创建时间，默认为当前时间
     created_at = Column(DateTime, default=datetime.now, comment='创建时间')
     # 更新时间，每次更新时自动更新
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
-    # 对应的CSV文件路径
-    csv_file_path = Column(String(500), comment='CSV文件路径')
 
 
-class TestCode(Base):
-    """测试代码表"""
-    __tablename__ = 'test_codes'
+class ExecutionBatch(Base):
+    """执行批次中间表 - 用例与批次的对应关系（纯映射表）"""
+    __tablename__ = 'execution_batches'
     
     # 主键ID，自动递增
     id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
-    # 关联的测试用例ID（外键）
-    test_case_id = Column(Integer, nullable=False, comment='关联测试用例ID')
-    # 生成的完整测试代码内容
-    code_content = Column(Text, nullable=False, comment='生成的测试代码')
-    # 代码类型：selenium/playwright/pytest等
-    code_type = Column(String(50), comment='代码类型')
-    # 动作列表，JSON格式的动作序列
-    action_list = Column(JSON, comment='动作列表（JSON格式）')
+    # 关联用例ID
+    execution_case_id = Column(Integer, nullable=False, index=True, comment='用例ID')
+    # 执行批次号
+    batch = Column(String(50), nullable=False, index=True, comment='批次号')
     # 创建时间
     created_at = Column(DateTime, default=datetime.now, comment='创建时间')
-    # 状态：pending(待执行)/running(执行中)/completed(已完成)/failed(失败)
-    status = Column(String(20), default='pending', comment='执行状态')
 
 
-class TestResult(Base):
-    """测试结果表"""
-    __tablename__ = 'test_results'
+class TestRecord(Base):
+    """执行记录表 - 记录单条/批量执行的汇总信息"""
+    __tablename__ = 'test_records'
     
     # 主键ID，自动递增
     id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
-    # 关联的测试代码ID（外键，可选 - 支持Browser-Use直接执行）
-    test_code_id = Column(Integer, nullable=True, comment='关联测试代码ID')
-    # 关联的测试用例ID（新增 - 支持Browser-Use模式）
-    test_case_id = Column(Integer, nullable=True, comment='关联测试用例ID')
-    # 测试执行日志
-    execution_log = Column(LONGTEXT , comment='执行日志')
-    # 截图文件路径数组，JSON格式
-    screenshots = Column(JSON, comment='截图路径（JSON数组）')
-    # 测试结果状态：pass(通过)/fail(失败)/error(错误)
+    # 关联中间表ID
+    batch_id = Column(Integer, nullable=False, index=True, comment='中间表ID（execution_batches.id）')
+    # 关联用例ID（冗余字段，方便查询）
+    test_case_id = Column(Integer, comment='关联用例ID')
+    # 执行模式：单量/批量
+    execution_mode = Column(String(20), default='单量', comment='执行模式（单量/批量）')
+    # 执行的用例总数
+    total_cases = Column(Integer, default=1, comment='用例总数')
+    # 通过的用例数
+    passed_cases = Column(Integer, default=0, comment='通过数')
+    # 失败的用例数
+    failed_cases = Column(Integer, default=0, comment='失败数')
+    # 测试执行日志（汇总）
+    execution_log = Column(LONGTEXT, comment='执行日志')
+    # 测试结果状态：pass(全部通过)/fail(全部失败)/partial(部分通过)/error(错误)
     status = Column(String(20), comment='测试结果')
     # 错误信息或异常堆栈
-    error_message = Column(LONGTEXT , comment='错误信息')
+    error_message = Column(LONGTEXT, comment='错误信息')
     # 测试执行时间
     executed_at = Column(DateTime, default=datetime.now, comment='执行时间')
     # 测试执行耗时，单位为秒
     duration = Column(Integer, comment='执行耗时（秒）')
+    # 执行步数
+    test_steps = Column(Integer, default=0, comment='执行步数')
+
+
+# 保留 TestCase 作为别名，兼容旧代码
+TestCase = ExecutionCase
+
+
+# 保留 TestResult 作为别名，兼容旧代码
+TestResult = TestRecord
 
 
 class TestReport(Base):
@@ -136,38 +146,22 @@ class TestReport(Base):
     created_at = Column(DateTime, default=datetime.now, comment='生成时间')
 
 
-class VisualElement(Base):
-    """视觉元素缓存表"""
-    __tablename__ = 'visual_elements'
-    
-    # 主键ID，自动递增
-    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
-    # 页面URL地址
-    page_url = Column(String(500), nullable=False, comment='页面URL')
-    # 视觉元素的文本内容
-    element_text = Column(String(200), comment='元素文本')
-    # 选择器候选列表，JSON数组格式
-    selector_candidates = Column(JSON, comment='选择器候选项（JSON数组）')
-    # 元素类型：button/input/link/text/image等
-    element_type = Column(String(50), comment='元素类型')
-    # 元素识别的置信度分数
-    confidence = Column(String(10), comment='置信度分数')
-    # 元素缓存的创建时间
-    created_at = Column(DateTime, default=datetime.now, comment='创建时间')
-
-
 class BugReport(Base):
-    """Bug集合表"""
+    """Bug报告表
+    
+    记录测试执行过程中发现的 Bug
+    execution_mode 字段通过关联 test_records 表的 execution_mode 来显示
+    """
     __tablename__ = 'bug_reports'
     
     # 主键ID，自动递增
     id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    # 关联的执行记录ID
+    test_record_id = Column(Integer, comment='关联执行记录ID')
     # Bug名称（使用测试用例名称）
     bug_name = Column(String(200), nullable=False, comment='Bug名称')
     # 关联的测试用例ID
     test_case_id = Column(Integer, comment='关联测试用例ID')
-    # 关联的测试结果ID
-    test_result_id = Column(Integer, comment='关联测试结果ID')
     # 定位地址（出错的URL）
     location_url = Column(String(500), comment='定位地址')
     # 错误类型：功能错误/设计缺陷/安全问题/系统错误
@@ -186,6 +180,12 @@ class BugReport(Base):
     actual_result = Column(Text, comment='实际结果')
     # Bug状态：待处理/已确认/已修复/已关闭
     status = Column(String(20), default='待处理', comment='Bug状态')
+    # 问题描述（包含具体的用例信息）
+    description = Column(Text, comment='问题描述')
+    # 测试类型（从用例继承）
+    case_type = Column(String(50), comment='测试类型')
+    # 执行模式：单量/批量（通过 test_record_id 关联 test_records 表获取）
+    execution_mode = Column(String(20), default='单量', comment='执行模式')
     # 创建时间
     created_at = Column(DateTime, default=datetime.now, comment='创建时间')
     # 更新时间
@@ -204,18 +204,46 @@ class LLMModel(Base):
     api_key = Column(String(500), nullable=False, comment='API密钥')
     # API基础URL
     base_url = Column(String(500), comment='API基础URL')
-    # 模型供应商：OpenAI/Anthropic/Gemini等
-    provider = Column(String(50), comment='模型供应商')
+    # 模型供应商：使用model_providers表中的code值
+    provider = Column(String(50), comment='模型供应商code')
     # 是否当前激活
     is_active = Column(Integer, default=0, comment='是否激活（0:否 1:是）')
     # 优先级：Priority 1/2/3
     priority = Column(Integer, default=1, comment='优先级')
     # 利用率百分比
     utilization = Column(Integer, default=100, comment='利用率百分比')
+    # 总消耗TOKEN数
+    tokens_used_total = Column(Integer, default=0, comment='总消耗TOKEN')
     # 今日消耗TOKEN数
     tokens_used_today = Column(Integer, default=0, comment='今日消耗TOKEN')
     # 模型状态：待命/Redis缓存
     status = Column(String(50), default='待命', comment='模型状态')
+    # 创建时间
+    created_at = Column(DateTime, default=datetime.now, comment='创建时间')
+    # 更新时间
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
+
+
+class ModelProvider(Base):
+    """模型供应商表"""
+    __tablename__ = 'model_providers'
+    
+    # 主键ID，自动递增
+    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    # 供应商名称
+    name = Column(String(100), nullable=False, unique=True, comment='供应商名称')
+    # 供应商代码（用于程序识别）
+    code = Column(String(50), nullable=False, unique=True, comment='供应商代码')
+    # 显示名称（用于界面显示）
+    display_name = Column(String(100), nullable=False, comment='显示名称')
+    # 默认 base_url（可选）
+    default_base_url = Column(String(500), comment='默认API基础URL')
+    # 是否启用
+    is_active = Column(Integer, default=1, comment='是否启用（0:否 1:是）')
+    # 排序顺序
+    sort_order = Column(Integer, default=0, comment='排序顺序')
+    # 备注
+    description = Column(Text, comment='备注')
     # 创建时间
     created_at = Column(DateTime, default=datetime.now, comment='创建时间')
     # 更新时间
@@ -315,13 +343,13 @@ def init_db():
         
         # 需要创建的表
         tables_to_create = {
-            'test_cases': TestCase,
-            'test_codes': TestCode,
-            'test_results': TestResult,
+            'execution_cases': ExecutionCase,
+            'execution_batches': ExecutionBatch,
+            'test_records': TestRecord,
             'test_reports': TestReport,
-            'visual_elements': VisualElement,
             'bug_reports': BugReport,
             'llm_models': LLMModel,
+            'model_providers': ModelProvider,
             'contacts': Contact,
             'email_records': EmailRecord,
             'email_config': EmailConfig
