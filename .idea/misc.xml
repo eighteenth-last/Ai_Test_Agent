@@ -4,4 +4,7 @@
     <option name="sdkName" value="Ai_Test_Agent" />
   </component>
   <component name="ProjectRootManager" version="2" project-jdk-name="Ai_Test_Agent" project-jdk-type="Python SDK" />
+  <component name="PythonCompatibilityInspectionAdvertiser">
+    <option name="version" value="3" />
+  </component>
 </project>

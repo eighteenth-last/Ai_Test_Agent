@@ -240,7 +240,7 @@
 </template>
 
 <script setup>
-import { ref, h, reactive, onMounted, computed, watch } from 'vue'
+import { ref, h, reactive } from 'vue'
 import { 
   NCard, NButton, NDataTable, NModal, NDescriptions, NDescriptionsItem, 
   NTag, NForm, NFormItem, NInput, NSelect, NSpace, NGrid, NGi,
@@ -248,16 +248,10 @@ import {
   useMessage, useDialog
 } from 'naive-ui'
 import { bugReportAPI } from '@/api'
+import { useLazyLoad } from '@/composables/useLazyLoad'
 
 const message = useMessage()
 const dialog = useDialog()
-
-// 列表数据
-const bugs = ref([])
-const loading = ref(false)
-const currentPage = ref(1)
-const pageSize = ref(10)
-const total = ref(0)
 
 // 统计数据
 const stats = reactive({
@@ -267,12 +261,65 @@ const stats = reactive({
   fixed: 0
 })
 
+// 更新统计数据
+const updateStats = (data) => {
+  stats.total = data.length
+  stats.critical = data.filter(b => b.severity_level === '一级' || b.severity_level === '二级').length
+  stats.open = data.filter(b =>
+    ['open', 'in_progress', '待处理', '已确认', '处理中'].includes(b.status)
+  ).length
+  stats.fixed = data.filter(b =>
+    ['fixed', 'closed', '已修复', '已关闭'].includes(b.status)
+  ).length
+}
+
 // 筛选条件
 const filters = reactive({
   severity: null,
   status: null,
   search: ''
 })
+
+// 包装 API 调用以适配 useLazyLoad
+const fetchBugsWrapper = async (params) => {
+  const result = await bugReportAPI.getList(params)
+  if (result.success) {
+    // 注意：这里的统计仅基于当前页数据，如果需要全局统计需要后端支持
+    updateStats(result.data || [])
+    return {
+      success: true,
+      data: result.data || [],
+      total: result.total || (result.data ? result.data.length : 0)
+    }
+  }
+  return result
+}
+
+// 使用懒加载
+const {
+  data: bugs,
+  loading,
+  currentPage,
+  pageSize,
+  total,
+  refresh,
+  goToPage,
+  changePageSize: handlePageSizeChange
+} = useLazyLoad({
+  fetchFunction: fetchBugsWrapper,
+  pageSize: 10,
+  filters,
+  autoLoad: true,
+  debounceDelay: 500
+})
+
+const loadBugs = (page) => {
+  if (typeof page === 'number') {
+    goToPage(page)
+  } else {
+    refresh()
+  }
+}
 
 // 严重程度选项
 const severityOptions = [
@@ -460,65 +507,9 @@ const columns = [
   }
 ]
 
-// 加载 Bug 列表
-const loadBugs = async () => {
-  loading.value = true
-  try {
-    const params = {
-      limit: pageSize.value,
-      offset: (currentPage.value - 1) * pageSize.value
-    }
 
-    if (filters.severity) {
-      params.severity_level = filters.severity
-    }
-    if (filters.status) {
-      params.status = filters.status
-    }
-    if (filters.search) {
-      params.search = filters.search
-    }
 
-    const result = await bugReportAPI.getList(params)
-    if (result.success) {
-      bugs.value = result.data || []
-      total.value = result.total || result.data?.length || 0
 
-      // 更新统计
-      updateStats(result.data || [])
-    }
-  } catch (error) {
-    message.error('加载 Bug 列表失败')
-    console.error(error)
-  } finally {
-    loading.value = false
-  }
-}
-
-// 更新统计数据
-const updateStats = (data) => {
-  stats.total = data.length
-  stats.critical = data.filter(b => b.severity_level === '一级' || b.severity_level === '二级').length
-  stats.open = data.filter(b =>
-    ['open', 'in_progress', '待处理', '已确认', '处理中'].includes(b.status)
-  ).length
-  stats.fixed = data.filter(b =>
-    ['fixed', 'closed', '已修复', '已关闭'].includes(b.status)
-  ).length
-}
-
-// 监听筛选条件变化，自动查询
-watch(filters, () => {
-  currentPage.value = 1
-  loadBugs()
-})
-
-// 处理分页大小改变
-const handlePageSizeChange = (size) => {
-  pageSize.value = size
-  currentPage.value = 1
-  loadBugs()
-}
 
 // 查看详情
 const viewDetail = async (row) => {
@@ -625,9 +616,7 @@ const downloadBugReport = () => {
   message.success('报告下载成功')
 }
 
-onMounted(() => {
-  loadBugs()
-})
+
 </script>
 
 <style scoped>

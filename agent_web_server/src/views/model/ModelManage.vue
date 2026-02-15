@@ -321,6 +321,13 @@
             <template #suffix>%</template>
           </n-input-number>
         </n-form-item>
+
+        <n-alert title="配置说明" type="info" class="mt-2" :bordered="false">
+          <div class="text-xs text-slate-500">
+            <p class="mb-1">1. 请完善填写：模型名称、API Key、API 基础URL、模型供应商。</p>
+            <p>2. 供应商选择：请选择模型实际归属的厂商。例如使用中转服务调用 ChatGPT，供应商仍应选择 <strong>OpenAI</strong>。</p>
+          </div>
+        </n-alert>
       </n-form>
 
       <template #footer>
@@ -336,13 +343,13 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
 import {
   NCard, NButton, NGrid, NGi, NStatistic, NSpace, NTag,
-  NSpin, NModal, NForm, NFormItem, NInput, NInputNumber, NSelect, NSwitch,
+  NSpin, NModal, NForm, NFormItem, NInput, NInputNumber, NSelect, NSwitch, NAlert,
   useMessage, useDialog
 } from 'naive-ui'
-import { modelAPI } from '@/api'
+import { modelAPI, dashboardAPI } from '@/api'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -356,11 +363,36 @@ const formRef = ref(null)
 const autoSwitch = ref(true)
 
 const systemLogs = ref([])
+let logPollTimer = null
 
 const addSystemLog = (type, message) => {
   systemLogs.value.unshift({ type, message })
   if (systemLogs.value.length > 50) {
     systemLogs.value.pop()
+  }
+}
+
+// 获取系统日志
+const fetchSystemLogs = async () => {
+  try {
+    const result = await dashboardAPI.getSystemLogs(20)
+    if (result.success && Array.isArray(result.data)) {
+      // 转换日志格式以匹配当前视图
+      const logs = result.data.map(log => {
+        let type = 'system'
+        if (log.level === 'ERROR') type = 'error'
+        if (log.level === 'WARNING') type = 'warning'
+        if (log.source === 'action') type = 'action'
+
+        return {
+          type,
+          message: `[${log.created_at}] ${log.message}`
+        }
+      })
+      systemLogs.value = logs
+    }
+  } catch (error) {
+    console.error('获取系统日志失败:', error)
   }
 }
 
@@ -604,6 +636,15 @@ onMounted(() => {
   addSystemLog('system', '[SYSTEM] 模型管理控制台已就绪')
   loadProviders()
   loadModels()
+  // 启动日志轮询
+  fetchSystemLogs()
+  logPollTimer = setInterval(fetchSystemLogs, 3000)
+})
+
+onUnmounted(() => {
+  if (logPollTimer) {
+    clearInterval(logPollTimer)
+  }
 })
 </script>
 

@@ -255,6 +255,53 @@ export const dashboardAPI = {
   },
   getRecentActivities() {
     return api.get('/dashboard/recent-activities')
+  },
+  getBugDistribution() {
+    return api.get('/dashboard/bug-distribution')
+  },
+  getSystemLogs(limit = 50) {
+    return api.get('/dashboard/system-logs', { params: { limit } })
+  }
+}
+
+// Spec API - 接口文件管理
+export const specAPI = {
+  importMd(file, serviceName) {
+    const formData = new FormData()
+    formData.append('file', file)
+    if (serviceName) formData.append('service_name', serviceName)
+    return api.post('/specs/import-md', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  },
+  getList(params) {
+    return api.get('/specs/list', { params })
+  },
+  getDetail(versionId) {
+    return api.get(`/specs/${versionId}`)
+  },
+  getContent(versionId) {
+    return api.get(`/specs/${versionId}/content`)
+  },
+  delete(versionId) {
+    return api.delete(`/specs/${versionId}`)
+  }
+}
+
+// API Test - 接口测试
+export const apiTestAPI = {
+  matchSpec(test_case_ids, top_k = 5, service_name = null) {
+    const data = { test_case_ids, top_k }
+    if (service_name) data.service_name = service_name
+    return api.post('/api-test/match-spec', data)
+  },
+  execute(test_case_ids, spec_version_id, environment = null, mode = 'llm_enhanced') {
+    return api.post('/api-test/execute', {
+      test_case_ids,
+      spec_version_id,
+      environment,
+      mode
+    })
   }
 }
 

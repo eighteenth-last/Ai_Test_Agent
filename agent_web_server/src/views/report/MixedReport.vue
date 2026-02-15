@@ -9,7 +9,7 @@
             <i class="fas fa-inbox text-4xl mb-2"></i>
             <p>暂无可用数据源</p>
           </div>
-          <div v-else class="space-y-4">
+          <div v-else class="space-y-4 h-[350px] overflow-y-auto pr-2 custom-scrollbar">
             <n-checkbox-group v-model:value="selectedReports">
               <div class="space-y-4">
                 <label
@@ -109,7 +109,7 @@
       </div>
       
       <h5 class="text-lg font-bold mb-2">AI 分析结论</h5>
-      <p class="text-slate-600 whitespace-pre-wrap">{{ generatedReport.conclusion }}</p>
+      <div class="markdown-body" v-html="conclusionHtml"></div>
     </div>
     </div>
 
@@ -180,9 +180,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { NCheckboxGroup, NCheckbox, NButton, NDivider, useMessage, NSpin, NModal, NCard } from 'naive-ui'
 import { testReportAPI, bugReportAPI, contactAPI } from '@/api/index'
+import { marked } from 'marked'
 
 const message = useMessage()
 const generating = ref(false)
@@ -190,6 +191,12 @@ const loading = ref(false)
 const selectedReports = ref([])
 const generatedReport = ref(null)
 const reportList = ref([])
+
+// markdown 渲染
+const conclusionHtml = computed(() => {
+  if (!generatedReport.value?.conclusion) return ''
+  return marked(generatedReport.value.conclusion)
+})
 
 // 联系人相关
 const showSendModal = ref(false)
@@ -359,7 +366,31 @@ const generateReport = async () => {
     const result = await testReportAPI.generateMixed(runReportIds, bugReportIds)
     
     if (result.success) {
-      generatedReport.value = result.data
+      const data = result.data
+      const s = data.summary || {}
+      const passRate = s.pass_rate ?? (s.total > 0 ? Math.round(s.pass / s.total * 100) : 0)
+      
+      // 根据通过率推导质量评级
+      let qualityRating = 'D'
+      if (passRate >= 95) qualityRating = 'A'
+      else if (passRate >= 80) qualityRating = 'B'
+      else if (passRate >= 60) qualityRating = 'C'
+
+      // 计算总执行时长
+      const duration = s.duration || 0
+      const durationText = duration >= 60
+        ? `${Math.floor(duration / 60)}min ${duration % 60}s`
+        : `${duration}s`
+
+      generatedReport.value = {
+        summary: `共 ${s.total || 0} 个用例，通过 ${s.pass || 0} 个，失败 ${s.fail || 0} 个，通过率 ${passRate}%`,
+        quality_rating: qualityRating,
+        pass_rate: passRate,
+        bug_count: s.bug_count || 0,
+        duration: durationText,
+        conclusion: data.content || '暂无分析结论',
+        raw: data
+      }
       message.success('AI 分析完成')
     } else {
       message.error(result.message || '生成报告失败')
@@ -411,5 +442,89 @@ const sendReport = async () => {
   border: 1px solid rgba(0, 120, 87, 0.1);
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 3px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8;
+}
+
+.markdown-body {
+  color: #334155;
+  line-height: 1.8;
+}
+.markdown-body :deep(h1) {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 1.2em 0 0.6em;
+  color: #1e293b;
+}
+.markdown-body :deep(h2) {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 1em 0 0.5em;
+  color: #1e293b;
+}
+.markdown-body :deep(h3) {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0.8em 0 0.4em;
+  color: #334155;
+}
+.markdown-body :deep(p) {
+  margin: 0.5em 0;
+}
+.markdown-body :deep(ul),
+.markdown-body :deep(ol) {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+.markdown-body :deep(li) {
+  margin: 0.25em 0;
+}
+.markdown-body :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.8em 0;
+}
+.markdown-body :deep(th),
+.markdown-body :deep(td) {
+  border: 1px solid #e2e8f0;
+  padding: 8px 12px;
+  text-align: left;
+}
+.markdown-body :deep(th) {
+  background: #f8fafc;
+  font-weight: 600;
+}
+.markdown-body :deep(hr) {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 1em 0;
+}
+.markdown-body :deep(strong) {
+  font-weight: 600;
+  color: #1e293b;
+}
+.markdown-body :deep(code) {
+  background: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+.markdown-body :deep(blockquote) {
+  border-left: 3px solid #007857;
+  padding-left: 1em;
+  margin: 0.5em 0;
+  color: #64748b;
 }
 </style>

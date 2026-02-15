@@ -213,7 +213,7 @@
 </template>
 
 <script setup>
-import { ref, h, reactive, onMounted, watch } from 'vue'
+import { ref, h, reactive } from 'vue'
 import { 
   NCard, NButton, NDataTable, NModal, NDescriptions, NDescriptionsItem, 
   NTag, NForm, NFormItem, NInput, NSelect, NDatePicker, NSpace,
@@ -221,15 +221,96 @@ import {
   useMessage
 } from 'naive-ui'
 import { testReportAPI } from '@/api'
+import { useLazyLoad } from '@/composables/useLazyLoad'
 
 const message = useMessage()
 
-// 列表数据
-const reports = ref([])
-const loading = ref(false)
-const currentPage = ref(1)
-const pageSize = ref(10)
-const total = ref(0)
+// 格式化日期
+const formatDate = (timestamp) => {
+  if (!timestamp) return null
+  const date = new Date(timestamp)
+  return date.toISOString().split('T')[0]
+}
+
+// 包装 API 调用以适配 useLazyLoad 并处理数据转换
+const fetchReportsWrapper = async (params) => {
+  // 处理日期范围
+  const apiParams = { ...params }
+  if (apiParams.dateRange && apiParams.dateRange.length === 2) {
+    apiParams.start_date = formatDate(apiParams.dateRange[0])
+    apiParams.end_date = formatDate(apiParams.dateRange[1])
+    delete apiParams.dateRange
+  }
+
+  const result = await testReportAPI.getList(apiParams)
+  
+  if (result.success) {
+    // 解析 summary 字段并提取状态信息
+    const list = (result.data || []).map(report => {
+      let summary = {}
+      try {
+        summary = typeof report.summary === 'string' ? JSON.parse(report.summary) : report.summary
+      } catch (e) {
+        console.error('Failed to parse summary:', e)
+      }
+      
+      // 判断状态：优先 summary.status，其次根据 pass/fail 数量推导
+      let status = 'fail'
+      if (summary.status) {
+        if (summary.status === '通过' || summary.status === 'pass') {
+          status = 'pass'
+        } else if (summary.status === '失败' || summary.status === 'fail') {
+          status = 'fail'
+        }
+      } else if (summary.total !== undefined) {
+        if (summary.fail === 0 && summary.total > 0) {
+          status = 'pass'
+        } else {
+          status = 'fail'
+        }
+      }
+      
+      // 获取总步数，优先使用数据库字段，其次从 summary，最后从 execution_log 提取
+      let totalSteps = report.total_steps || summary.total_steps || 0
+      if (!totalSteps && report.execution_log) {
+        try {
+          const logData = typeof report.execution_log === 'string' 
+            ? JSON.parse(report.execution_log) 
+            : report.execution_log
+          
+          if (logData) {
+            if (logData.steps && Array.isArray(logData.steps)) {
+              totalSteps = logData.steps.length
+            } else if (logData.total_steps) {
+              totalSteps = logData.total_steps
+            } else if (logData.step_count) {
+              totalSteps = logData.step_count
+            }
+          }
+        } catch (e) {
+          console.error('Failed to parse execution_log for steps:', e)
+        }
+      }
+      
+      return {
+        ...report,
+        status: status,
+        duration: summary.duration || 0,
+        total_steps: totalSteps,
+        case_name: report.title || '-',
+        case_type: report.case_type || '功能测试',
+        execution_mode: report.execution_mode || summary.execution_mode || '单量'
+      }
+    })
+
+    return {
+      success: true,
+      data: list,
+      total: result.total
+    }
+  }
+  return result
+}
 
 // 筛选条件
 const filters = reactive({
@@ -237,6 +318,32 @@ const filters = reactive({
   search: '',
   dateRange: null
 })
+
+// 使用懒加载
+const {
+  data: reports,
+  loading,
+  currentPage,
+  pageSize,
+  total,
+  refresh,
+  goToPage,
+  changePageSize: handlePageSizeChange
+} = useLazyLoad({
+  fetchFunction: fetchReportsWrapper,
+  pageSize: 10,
+  filters,
+  autoLoad: true,
+  debounceDelay: 500
+})
+
+const loadReports = (page) => {
+  if (typeof page === 'number') {
+    goToPage(page)
+  } else {
+    refresh()
+  }
+}
 
 // 状态选项
 const statusOptions = [
@@ -354,143 +461,6 @@ const columns = [
   }
 ]
 
-// 加载报告列表
-const loadReports = async () => {
-  loading.value = true
-  try {
-    const params = {
-      limit: pageSize.value,
-      offset: (currentPage.value - 1) * pageSize.value
-    }
-    
-    if (filters.status) {
-      params.status = filters.status
-    }
-    if (filters.search) {
-      params.search = filters.search
-    }
-    if (filters.dateRange) {
-      params.start_date = formatDate(filters.dateRange[0])
-      params.end_date = formatDate(filters.dateRange[1])
-    }
-    
-    const result = await testReportAPI.getList(params)
-    if (result.success) {
-      // 解析 summary 字段并提取状态信息
-      let list = (result.data || []).map(report => {
-        let summary = {}
-        try {
-          summary = typeof report.summary === 'string' ? JSON.parse(report.summary) : report.summary
-        } catch (e) {
-          console.error('Failed to parse summary:', e)
-        }
-        
-        // 将中文状态转换为英文
-        let status = 'fail'
-        if (summary.status) {
-          if (summary.status === '通过' || summary.status === 'pass') {
-            status = 'pass'
-          } else if (summary.status === '失败' || summary.status === 'fail') {
-            status = 'fail'
-          }
-        }
-        
-        // 获取总步数，优先使用数据库字段，其次从 summary，最后从 execution_log 提取
-        let totalSteps = report.total_steps || summary.total_steps || 0
-        if (!totalSteps && report.execution_log) {
-          try {
-            const logData = typeof report.execution_log === 'string' 
-              ? JSON.parse(report.execution_log) 
-              : report.execution_log
-            
-            if (logData) {
-              if (logData.steps && Array.isArray(logData.steps)) {
-                totalSteps = logData.steps.length
-              } else if (logData.total_steps) {
-                totalSteps = logData.total_steps
-              } else if (logData.step_count) {
-                totalSteps = logData.step_count
-              }
-            }
-          } catch (e) {
-            console.error('Failed to parse execution_log for steps:', e)
-          }
-        }
-        
-        return {
-          ...report,
-          status: status,
-          duration: summary.duration || 0,
-          total_steps: totalSteps,
-          case_name: report.title || '-',
-          case_type: report.case_type || '功能测试',
-          execution_mode: report.execution_mode || '单量'
-        }
-      })
-
-      // 前端再次按筛选条件过滤，保证页面展示与筛选一致
-      if (filters.status) {
-        list = list.filter(item => item.status === filters.status)
-      }
-      if (filters.search && filters.search.trim()) {
-        const keyword = filters.search.trim().toLowerCase()
-        list = list.filter(item =>
-          (item.case_name || '').toLowerCase().includes(keyword)
-        )
-      }
-      if (filters.dateRange && filters.dateRange.length === 2) {
-        const [start, end] = filters.dateRange
-        const startTime = start ? new Date(start).getTime() : null
-        const endTime = end ? new Date(end).getTime() : null
-        list = list.filter(item => {
-          if (!item.created_at) return false
-          const t = new Date(item.created_at).getTime()
-          if (Number.isNaN(t)) return false
-          if (startTime !== null && t < startTime) return false
-          if (endTime !== null && t > endTime) return false
-          return true
-        })
-      }
-
-      reports.value = list
-      total.value = list.length
-    }
-  } catch (error) {
-    message.error('加载报告列表失败')
-    console.error(error)
-  } finally {
-    loading.value = false
-  }
-}
-
-// 格式化日期
-const formatDate = (timestamp) => {
-  if (!timestamp) return null
-  const date = new Date(timestamp)
-  return date.toISOString().split('T')[0]
-}
-
-// 监听筛选条件变化，自动查询
-watch(
-  () => ({
-    status: filters.status,
-    search: filters.search,
-    dateRange: filters.dateRange
-  }),
-  () => {
-    currentPage.value = 1
-    loadReports()
-  },
-  { deep: true }
-)
-
-// 处理分页大小改变
-const handlePageSizeChange = (size) => {
-  pageSize.value = size
-  currentPage.value = 1
-  loadReports()
-}
-
 // 查看详情
 const viewDetail = async (row) => {
   detailDialogVisible.value = true
@@ -527,12 +497,18 @@ const viewDetail = async (row) => {
         }
       }
       
-      // 将中文状态转换为英文
+      // 判断状态：优先 summary.status，其次根据 pass/fail 数量推导
       let status = 'fail'
       if (summary.status) {
         if (summary.status === '通过' || summary.status === 'pass') {
           status = 'pass'
         } else if (summary.status === '失败' || summary.status === 'fail') {
+          status = 'fail'
+        }
+      } else if (summary.total !== undefined) {
+        if (summary.fail === 0 && summary.total > 0) {
+          status = 'pass'
+        } else {
           status = 'fail'
         }
       }
@@ -609,9 +585,7 @@ const deleteReport = async (row) => {
   }
 }
 
-onMounted(() => {
-  loadReports()
-})
+
 </script>
 
 <style scoped>

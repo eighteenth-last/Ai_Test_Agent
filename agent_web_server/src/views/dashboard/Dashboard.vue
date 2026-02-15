@@ -82,20 +82,23 @@
       </n-card>
     </div>
 
-    <!-- 最近活动 -->
-    <n-card class="recent-activity" title="最近测试活动">
-      <n-timeline>
-        <n-timeline-item
-          v-for="(activity, index) in recentActivities"
-          :key="index"
-          :type="activity.type"
-          :title="activity.title"
-          :content="activity.content"
-          :time="activity.time"
-        />
-      </n-timeline>
-      <n-empty v-if="recentActivities.length === 0" description="暂无测试活动" />
-    </n-card>
+    <!-- Bug 数据可视化 -->
+    <div class="charts-row">
+      <n-card class="chart-card" title="Bug 严重程度分布">
+        <div ref="bugSeverityChartRef" class="chart-container"></div>
+      </n-card>
+      <n-card class="chart-card" title="Bug 状态分布">
+        <div ref="bugStatusChartRef" class="chart-container"></div>
+      </n-card>
+    </div>
+
+    <div class="charts-row">
+      <n-card class="chart-card wide" title="Bug 错误类型分布">
+        <div ref="bugTypeChartRef" class="chart-container"></div>
+      </n-card>
+    </div>
+
+
   </div>
 </template>
 
@@ -124,6 +127,9 @@ const priorityChartRef = ref(null)
 const trendChartRef = ref(null)
 const moduleChartRef = ref(null)
 const emailChartRef = ref(null)
+const bugSeverityChartRef = ref(null)
+const bugStatusChartRef = ref(null)
+const bugTypeChartRef = ref(null)
 
 // 图表实例
 let testResultChart = null
@@ -131,6 +137,9 @@ let priorityChart = null
 let trendChart = null
 let moduleChart = null
 let emailChart = null
+let bugSeverityChart = null
+let bugStatusChart = null
+let bugTypeChart = null
 
 // 最近活动
 const recentActivities = ref([])
@@ -447,6 +456,96 @@ const loadEmailChart = async () => {
   }
 }
 
+// 加载 Bug 分布图表
+const loadBugCharts = async () => {
+  try {
+    const result = await dashboardAPI.getBugDistribution()
+    if (!result.success) return
+
+    const { by_severity, by_status, by_type } = result.data
+
+    // Bug 严重程度 - 横向柱状图
+    if (bugSeverityChartRef.value) {
+      if (!bugSeverityChart) bugSeverityChart = echarts.init(bugSeverityChartRef.value)
+      const severityColors = { '一级': '#d03050', '二级': '#f0a020', '三级': '#2080f0', '四级': '#18a058' }
+      const levels = ['一级', '二级', '三级', '四级']
+      bugSeverityChart.setOption({
+        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+        grid: { left: '3%', right: '10%', bottom: '3%', top: '3%', containLabel: true },
+        xAxis: { type: 'value' },
+        yAxis: { type: 'category', data: levels.slice().reverse(), axisLabel: { fontSize: 13 } },
+        series: [{
+          type: 'bar',
+          barWidth: '50%',
+          data: levels.slice().reverse().map(l => ({
+            value: by_severity[l] || 0,
+            itemStyle: { color: severityColors[l], borderRadius: [0, 6, 6, 0] }
+          })),
+          label: { show: true, position: 'right', fontSize: 13, fontWeight: 'bold' }
+        }]
+      })
+      setTimeout(() => bugSeverityChart?.resize(), 100)
+    }
+
+    // Bug 状态 - 环形图
+    if (bugStatusChartRef.value) {
+      if (!bugStatusChart) bugStatusChart = echarts.init(bugStatusChartRef.value)
+      const statusColors = { '待处理': '#f0a020', '已确认': '#2080f0', '已修复': '#18a058', '已关闭': '#909399' }
+      bugStatusChart.setOption({
+        tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+        legend: { bottom: '5%', left: 'center' },
+        series: [{
+          type: 'pie',
+          radius: ['40%', '70%'],
+          avoidLabelOverlap: false,
+          itemStyle: { borderRadius: 10, borderColor: '#fff', borderWidth: 2 },
+          label: { show: false, position: 'center' },
+          emphasis: { label: { show: true, fontSize: 18, fontWeight: 'bold' } },
+          labelLine: { show: false },
+          data: Object.entries(by_status)
+            .filter(([, v]) => v > 0)
+            .map(([name, value]) => ({ name, value, itemStyle: { color: statusColors[name] || '#909399' } }))
+        }]
+      })
+      setTimeout(() => bugStatusChart?.resize(), 100)
+    }
+
+    // Bug 错误类型 - 雷达图
+    if (bugTypeChartRef.value) {
+      if (!bugTypeChart) bugTypeChart = echarts.init(bugTypeChartRef.value)
+      const types = Object.keys(by_type)
+      const values = Object.values(by_type)
+      const maxVal = Math.max(...values, 1)
+      bugTypeChart.setOption({
+        tooltip: {},
+        radar: {
+          indicator: types.map(t => ({ name: t, max: maxVal + 2 })),
+          shape: 'polygon',
+          splitNumber: 4,
+          axisName: { color: '#333', fontSize: 13 },
+          splitArea: { areaStyle: { color: ['rgba(0,120,87,0.02)', 'rgba(0,120,87,0.05)', 'rgba(0,120,87,0.08)', 'rgba(0,120,87,0.12)'] } },
+          splitLine: { lineStyle: { color: 'rgba(0,120,87,0.2)' } }
+        },
+        series: [{
+          type: 'radar',
+          data: [{
+            value: values,
+            name: 'Bug 数量',
+            areaStyle: { color: 'rgba(208,48,80,0.2)' },
+            lineStyle: { color: '#d03050', width: 2 },
+            itemStyle: { color: '#d03050' },
+            symbol: 'circle',
+            symbolSize: 6
+          }]
+        }]
+      })
+      setTimeout(() => bugTypeChart?.resize(), 100)
+    }
+  } catch (error) {
+    console.error('加载 Bug 分布图表失败:', error)
+  }
+}
+
 // 加载最近活动
 const loadRecentActivities = async () => {
   try {
@@ -471,6 +570,9 @@ const handleResize = () => {
   trendChart?.resize()
   moduleChart?.resize()
   emailChart?.resize()
+  bugSeverityChart?.resize()
+  bugStatusChart?.resize()
+  bugTypeChart?.resize()
 }
 
 onMounted(async () => {
@@ -487,6 +589,7 @@ onMounted(async () => {
     loadTrendChart(),
     loadModuleChart(),
     loadEmailChart(),
+    loadBugCharts(),
     loadRecentActivities()
   ])
   
@@ -502,6 +605,9 @@ onUnmounted(() => {
   trendChart?.dispose()
   moduleChart?.dispose()
   emailChart?.dispose()
+  bugSeverityChart?.dispose()
+  bugStatusChart?.dispose()
+  bugTypeChart?.dispose()
 })
 </script>
 
@@ -598,29 +704,25 @@ onUnmounted(() => {
   height: 300px;
   min-height: 300px;
   width: 100%;
-}
 
-.recent-activity {
-  border-radius: 12px;
-}
+  @media (max-width: 1200px) {
+    .stats-cards {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
 
-@media (max-width: 1200px) {
-  .stats-cards {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
+  @media (max-width: 768px) {
+    .stats-cards {
+      grid-template-columns: 1fr;
+    }
 
-@media (max-width: 768px) {
-  .stats-cards {
-    grid-template-columns: 1fr;
-  }
-  
-  .charts-row {
-    grid-template-columns: 1fr;
-  }
-  
-  .chart-card.wide {
-    grid-column: span 1;
+    .charts-row {
+      grid-template-columns: 1fr;
+    }
+
+    .chart-card.wide {
+      grid-column: span 1;
+    }
   }
 }
 </style>

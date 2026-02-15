@@ -367,10 +367,10 @@
               <n-tag v-if="isBatchExecuting" type="info" size="small">执行中...</n-tag>
               <n-tag 
                 v-else-if="batchExecutionResult"
-                :type="batchExecutionResult.status === 'pass' ? 'success' : 'error'"
+                :type="batchExecutionResult.summary && batchExecutionResult.summary.failed === 0 ? 'success' : (batchExecutionResult.summary && batchExecutionResult.summary.passed > 0 ? 'warning' : 'error')"
                 size="small"
               >
-                {{ batchExecutionResult.status === 'pass' ? '执行成功' : '执行失败' }}
+                {{ batchExecutionResult.summary ? `${batchExecutionResult.summary.passed} 通过 / ${batchExecutionResult.summary.failed} 失败` : (batchExecutionResult.status === 'pass' ? '执行成功' : '执行失败') }}
               </n-tag>
             </div>
           </template>
@@ -383,23 +383,74 @@
             </div>
 
             <div v-else-if="batchExecutionResult">
+              <!-- 总体摘要 -->
               <n-alert
-                :title="batchExecutionResult.status === 'pass' ? '✓ 批量测试执行成功' : '✗ 批量测试执行失败'"
-                :type="batchExecutionResult.status === 'pass' ? 'success' : 'error'"
+                :title="batchExecutionResult.summary && batchExecutionResult.summary.failed === 0 ? '✓ 批量测试全部通过' : '⚠ 批量测试执行完成'"
+                :type="batchExecutionResult.summary && batchExecutionResult.summary.failed === 0 ? 'success' : 'warning'"
                 style="margin-bottom: 20px"
               >
                 <div class="mt-2">
                   <p><strong>总步数:</strong> {{ batchExecutionResult.total_steps }}</p>
                   <p><strong>耗时:</strong> {{ batchExecutionResult.duration }} 秒</p>
-                  <p v-if="batchExecutionResult.final_url"><strong>最终URL:</strong> {{ batchExecutionResult.final_url }}</p>
-                  <p v-if="batchExecutionResult.error_message" class="text-red-500 mt-2">
-                    <strong>错误信息:</strong> {{ batchExecutionResult.error_message }}
+                  <p v-if="batchExecutionResult.summary">
+                    <strong>通过:</strong> {{ batchExecutionResult.summary.passed }} 条 | 
+                    <strong>失败:</strong> {{ batchExecutionResult.summary.failed }} 条 | 
+                    <strong>总计:</strong> {{ batchExecutionResult.summary.total }} 条
                   </p>
                 </div>
               </n-alert>
 
-              <!-- 执行步骤详情 -->
-              <n-collapse v-if="batchExecutionResult.history && batchExecutionResult.history.steps" accordion>
+              <!-- 每条用例的独立结果 -->
+              <n-collapse v-if="batchExecutionResult.raw_results" style="margin-bottom: 20px">
+                <n-collapse-item 
+                  v-for="(caseResult, idx) in batchExecutionResult.raw_results" 
+                  :key="idx"
+                  :name="idx"
+                >
+                  <template #header>
+                    <div class="flex items-center gap-2">
+                      <n-tag :type="caseResult.data && caseResult.data.status === 'pass' ? 'success' : 'error'" size="small">
+                        {{ caseResult.data && caseResult.data.status === 'pass' ? '通过' : '失败' }}
+                      </n-tag>
+                      <span>用例 {{ idx + 1 }} - {{ caseResult.data && caseResult.data.duration ? caseResult.data.duration + '秒' : '' }}</span>
+                    </div>
+                  </template>
+                  <div v-if="caseResult.data">
+                    <p><strong>步数:</strong> {{ caseResult.data.total_steps }}</p>
+                    <p><strong>耗时:</strong> {{ caseResult.data.duration }} 秒</p>
+                    <p v-if="caseResult.data.history && caseResult.data.history.final_state">
+                      <strong>最终URL:</strong> {{ caseResult.data.history.final_state.url }}
+                    </p>
+                    <!-- 用例步骤详情 -->
+                    <n-collapse v-if="caseResult.data.history && caseResult.data.history.steps" style="margin-top: 10px">
+                      <n-collapse-item 
+                        v-for="(step, sIdx) in caseResult.data.history.steps" 
+                        :key="sIdx"
+                        :title="`步骤 ${step.step_number} - ${step.title || step.url || '执行中'}`"
+                        :name="sIdx"
+                      >
+                        <div class="step-detail">
+                          <p v-if="step.thinking">
+                            <strong>💭 AI 思考:</strong><br/>
+                            <span class="thinking-text">{{ step.thinking }}</span>
+                          </p>
+                          <p v-if="step.url">
+                            <strong>🌐 页面:</strong> 
+                            <a :href="step.url" target="_blank" class="url-link">{{ step.url }}</a>
+                          </p>
+                          <p v-if="step.actions && step.actions.length > 0">
+                            <strong>⚡ 执行动作:</strong>
+                            <pre style="font-size: 12px; margin-top: 4px;">{{ JSON.stringify(step.actions, null, 2) }}</pre>
+                          </p>
+                        </div>
+                      </n-collapse-item>
+                    </n-collapse>
+                  </div>
+                </n-collapse-item>
+              </n-collapse>
+
+              <!-- 合并步骤详情（兼容旧格式） -->
+              <n-collapse v-else-if="batchExecutionResult.history && batchExecutionResult.history.steps" accordion>
                 <n-collapse-item 
                   v-for="(step, index) in batchExecutionResult.history.steps" 
                   :key="index"
@@ -790,7 +841,51 @@ const confirmBatchExecute = async () => {
     
     if (result.success) {
       message.success('批量执行完成！')
-      batchExecutionResult.value = result.data
+      
+      // 适配批量执行返回的数据结构
+      const data = result.data || result
+      if (data.results && data.summary) {
+        // 批量执行返回格式，转换为前端模板可渲染的格式
+        const summary = data.summary
+        const allSteps = []
+        let totalSteps = 0
+        let totalDuration = 0
+        let finalUrl = ''
+        
+        data.results.forEach((r, idx) => {
+          const d = r.data || {}
+          totalSteps += d.total_steps || 0
+          totalDuration += d.duration || 0
+          if (d.history && d.history.steps) {
+            d.history.steps.forEach(step => {
+              allSteps.push({
+                ...step,
+                title: `[用例${idx + 1}] ${step.title || step.url || '执行中'}`
+              })
+            })
+          }
+          if (d.history && d.history.final_state) {
+            finalUrl = d.history.final_state.url || finalUrl
+          }
+        })
+        
+        batchExecutionResult.value = {
+          status: summary.failed === 0 ? 'pass' : 'fail',
+          total_steps: totalSteps,
+          duration: totalDuration,
+          final_url: finalUrl,
+          error_message: summary.failed > 0 ? `${summary.failed} 条用例执行失败` : '',
+          history: {
+            total_steps: totalSteps,
+            steps: allSteps
+          },
+          summary: summary,
+          raw_results: data.results
+        }
+      } else {
+        // 兼容其他返回格式
+        batchExecutionResult.value = data
+      }
     } else {
       message.error(result.message || '批量执行失败')
       

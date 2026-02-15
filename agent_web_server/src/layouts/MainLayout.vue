@@ -104,15 +104,16 @@ const menuList = [
     label: '用例生成模块',
     children: [
       { label: '用例生成', path: '/case/generate' },
-      { label: '用例管理', path: '/case/manage' }
+      { label: '用例管理', path: '/case/manage' },
+      { label: '接口文件管理', path: '/case/api-spec' }
     ]
   },
   {
     id: 'prompt',
     icon: 'fa-terminal',
-    label: '提示词模块',
+    label: '技能模块',
     children: [
-      { label: '提示词仓库', path: '/prompt/list' }
+      { label: 'Skills仓库', path: '/prompt/list' }
     ]
   },
   {

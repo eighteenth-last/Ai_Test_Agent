@@ -76,12 +76,18 @@ const routes = [
     component: () => import('@/views/case/CaseManage.vue'),
     meta: { title: '用例管理', menu: 'case' }
   },
+  {
+    path: '/case/api-spec',
+    name: 'ApiSpecManage',
+    component: () => import('@/views/case/ApiSpecManage.vue'),
+    meta: { title: '接口文件管理', menu: 'case' }
+  },
   // 提示词模块
   {
     path: '/prompt/list',
     name: 'PromptList',
     component: () => import('@/views/prompt/PromptList.vue'),
-    meta: { title: '提示词仓库', menu: 'prompt' }
+    meta: { title: 'Skills仓库', menu: 'prompt' }
   },
   // 测试报告模块
   {
