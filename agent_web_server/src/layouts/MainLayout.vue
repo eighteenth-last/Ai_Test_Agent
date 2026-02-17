@@ -77,7 +77,8 @@ const menuList = [
       { label: '功能测试', path: '/test/func' },
       { label: '性能测试', path: '/test/press' },
       { label: '安全测试', path: '/test/security' },
-      { label: '接口测试', path: '/test/api' }
+      { label: '接口测试', path: '/test/api' },
+      { label: '一键测试', path: '/test/oneclick' }
     ]
   },
   {
@@ -113,7 +114,8 @@ const menuList = [
     icon: 'fa-terminal',
     label: '技能模块',
     children: [
-      { label: 'Skills仓库', path: '/prompt/list' }
+      { label: 'Skills仓库', path: '/prompt/list' },
+      { label: 'Skills管理', path: '/skills/manage' }
     ]
   },
   {

@@ -295,14 +295,70 @@ export const apiTestAPI = {
     if (service_name) data.service_name = service_name
     return api.post('/api-test/match-spec', data)
   },
-  execute(test_case_ids, spec_version_id, environment = null, mode = 'llm_enhanced') {
-    return api.post('/api-test/execute', {
-      test_case_ids,
-      spec_version_id,
-      environment,
-      mode
-    })
+  matchEndpoints(test_case_ids, spec_version_id) {
+    return api.post('/api-test/match-endpoints', { test_case_ids, spec_version_id })
+  },
+  execute(test_case_ids, spec_version_id, environment = null, mode = 'llm_enhanced', case_endpoint_map = null) {
+    const data = { test_case_ids, spec_version_id, environment, mode }
+    if (case_endpoint_map) data.case_endpoint_map = case_endpoint_map
+    return api.post('/api-test/execute', data)
   }
 }
 
 export default api
+
+// OneClick Test - 一键测试
+export const oneclickAPI = {
+  start(user_input, skill_ids = null) {
+    const data = { user_input }
+    if (skill_ids) data.skill_ids = skill_ids
+    return api.post('/oneclick/start', data)
+  },
+  getSession(sessionId) {
+    return api.get(`/oneclick/session/${sessionId}`)
+  },
+  confirm(session_id, confirmed_cases = null) {
+    const data = { session_id }
+    if (confirmed_cases) data.confirmed_cases = confirmed_cases
+    return api.post('/oneclick/confirm', data)
+  },
+  stop(session_id) {
+    return api.post('/oneclick/stop', { session_id })
+  },
+  getHistory(params) {
+    return api.get('/oneclick/history', { params })
+  }
+}
+
+// Skills - 技能管理
+export const skillsAPI = {
+  getList(category = null) {
+    const params = {}
+    if (category) params.category = category
+    return api.get('/skills/list', { params })
+  },
+  install(slug) {
+    return api.post('/skills/install', { slug })
+  },
+  upload(file, skillName = '', description = '') {
+    const formData = new FormData()
+    formData.append('file', file)
+    if (skillName) formData.append('skill_name', skillName)
+    if (description) formData.append('description', description)
+    return api.post('/skills/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  },
+  uninstall(skillId) {
+    return api.delete(`/skills/${skillId}`)
+  },
+  getDetail(skillId) {
+    return api.get(`/skills/${skillId}/detail`)
+  },
+  toggle(skillId, is_active) {
+    return api.put(`/skills/${skillId}/toggle`, { is_active })
+  },
+  search(q) {
+    return api.get('/skills/search', { params: { q } })
+  }
+}

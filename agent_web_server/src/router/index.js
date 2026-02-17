@@ -37,6 +37,12 @@ const routes = [
     component: () => import('@/views/test/ApiTest.vue'),
     meta: { title: '接口测试', menu: 'test' }
   },
+  {
+    path: '/test/oneclick',
+    name: 'TestOneClick',
+    component: () => import('@/views/test/OneClickTest.vue'),
+    meta: { title: '一键测试', menu: 'test' }
+  },
   // 邮件通知模块
   {
     path: '/mail/contacts',
@@ -88,6 +94,12 @@ const routes = [
     name: 'PromptList',
     component: () => import('@/views/prompt/PromptList.vue'),
     meta: { title: 'Skills仓库', menu: 'prompt' }
+  },
+  {
+    path: '/skills/manage',
+    name: 'SkillManage',
+    component: () => import('@/views/skills/SkillManage.vue'),
+    meta: { title: 'Skills管理', menu: 'prompt' }
   },
   // 测试报告模块
   {

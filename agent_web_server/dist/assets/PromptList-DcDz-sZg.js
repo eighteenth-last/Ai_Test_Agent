@@ -1,0 +1,1 @@
+import{_ as t,c as s,b as a,i as c,f as o}from"./index-9-2YgmGC.js";const r={},l={class:"glass-card p-20 text-center text-slate-400 italic"};function n(i,e){return o(),s("div",l,[...e[0]||(e[0]=[a("i",{class:"fas fa-terminal text-4xl mb-4 block"},null,-1),c(" 提示词仓库管理正在准备中... ",-1)])])}const d=t(r,[["render",n],["__scopeId","data-v-6ab26915"]]);export{d as default};

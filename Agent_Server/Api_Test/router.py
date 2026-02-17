@@ -22,11 +22,18 @@ class MatchSpecRequest(BaseModel):
     service_name: Optional[str] = None
 
 
+class MatchEndpointsRequest(BaseModel):
+    test_case_ids: List[int]
+    spec_version_id: int
+
+
 class ExecuteRequest(BaseModel):
     test_case_ids: List[int]
     spec_version_id: int
     environment: Optional[Dict] = None
     mode: str = "llm_enhanced"
+    case_endpoint_map: Optional[Dict] = None
+
 
 
 @router.post("/match-spec")
@@ -50,6 +57,26 @@ async def match_spec(
     return result
 
 
+@router.post("/match-endpoints")
+def match_endpoints(
+    request: MatchEndpointsRequest,
+    db: Session = Depends(get_db)
+):
+    """为每条用例匹配具体的 endpoint"""
+    from Api_Test.service import ApiTestService
+
+    result = ApiTestService.match_case_endpoints(
+        test_case_ids=request.test_case_ids,
+        spec_version_id=request.spec_version_id,
+        db=db
+    )
+
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("message"))
+
+    return result
+
+
 @router.post("/execute")
 async def execute_api_test(
     request: ExecuteRequest,
@@ -63,7 +90,8 @@ async def execute_api_test(
         spec_version_id=request.spec_version_id,
         db=db,
         environment=request.environment,
-        mode=request.mode
+        mode=request.mode,
+        case_endpoint_map=request.case_endpoint_map
     )
 
     if not result.get("success"):

@@ -264,6 +264,46 @@ class ApiEndpoint(Base):
     created_at = Column(DateTime, default=datetime.now, comment='创建时间')
 
 
+class OneclickSession(Base):
+    """一键测试会话表"""
+    __tablename__ = 'oneclick_sessions'
+
+    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    user_input = Column(Text, nullable=False, comment='用户输入的自然语言指令')
+    status = Column(String(20), default='init', comment='会话状态')
+    target_url = Column(String(500), comment='目标测试地址')
+    login_info = Column(JSON, comment='登录信息')
+    page_analysis = Column(JSON, comment='页面分析结果')
+    generated_cases = Column(JSON, comment='LLM生成的测试用例')
+    confirmed_cases = Column(JSON, comment='用户确认后的测试用例')
+    execution_result = Column(JSON, comment='执行结果')
+    report_id = Column(Integer, comment='关联报告ID')
+    skill_ids = Column(JSON, comment='使用的Skills ID列表')
+    messages = Column(JSON, comment='对话消息历史')
+    created_at = Column(DateTime, default=datetime.now, comment='创建时间')
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
+
+
+class Skill(Base):
+    """Skills管理表"""
+    __tablename__ = 'skills'
+
+    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    name = Column(String(100), nullable=False, comment='Skill名称')
+    slug = Column(String(200), comment='Skill标识(owner/repo)')
+    source = Column(String(200), nullable=False, comment='来源URL')
+    version = Column(String(50), comment='版本')
+    description = Column(Text, comment='描述')
+    category = Column(String(50), comment='分类')
+    content = Column(LONGTEXT, comment='Skill内容(Markdown)')
+    config = Column(JSON, comment='配置信息')
+    author = Column(String(100), comment='作者')
+    is_active = Column(Integer, default=1, comment='是否启用')
+    install_count = Column(Integer, default=0, comment='安装次数')
+    created_at = Column(DateTime, default=datetime.now, comment='创建时间')
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
+
+
 # ============================================
 # 数据库初始化和会话管理
 # ============================================
@@ -287,7 +327,9 @@ def init_db():
             'email_config': EmailConfig,
             'api_specs': ApiSpec,
             'api_spec_versions': ApiSpecVersion,
-            'api_endpoints': ApiEndpoint
+            'api_endpoints': ApiEndpoint,
+            'oneclick_sessions': OneclickSession,
+            'skills': Skill
         }
         
         for table_name in tables_to_create:

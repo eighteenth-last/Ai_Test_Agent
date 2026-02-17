@@ -62,36 +62,30 @@ def _parse_by_sections(content: str) -> List[Dict[str, Any]]:
     endpoints = []
 
     # 按 ## 或 ### 分段
+    # re.split 带捕获组结果: [前文, level, title, body, level, title, body, ...]
     sections = re.split(r'^(#{1,4})\s+(.+)$', content, flags=re.MULTILINE)
 
-    i = 0
-    while i < len(sections):
-        # 找到标题段
-        if i + 2 < len(sections) and re.match(r'^#{1,4}$', sections[i].strip() if sections[i].strip() else ''):
-            i += 1
+    # 从 index 1 开始，每 3 个为一组: (level, title, body)
+    i = 1
+    while i + 2 < len(sections):
+        level = sections[i]       # '##' or '###'
+        title = sections[i + 1].strip()
+        body = sections[i + 2]
+        i += 3
+
+        # 尝试从标题提取 method+path
+        mp = _extract_method_path_inline(title)
+        if mp:
+            ep = _build_endpoint(mp[0], mp[1], title, body)
+            endpoints.append(ep)
             continue
 
-        if i + 2 < len(sections):
-            level = sections[i]
-            title = sections[i + 1].strip() if i + 1 < len(sections) else ''
-            body = sections[i + 2] if i + 2 < len(sections) else ''
-            i += 3
-
-            # 尝试从标题提取 method+path
-            mp = _extract_method_path_inline(title)
-            if mp:
-                ep = _build_endpoint(mp[0], mp[1], title, body)
-                endpoints.append(ep)
-                continue
-
-            # 尝试从正文提取 key-value 格式的 method+path
-            mp = _extract_method_path_kv(body)
-            if mp:
-                ep = _build_endpoint(mp[0], mp[1], title, body)
-                endpoints.append(ep)
-                continue
-        else:
-            i += 1
+        # 尝试从正文提取 key-value 格式的 method+path
+        mp = _extract_method_path_kv(body)
+        if mp:
+            ep = _build_endpoint(mp[0], mp[1], title, body)
+            endpoints.append(ep)
+            continue
 
     return endpoints
 
@@ -223,6 +217,11 @@ def _build_endpoint(method: str, path: str, title: str, body: str) -> Dict[str, 
 
     # 提取参数描述
     params = _extract_section(body, ['参数', 'param', 'request', '请求参数'])
+    # 提取请求体（JSON 代码块）
+    request_body = _extract_code_block(body, ['请求体', 'request body', 'body', '请求参数'])
+    # 如果 params 为空但有请求体代码块，用请求体作为 params
+    if not params and request_body:
+        params = request_body
     # 提取成功响应
     success_example = _extract_code_block(body, ['成功', 'success', '正常响应', '响应示例', '返回示例'])
     # 提取错误响应
