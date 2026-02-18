@@ -1,7 +1,7 @@
 """
 提示词模板
 
-包含测试用例生成、报告生成、Bug分析等各种提示词模板
+包含测试用例生成、报告生成、Bug分析、一键测试等各种提示词模板
 
 作者: Ai_Test_Agent Team
 """
@@ -143,6 +143,12 @@ BROWSER_USE_CHINESE_SYSTEM = """
    - thinking: "我需要点击登录按钮来完成登录操作"
    - next_goal: "输入用户名和密码"
    - evaluation: "上一步成功访问了登录页面"
+
+⚠️ 输出格式要求（必须严格遵守）：
+你的每次响应必须是一个合法的 JSON 对象，包含 "action" 字段（数组）。
+不要在 JSON 外面添加任何文字说明。不要把思考过程放在 JSON 的顶层字段中。
+正确格式示例：
+{"current_state": {"evaluation_previous_goal": "...", "memory": "...", "next_goal": "..."}, "action": [{"click": {"index": 1}}]}
 
 ⚠️ 动作参数格式要求（必须严格遵守）：
 - 点击元素: {"click": {"index": 元素索引号}}
@@ -316,3 +322,70 @@ MIXED_REPORT_ANALYSIS_TEMPLATE = """请作为专业的测试分析师，对以�
   "conclusion": "AI 分析结论文字"
 }}
 """
+
+
+# ============================================
+# 一键测试 - 意图分析提示词
+# ============================================
+
+ONECLICK_INTENT_ANALYSIS_SYSTEM = """你是一个智能测试助手。分析用户的测试需求，提取关键信息。
+返回 JSON 格式：
+{
+    "target_module": "目标测试模块名称（如：课程作业、登录、用户管理）",
+    "test_scope": "测试范围描述",
+    "keywords": ["关键词1", "关键词2"],
+    "need_login": true/false,
+    "test_type": "功能测试/接口测试/全面测试"
+}"""
+
+ONECLICK_INTENT_ANALYSIS_USER_TEMPLATE = """用户输入: {user_input}
+
+数据库中已有的测试模块: {module_list}
+
+请分析用户的测试意图。"""
+
+
+# ============================================
+# 一键测试 - 用例生成提示词
+# ============================================
+
+ONECLICK_GENERATE_CASES_SYSTEM = """你是一个专业的自动化测试专家。根据用户需求和已有信息，生成完整的测试用例列表。
+
+每条测试用例包含：
+- title: 用例标题
+- module: 所属模块
+- steps: 测试步骤（数组）
+- expected: 预期结果
+- priority: 优先级 (1-4)
+- test_data: 测试数据（JSON对象，如账号密码等）
+- need_browser: 是否需要浏览器执行 (true/false)
+
+返回 JSON 格式：
+{
+    "cases": [
+        {
+            "title": "...",
+            "module": "...",
+            "steps": ["步骤1", "步骤2"],
+            "expected": "...",
+            "priority": "3",
+            "test_data": {},
+            "need_browser": true
+        }
+    ],
+    "summary": "测试计划摘要"
+}
+
+要求：
+1. 用例要全面覆盖功能的正常流程和异常场景
+2. 步骤描述要具体、可执行
+3. 如果数据库中已有相关用例，参考但不完全复制
+4. 所有内容使用中文"""
+
+ONECLICK_GENERATE_CASES_USER_TEMPLATE = """用户需求: {user_input}
+
+意图分析: {intent_json}
+
+{context}
+
+请生成完整的测试用例列表。"""

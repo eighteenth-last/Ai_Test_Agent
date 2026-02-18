@@ -2,6 +2,7 @@
 一键测试 - 会话管理
 
 管理一键测试的会话状态和消息历史
+支持 Token 使用量追踪和循环检测状态
 """
 import json
 from datetime import datetime
@@ -23,6 +24,10 @@ VALID_TRANSITIONS = {
     'failed': ['init'],  # 允许重试
 }
 
+# 内存中的会话运行时数据（不持久化到数据库）
+# session_id → { "tokens_used": int, "loop_warnings": int, "model_switches": int }
+_session_runtime: Dict[int, Dict[str, Any]] = {}
+
 
 class SessionManager:
     """一键测试会话管理器"""
@@ -40,6 +45,19 @@ class SessionManager:
         db.add(session)
         db.commit()
         db.refresh(session)
+
+        # 初始化运行时数据
+        _session_runtime[session.id] = {
+            "tokens_used": 0,
+            "tokens_input": 0,
+            "tokens_output": 0,
+            "loop_warnings": 0,
+            "loop_critical": 0,
+            "model_switches": 0,
+            "request_count": 0,
+            "start_time": datetime.now().isoformat(),
+        }
+
         return session
 
     @staticmethod
@@ -96,3 +114,52 @@ class SessionManager:
                 for s in items
             ]
         }
+
+    # ========== Token 追踪 ==========
+
+    @staticmethod
+    def track_tokens(session_id: int, prompt_tokens: int = 0, completion_tokens: int = 0):
+        """追踪会话的 Token 使用量"""
+        rt = _session_runtime.get(session_id)
+        if rt is None:
+            _session_runtime[session_id] = {
+                "tokens_used": 0, "tokens_input": 0, "tokens_output": 0,
+                "loop_warnings": 0, "loop_critical": 0, "model_switches": 0,
+                "request_count": 0, "start_time": datetime.now().isoformat(),
+            }
+            rt = _session_runtime[session_id]
+
+        total = prompt_tokens + completion_tokens
+        rt["tokens_used"] += total
+        rt["tokens_input"] += prompt_tokens
+        rt["tokens_output"] += completion_tokens
+        rt["request_count"] += 1
+
+    @staticmethod
+    def track_loop_event(session_id: int, level: str):
+        """追踪循环检测事件"""
+        rt = _session_runtime.get(session_id)
+        if rt is None:
+            return
+        if level == "warning":
+            rt["loop_warnings"] += 1
+        elif level == "critical":
+            rt["loop_critical"] += 1
+
+    @staticmethod
+    def track_model_switch(session_id: int):
+        """追踪模型切换事件"""
+        rt = _session_runtime.get(session_id)
+        if rt is None:
+            return
+        rt["model_switches"] += 1
+
+    @staticmethod
+    def get_runtime_stats(session_id: int) -> Dict:
+        """获取会话运行时统计"""
+        return _session_runtime.get(session_id, {})
+
+    @staticmethod
+    def cleanup_runtime(session_id: int):
+        """清理会话运行时数据"""
+        _session_runtime.pop(session_id, None)

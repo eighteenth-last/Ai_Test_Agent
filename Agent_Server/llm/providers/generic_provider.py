@@ -5,7 +5,9 @@
 
 作者: Ai_Test_Agent Team
 """
+import json
 import os
+import re
 import logging
 from typing import Any, Dict, List
 
@@ -148,6 +150,57 @@ class GenericOpenAIProvider(BaseOpenAICompatibleProvider):
         except ImportError:
             logger.warning(f"[{self.provider_name}] browser-use 未安装，回退到 LangChain")
             return self.get_langchain_llm()
+
+    def parse_json_response(self, content: str) -> dict:
+        """
+        通用 OpenAI 兼容 Provider JSON 解析
+
+        覆盖 SiliconFlow、ModelScope、智谱、Grok 等多种服务：
+        - SiliconFlow/ModelScope 上的 DeepSeek R1 有 <think> 标签
+        - 智谱 GLM 不支持结构化输出，可能有 markdown 包裹
+        - 参考 openclaw: Minimax 是 reasoning tag provider
+        """
+        if not content:
+            raise ValueError("LLM 响应为空")
+
+        text = content.strip()
+
+        # 1. 剥离推理标签（SiliconFlow/ModelScope 上的 R1、QwQ 等）
+        if self.is_reasoning_model() and "<think>" in text and "</think>" in text:
+            parts = text.split("</think>", 1)
+            text = parts[1].strip() if len(parts) >= 2 else text
+
+        # 2. 剥离 **JSON Response:**
+        if "**JSON Response:**" in text:
+            text = text.split("**JSON Response:**")[-1].strip()
+
+        # 3. 剥离 markdown 代码块
+        text = self._extract_json(text)
+
+        # 4. 直接尝试
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+
+        # 5. 移除尾部逗号
+        fixed = re.sub(r',\s*([}\]])', r'\1', text)
+        try:
+            return json.loads(fixed)
+        except json.JSONDecodeError:
+            pass
+
+        # 6. 提取第一个 JSON 对象
+        match = re.search(r'\{[\s\S]*\}', text)
+        if match:
+            try:
+                candidate = re.sub(r',\s*([}\]])', r'\1', match.group(0))
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                pass
+
+        # 7. 回退到基类
+        return super().parse_json_response(content)
 
 
 # 预定义的特定 Provider（继承 GenericOpenAIProvider）

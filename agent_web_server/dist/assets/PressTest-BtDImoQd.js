@@ -1,1 +1,0 @@
-import{_ as t,c as s,b as a,i as c,f as o}from"./index-9-2YgmGC.js";const r={},l={class:"glass-card p-20 text-center text-slate-400 italic"};function n(_,e){return o(),s("div",l,[...e[0]||(e[0]=[a("i",{class:"fas fa-gauge-high text-4xl mb-4 block"},null,-1),c(" 性能测试模块功能正在准备中... ",-1)])])}const f=t(r,[["render",n],["__scopeId","data-v-a971f84c"]]);export{f as default};

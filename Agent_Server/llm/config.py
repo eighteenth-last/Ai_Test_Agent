@@ -244,6 +244,7 @@ REASONING_MODELS: Dict[str, List[str]] = {
 # 不支持结构化输出的 Provider
 PROVIDERS_WITHOUT_STRUCTURED_OUTPUT: List[str] = [
     "deepseek",
+    "alibaba",
     "ollama",
     "moonshot",
     "zhipu",
@@ -281,7 +282,7 @@ PROVIDER_FEATURES: Dict[str, Dict[str, bool]] = {
     "alibaba": {
         "supports_vision": True,
         "supports_function_calling": True,
-        "supports_structured_output": True,
+        "supports_structured_output": False,
         "supports_streaming": True,
     },
     "ollama": {

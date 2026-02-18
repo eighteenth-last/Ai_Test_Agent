@@ -178,18 +178,41 @@
             </template>
             <n-tabs type="line">
               <n-tab-pane name="history" tab="执行历史 JSON">
-                <div class="json-output">
-                  <pre v-if="currentReport.execution_log">{{ formatExecutionLog(currentReport.execution_log) }}</pre>
-                  <n-empty v-else description="暂无执行历史数据" size="small">
-                    <template #icon>
-                      <i class="fas fa-info-circle text-slate-400"></i>
-                    </template>
-                  </n-empty>
+                <div class="json-output-wrapper">
+                  <div class="json-actions" v-if="currentReport.execution_log">
+                    <n-button size="tiny" secondary type="primary" @click="copyText(formatExecutionLog(currentReport.execution_log))">
+                      <template #icon><i class="fas fa-copy"></i></template> 复制
+                    </n-button>
+                  </div>
+                  <n-scrollbar style="max-height: 400px">
+                    <n-code 
+                      v-if="currentReport.execution_log" 
+                      :code="formatExecutionLog(currentReport.execution_log)" 
+                      language="json" 
+                      show-line-numbers
+                    />
+                    <n-empty v-else description="暂无执行历史数据" size="small">
+                      <template #icon>
+                        <i class="fas fa-info-circle text-slate-400"></i>
+                      </template>
+                    </n-empty>
+                  </n-scrollbar>
                 </div>
               </n-tab-pane>
               <n-tab-pane name="raw" tab="完整报告 JSON">
-                <div class="json-output">
-                  <pre>{{ JSON.stringify(currentReport, null, 2) }}</pre>
+                <div class="json-output-wrapper">
+                  <div class="json-actions">
+                    <n-button size="tiny" secondary type="primary" @click="copyText(JSON.stringify(currentReport, null, 2))">
+                      <template #icon><i class="fas fa-copy"></i></template> 复制
+                    </n-button>
+                  </div>
+                  <n-scrollbar style="max-height: 400px">
+                    <n-code 
+                      :code="JSON.stringify(currentReport, null, 2)" 
+                      language="json" 
+                      show-line-numbers
+                    />
+                  </n-scrollbar>
                 </div>
               </n-tab-pane>
             </n-tabs>
@@ -218,7 +241,7 @@ import {
   NCard, NButton, NDataTable, NModal, NDescriptions, NDescriptionsItem, 
   NTag, NForm, NFormItem, NInput, NSelect, NDatePicker, NSpace,
   NAlert, NCollapse, NCollapseItem, NTabs, NTabPane, NSpin, NPagination, NEmpty,
-  useMessage
+  NCode, NScrollbar, useMessage
 } from 'naive-ui'
 import { testReportAPI } from '@/api'
 import { useLazyLoad } from '@/composables/useLazyLoad'
@@ -365,6 +388,17 @@ const getStatusType = (status) => {
 // 格式化状态
 const formatStatus = (status) => {
   return status === 'pass' ? '通过' : '失败'
+}
+
+// 复制文本
+const copyText = async (text) => {
+  try {
+    await navigator.clipboard.writeText(text)
+    message.success('复制成功')
+  } catch (err) {
+    message.error('复制失败')
+    console.error('Failed to copy:', err)
+  }
 }
 
 // 格式化执行日志
@@ -647,19 +681,17 @@ const deleteReport = async (row) => {
   color: #909399;
 }
 
-.json-output {
-  max-height: 400px;
-  overflow: auto;
+.json-output-wrapper {
   background-color: #f5f7fa;
   padding: 12px;
   border-radius: 4px;
+  position: relative;
 }
 
-.json-output pre {
-  margin: 0;
-  font-family: 'Courier New', monospace;
-  font-size: 12px;
-  line-height: 1.5;
-  color: #303133;
+.json-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
 }
 </style>

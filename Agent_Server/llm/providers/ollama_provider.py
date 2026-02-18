@@ -5,7 +5,9 @@ Ollama Provider 实现
 
 作者: Ai_Test_Agent Team
 """
+import json
 import os
+import re
 import logging
 from typing import Any, Dict, List
 
@@ -291,3 +293,75 @@ class OllamaProvider(BaseLLMProvider):
     def supports_structured_output(self) -> bool:
         """Ollama 不支持结构化输出"""
         return False
+
+    def parse_json_response(self, content: str) -> dict:
+        """
+        Ollama JSON 解析
+
+        Ollama 本地模型的特点：
+        - 输出最不稳定，格式差异大，取决于具体模型
+        - DeepSeek R1 系列有 <think>...</think> 标签
+        - 可能输出 **JSON Response:** 前缀
+        - 小模型（7B/14B）经常产生不完整 JSON、尾部逗号、未闭合括号
+        - 有时在 JSON 前后夹杂大量解释文字
+        - 参考 openclaw: Ollama 的 OpenAI 兼容端点通过 reasoning 字段原生处理推理，
+          不需要 tag-based 处理，但直接 API 调用仍可能包含 <think> 标签
+        """
+        if not content:
+            raise ValueError("LLM 响应为空")
+
+        text = content.strip()
+
+        # 1. 剥离 <think>...</think>
+        if "<think>" in text and "</think>" in text:
+            parts = text.split("</think>", 1)
+            text = parts[1].strip() if len(parts) >= 2 else text
+
+        # 2. 剥离 **JSON Response:**
+        if "**JSON Response:**" in text:
+            text = text.split("**JSON Response:**")[-1].strip()
+
+        # 3. 剥离 markdown 代码块
+        text = self._extract_json(text)
+
+        # 4. 直接尝试
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+
+        # 5. 移除尾部逗号
+        fixed = re.sub(r',\s*([}\]])', r'\1', text)
+        try:
+            return json.loads(fixed)
+        except json.JSONDecodeError:
+            pass
+
+        # 6. 修复截断 JSON（小模型常见）
+        open_braces = fixed.count('{') - fixed.count('}')
+        open_brackets = fixed.count('[') - fixed.count(']')
+        if open_braces > 0 or open_brackets > 0:
+            patched = fixed
+            last_close = max(patched.rfind('}'), patched.rfind(']'))
+            if last_close > 0:
+                patched = patched[:last_close + 1]
+                open_braces = patched.count('{') - patched.count('}')
+                open_brackets = patched.count('[') - patched.count(']')
+            patched += ']' * open_brackets + '}' * open_braces
+            patched = re.sub(r',\s*([}\]])', r'\1', patched)
+            try:
+                return json.loads(patched)
+            except json.JSONDecodeError:
+                pass
+
+        # 7. 提取第一个 JSON 对象
+        match = re.search(r'\{[\s\S]*\}', text)
+        if match:
+            try:
+                candidate = re.sub(r',\s*([}\]])', r'\1', match.group(0))
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                pass
+
+        # 8. 回退到基类
+        return super().parse_json_response(content)

@@ -126,6 +126,16 @@ from .manager import (
     refresh_llm_config,
 )
 
+# 自动切换
+from .auto_switch import (
+    ModelAutoSwitcher,
+    ModelProfile,
+    FailureReason,
+    classify_failure_reason,
+    get_auto_switcher,
+    FailoverChatModel,
+)
+
 # LLM 客户端（兼容旧接口）
 from .client import (
     LLMClient,
@@ -186,6 +196,14 @@ __all__ = [
     "get_active_langchain_llm",
     "get_active_browser_use_llm",
     "refresh_llm_config",
+    
+    # 自动切换
+    "ModelAutoSwitcher",
+    "ModelProfile",
+    "FailureReason",
+    "classify_failure_reason",
+    "get_auto_switcher",
+    "FailoverChatModel",
     
     # LLM 客户端
     "LLMClient",

@@ -150,9 +150,36 @@ class LLMModel(Base):
     utilization = Column(Integer, default=100, comment='利用率百分比')
     tokens_used_total = Column(Integer, default=0, comment='总消耗TOKEN')
     tokens_used_today = Column(Integer, default=0, comment='今日消耗TOKEN')
+    tokens_input_total = Column(Integer, default=0, comment='总输入TOKEN')
+    tokens_output_total = Column(Integer, default=0, comment='总输出TOKEN')
+    request_count_total = Column(Integer, default=0, comment='总请求次数')
+    request_count_today = Column(Integer, default=0, comment='今日请求次数')
+    failure_count_total = Column(Integer, default=0, comment='总失败次数')
+    last_failure_reason = Column(String(50), comment='最近失败原因')
+    last_used_at = Column(DateTime, comment='最近使用时间')
+    auto_switch_enabled = Column(Integer, default=1, comment='是否参与自动切换')
     status = Column(String(50), default='待命', comment='模型状态')
     created_at = Column(DateTime, default=datetime.now, comment='创建时间')
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
+
+
+class TokenUsageLog(Base):
+    """Token 使用日志表（按次记录）"""
+    __tablename__ = 'token_usage_logs'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    model_id = Column(Integer, nullable=False, comment='模型ID')
+    model_name = Column(String(100), comment='模型名称')
+    provider = Column(String(50), comment='供应商')
+    prompt_tokens = Column(Integer, default=0, comment='输入Token')
+    completion_tokens = Column(Integer, default=0, comment='输出Token')
+    total_tokens = Column(Integer, default=0, comment='总Token')
+    source = Column(String(50), comment='来源: chat/browser_use/oneclick/api_test')
+    session_id = Column(Integer, comment='关联会话ID')
+    success = Column(Integer, default=1, comment='是否成功')
+    error_type = Column(String(50), comment='错误类型')
+    duration_ms = Column(Integer, default=0, comment='耗时毫秒')
+    created_at = Column(DateTime, default=datetime.now, comment='创建时间')
 
 
 class ModelProvider(Base):
@@ -321,6 +348,7 @@ def init_db():
             'test_reports': TestReport,
             'bug_reports': BugReport,
             'llm_models': LLMModel,
+            'token_usage_logs': TokenUsageLog,
             'model_providers': ModelProvider,
             'contacts': Contact,
             'email_records': EmailRecord,
@@ -338,11 +366,47 @@ def init_db():
                 print(f"✓ 表 '{table_name}' 创建成功")
             else:
                 print(f"✓ 表 '{table_name}' 已存在，跳过创建")
+
+        # 自动迁移：为已有表添加缺失的列
+        _upgrade_existing_tables(inspector)
         
         print("\n数据库初始化完成！")
     except Exception as e:
         print(f"数据库初始化出错：{str(e)}")
         raise
+
+
+def _upgrade_existing_tables(inspector):
+    """
+    自动迁移：检查已有表是否缺少新增列，自动 ALTER TABLE 添加
+
+    解决 SQLAlchemy create_all(checkfirst=True) 不会为已有表添加新列的问题
+    """
+    from sqlalchemy import text
+
+    # 定义需要检查的新增列: (表名, 列名, SQL类型, 默认值)
+    new_columns = [
+        ('llm_models', 'tokens_input_total', 'INT DEFAULT 0', None),
+        ('llm_models', 'tokens_output_total', 'INT DEFAULT 0', None),
+        ('llm_models', 'request_count_total', 'INT DEFAULT 0', None),
+        ('llm_models', 'request_count_today', 'INT DEFAULT 0', None),
+        ('llm_models', 'failure_count_total', 'INT DEFAULT 0', None),
+        ('llm_models', 'last_failure_reason', 'VARCHAR(50) DEFAULT NULL', None),
+        ('llm_models', 'last_used_at', 'DATETIME DEFAULT NULL', None),
+        ('llm_models', 'auto_switch_enabled', 'INT DEFAULT 1', None),
+    ]
+
+    with engine.connect() as conn:
+        for table_name, col_name, col_type, _ in new_columns:
+            try:
+                existing_cols = [c['name'] for c in inspector.get_columns(table_name)]
+                if col_name not in existing_cols:
+                    sql = f"ALTER TABLE `{table_name}` ADD COLUMN `{col_name}` {col_type}"
+                    conn.execute(text(sql))
+                    conn.commit()
+                    print(f"  ✓ 已添加列 {table_name}.{col_name}")
+            except Exception as e:
+                print(f"  ⚠ 添加列 {table_name}.{col_name} 失败: {e}")
 
 
 def get_db():

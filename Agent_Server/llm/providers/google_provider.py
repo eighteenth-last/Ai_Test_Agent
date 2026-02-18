@@ -5,7 +5,9 @@ Google Provider 实现
 
 作者: Ai_Test_Agent Team
 """
+import json
 import os
+import re
 import logging
 from typing import Any, Dict, List
 
@@ -193,3 +195,36 @@ class GoogleProvider(BaseLLMProvider):
     def get_browser_use_llm(self) -> Any:
         """获取 Browser-Use LLM 实例"""
         return self.get_langchain_llm()
+
+    def parse_json_response(self, content: str) -> dict:
+        """
+        Google (Gemini) JSON 解析
+
+        Gemini 的特点：
+        - Thinking 模型（gemini-2.0-flash-thinking-exp 等）会在响应中包含推理过程
+        - 经常用 ```json 代码块包裹
+        - 有时返回多个 JSON 候选，需要取第一个
+        - 2.5 系列模型可能在 JSON 前加 "```json\n" 后加 "\n```"
+        """
+        if not content:
+            raise ValueError("LLM 响应为空")
+
+        text = content.strip()
+
+        # 1. Gemini thinking 模型可能有类似推理标签的输出
+        #    参考 openclaw: google-generative-ai 是 reasoning tag provider
+        if "<think>" in text and "</think>" in text:
+            parts = text.split("</think>", 1)
+            text = parts[1].strip() if len(parts) >= 2 else text
+
+        # 2. 剥离 markdown 代码块
+        text = self._extract_json(text)
+
+        # 3. 直接尝试
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+
+        # 4. 回退到基类通用解析
+        return super().parse_json_response(content)

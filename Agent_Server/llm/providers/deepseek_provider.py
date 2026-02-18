@@ -6,7 +6,9 @@ DeepSeek Provider 实现
 
 作者: Ai_Test_Agent Team
 """
+import json
 import os
+import re
 import logging
 from typing import Any, Dict, List
 
@@ -235,3 +237,56 @@ class DeepSeekProvider(BaseOpenAICompatibleProvider):
     def supports_structured_output(self) -> bool:
         """DeepSeek 不支持结构化输出"""
         return False
+
+    def parse_json_response(self, content: str) -> dict:
+        """
+        DeepSeek JSON 解析
+
+        DeepSeek 的特点：
+        - 不支持 response_format=json_object，必须从自由文本中提取 JSON
+        - R1 (reasoner) 模型有 reasoning_content 字段，但 chat() 返回的 content
+          可能仍包含 <think>...</think> 标签（取决于 API 版本）
+        - deepseek-chat 通常比较规范，但偶尔有 markdown 包裹
+        - 可能在 JSON 后面追加解释文字
+        """
+        if not content:
+            raise ValueError("LLM 响应为空")
+
+        text = content.strip()
+
+        # 1. 剥离 <think>...</think> 推理过程（R1 模型）
+        if "<think>" in text and "</think>" in text:
+            parts = text.split("</think>", 1)
+            text = parts[1].strip() if len(parts) >= 2 else text
+
+        # 2. 剥离 **JSON Response:** 格式
+        if "**JSON Response:**" in text:
+            text = text.split("**JSON Response:**")[-1].strip()
+
+        # 3. 剥离 markdown 代码块
+        text = self._extract_json(text)
+
+        # 4. 直接尝试
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+
+        # 5. 移除尾部逗号
+        fixed = re.sub(r',\s*([}\]])', r'\1', text)
+        try:
+            return json.loads(fixed)
+        except json.JSONDecodeError:
+            pass
+
+        # 6. 提取第一个 JSON 对象（DeepSeek 可能在 JSON 后追加文字）
+        match = re.search(r'\{[\s\S]*\}', text)
+        if match:
+            try:
+                candidate = re.sub(r',\s*([}\]])', r'\1', match.group(0))
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                pass
+
+        # 7. 回退到基类通用解析
+        return super().parse_json_response(content)

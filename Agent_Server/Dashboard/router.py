@@ -423,3 +423,88 @@ async def get_recent_executions(limit: int = 10, db: Session = Depends(get_db)):
     ]
     
     return {"success": True, "data": data}
+
+
+@router.get("/system-logs")
+async def get_system_logs(limit: int = 50, db: Session = Depends(get_db)):
+    """
+    获取系统日志（从现有数据聚合）
+
+    从 TestReport、BugReport、EmailRecord、TokenUsageLog 中
+    提取最近的活动记录，按时间倒序返回。
+    """
+    from database.connection import TokenUsageLog
+
+    logs = []
+
+    try:
+        # 最近的测试报告
+        reports = db.query(TestReport).order_by(
+            TestReport.created_at.desc()
+        ).limit(limit // 4).all()
+        for r in reports:
+            summary = r.summary or {}
+            total = summary.get("total", 0)
+            passed = summary.get("pass", summary.get("passed", 0))
+            logs.append({
+                "level": "INFO",
+                "source": "action",
+                "message": f"测试报告生成: {r.title or '-'} (通过 {passed}/{total})",
+                "created_at": r.created_at.strftime('%Y-%m-%d %H:%M:%S') if r.created_at else "",
+                "sort_time": r.created_at or datetime.min,
+            })
+
+        # 最近的 Bug 报告
+        bugs = db.query(BugReport).order_by(
+            BugReport.created_at.desc()
+        ).limit(limit // 4).all()
+        for b in bugs:
+            level = "ERROR" if b.severity_level in ("一级", "二级") else "WARNING"
+            logs.append({
+                "level": level,
+                "source": "bug",
+                "message": f"Bug [{b.severity_level}] {b.bug_name or '-'}",
+                "created_at": b.created_at.strftime('%Y-%m-%d %H:%M:%S') if b.created_at else "",
+                "sort_time": b.created_at or datetime.min,
+            })
+
+        # 最近的邮件记录
+        emails = db.query(EmailRecord).order_by(
+            EmailRecord.created_at.desc()
+        ).limit(limit // 4).all()
+        for e in emails:
+            level = "INFO" if e.status == "success" else "WARNING" if e.status == "partial" else "ERROR"
+            logs.append({
+                "level": level,
+                "source": "action",
+                "message": f"邮件发送: {e.subject or '-'} ({e.status}, 成功 {e.success_count}/{e.total_count})",
+                "created_at": e.created_at.strftime('%Y-%m-%d %H:%M:%S') if e.created_at else "",
+                "sort_time": e.created_at or datetime.min,
+            })
+
+        # 最近的 Token 使用日志
+        token_logs = db.query(TokenUsageLog).order_by(
+            TokenUsageLog.created_at.desc()
+        ).limit(limit // 4).all()
+        for t in token_logs:
+            level = "INFO" if t.success else "ERROR"
+            logs.append({
+                "level": level,
+                "source": "system",
+                "message": f"模型调用: {t.model_name or '-'} (Token: {t.total_tokens or 0}, {'成功' if t.success else '失败: ' + (t.error_type or '')})",
+                "created_at": t.created_at.strftime('%Y-%m-%d %H:%M:%S') if t.created_at else "",
+                "sort_time": t.created_at or datetime.min,
+            })
+
+    except Exception as e:
+        return {"success": True, "data": [
+            {"level": "WARNING", "source": "system", "message": f"日志加载异常: {str(e)}", "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+        ]}
+
+    # 按时间倒序排列，取前 limit 条
+    logs.sort(key=lambda x: x["sort_time"], reverse=True)
+    # 移除排序用的临时字段
+    for log in logs:
+        log.pop("sort_time", None)
+
+    return {"success": True, "data": logs[:limit]}

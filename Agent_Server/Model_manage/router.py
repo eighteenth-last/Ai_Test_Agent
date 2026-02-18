@@ -11,7 +11,7 @@ from typing import List
 from pydantic import BaseModel
 from datetime import datetime
 
-from database.connection import get_db, LLMModel, ModelProvider
+from database.connection import get_db, LLMModel, ModelProvider, TokenUsageLog
 
 router = APIRouter(
     prefix="/api/models",
@@ -302,3 +302,166 @@ async def activate_model(model_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"激活模型失败: {str(e)}")
+
+
+# ============================================
+# 自动切换 API
+# ============================================
+
+@router.get("/auto-switch/status", response_model=dict)
+async def get_auto_switch_status(db: Session = Depends(get_db)):
+    """获取自动切换状态"""
+    try:
+        from llm.auto_switch import get_auto_switcher
+        switcher = get_auto_switcher()
+        switcher.load_profiles_from_db(db)
+
+        return {
+            "success": True,
+            "data": {
+                "enabled": switcher.enabled,
+                "current_model_id": switcher._current_model_id,
+                "profiles": switcher.get_all_profiles_status(),
+                "switch_history": switcher.get_switch_history(20),
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取自动切换状态失败: {str(e)}")
+
+
+@router.post("/auto-switch/toggle", response_model=dict)
+async def toggle_auto_switch(enabled: bool, db: Session = Depends(get_db)):
+    """开启/关闭自动切换"""
+    try:
+        from llm.auto_switch import get_auto_switcher
+        switcher = get_auto_switcher()
+        switcher.enabled = enabled
+        return {
+            "success": True,
+            "message": f"自动切换已{'开启' if enabled else '关闭'}"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/auto-switch/reset", response_model=dict)
+async def reset_auto_switch(model_id: int = None, db: Session = Depends(get_db)):
+    """重置模型的失败状态"""
+    try:
+        from llm.auto_switch import get_auto_switcher
+        switcher = get_auto_switcher()
+        if model_id:
+            switcher.reset_profile(model_id)
+        else:
+            switcher.reset_all()
+        return {
+            "success": True,
+            "message": "状态已重置"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================
+# Token 统计 API
+# ============================================
+
+@router.get("/token-stats/summary", response_model=dict)
+async def get_token_stats_summary(db: Session = Depends(get_db)):
+    """获取 Token 使用统计摘要"""
+    try:
+        from sqlalchemy import func
+
+        # 各模型统计
+        models = db.query(LLMModel).order_by(LLMModel.priority).all()
+        model_stats = []
+        for m in models:
+            model_stats.append({
+                "id": m.id,
+                "model_name": m.model_name,
+                "provider": m.provider,
+                "tokens_used_total": m.tokens_used_total or 0,
+                "tokens_used_today": m.tokens_used_today or 0,
+                "tokens_input_total": getattr(m, 'tokens_input_total', 0) or 0,
+                "tokens_output_total": getattr(m, 'tokens_output_total', 0) or 0,
+                "request_count_total": getattr(m, 'request_count_total', 0) or 0,
+                "request_count_today": getattr(m, 'request_count_today', 0) or 0,
+                "failure_count_total": getattr(m, 'failure_count_total', 0) or 0,
+                "is_active": m.is_active,
+            })
+
+        # 按来源统计
+        source_stats = []
+        try:
+            rows = db.query(
+                TokenUsageLog.source,
+                func.count(TokenUsageLog.id).label('count'),
+                func.sum(TokenUsageLog.total_tokens).label('total_tokens'),
+                func.sum(TokenUsageLog.prompt_tokens).label('prompt_tokens'),
+                func.sum(TokenUsageLog.completion_tokens).label('completion_tokens'),
+            ).group_by(TokenUsageLog.source).all()
+
+            for row in rows:
+                source_stats.append({
+                    "source": row.source or "unknown",
+                    "count": row.count,
+                    "total_tokens": row.total_tokens or 0,
+                    "prompt_tokens": row.prompt_tokens or 0,
+                    "completion_tokens": row.completion_tokens or 0,
+                })
+        except Exception:
+            pass  # 表可能还不存在
+
+        return {
+            "success": True,
+            "data": {
+                "models": model_stats,
+                "by_source": source_stats,
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取统计失败: {str(e)}")
+
+
+@router.get("/token-stats/recent", response_model=dict)
+async def get_recent_token_logs(limit: int = 50, db: Session = Depends(get_db)):
+    """获取最近的 Token 使用日志"""
+    try:
+        logs = db.query(TokenUsageLog).order_by(
+            TokenUsageLog.created_at.desc()
+        ).limit(limit).all()
+
+        result = []
+        for log in logs:
+            result.append({
+                "id": log.id,
+                "model_name": log.model_name,
+                "provider": log.provider,
+                "prompt_tokens": log.prompt_tokens,
+                "completion_tokens": log.completion_tokens,
+                "total_tokens": log.total_tokens,
+                "source": log.source,
+                "success": log.success,
+                "error_type": log.error_type,
+                "duration_ms": log.duration_ms,
+                "created_at": log.created_at.isoformat() if log.created_at else None,
+            })
+
+        return {"success": True, "data": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取日志失败: {str(e)}")
+
+
+@router.post("/token-stats/reset-today", response_model=dict)
+async def reset_today_tokens(db: Session = Depends(get_db)):
+    """重置今日 Token 统计"""
+    try:
+        db.query(LLMModel).update({
+            LLMModel.tokens_used_today: 0,
+            LLMModel.request_count_today: 0,
+        })
+        db.commit()
+        return {"success": True, "message": "今日统计已重置"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))

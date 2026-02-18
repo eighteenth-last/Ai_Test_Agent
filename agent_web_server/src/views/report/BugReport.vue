@@ -209,10 +209,17 @@
           <!-- 原始数据 -->
           <n-card size="small">
             <template #header>
-              <strong>原始数据</strong>
+              <div class="flex items-center justify-between">
+                <strong>原始数据</strong>
+                <n-button size="tiny" secondary type="primary" @click="copyText(JSON.stringify(currentBug, null, 2))">
+                  <template #icon><i class="fas fa-copy"></i></template> 复制
+                </n-button>
+              </div>
             </template>
-            <div class="json-output">
-              <pre>{{ JSON.stringify(currentBug, null, 2) }}</pre>
+            <div class="json-output-wrapper">
+              <n-scrollbar style="max-height: 400px">
+                <n-code :code="JSON.stringify(currentBug, null, 2)" language="json" show-line-numbers />
+              </n-scrollbar>
             </div>
           </n-card>
         </div>
@@ -245,13 +252,24 @@ import {
   NCard, NButton, NDataTable, NModal, NDescriptions, NDescriptionsItem, 
   NTag, NForm, NFormItem, NInput, NSelect, NSpace, NGrid, NGi,
   NAlert, NSpin, NPagination, NStatistic, NImage, NImageGroup,
-  useMessage, useDialog
+  NCode, NScrollbar, useMessage, useDialog
 } from 'naive-ui'
 import { bugReportAPI } from '@/api'
 import { useLazyLoad } from '@/composables/useLazyLoad'
 
 const message = useMessage()
 const dialog = useDialog()
+
+// 复制文本
+const copyText = async (text) => {
+  try {
+    await navigator.clipboard.writeText(text)
+    message.success('复制成功')
+  } catch (err) {
+    message.error('复制失败')
+    console.error('Failed to copy:', err)
+  }
+}
 
 // 统计数据
 const stats = reactive({
@@ -676,19 +694,9 @@ const downloadBugReport = () => {
   word-break: break-all;
 }
 
-.json-output {
-  max-height: 300px;
-  overflow: auto;
+.json-output-wrapper {
   background-color: #f5f7fa;
   padding: 12px;
   border-radius: 4px;
-}
-
-.json-output pre {
-  margin: 0;
-  font-family: 'Courier New', monospace;
-  font-size: 12px;
-  line-height: 1.5;
-  color: #303133;
 }
 </style>

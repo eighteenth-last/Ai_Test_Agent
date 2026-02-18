@@ -368,6 +368,8 @@ class SkillManager:
         根据任务描述，从数据库中查找最相关的 Skills
         LLM 执行时调用此方法作为"工具"
         返回匹配的 Skill 列表（含 MinIO key，不含全文）
+
+        改进：支持中英文关键词匹配、分词匹配、分类权重
         """
         active_skills = db.query(Skill).filter(Skill.is_active == 1).all()
         if not active_skills:
@@ -375,29 +377,46 @@ class SkillManager:
 
         # 关键词匹配打分
         task_lower = task_description.lower()
+
+        # 简单中文分词（按标点和空格分割）
+        import re as _re
+        task_words = set(_re.split(r'[\s,，。、；;：:！!？?\-\(\)（）\[\]【】]+', task_lower))
+        task_words = {w for w in task_words if len(w) >= 2}
+
         scored = []
         for s in active_skills:
             score = 0
-            # 名称匹配
+            # 名称匹配（精确包含）
             if s.name and s.name.lower() in task_lower:
                 score += 10
-            # 分类匹配
+            # 名称部分匹配
+            elif s.name:
+                name_lower = s.name.lower()
+                for word in task_words:
+                    if word in name_lower or name_lower in word:
+                        score += 5
+                        break
+
+            # 分类匹配（加权）
+            category_keywords = {
+                "testing": ["测试", "test", "验证", "校验", "断言", "assert", "用例", "case"],
+                "browser": ["浏览器", "页面", "browser", "web", "dom", "元素", "点击", "click"],
+                "api": ["接口", "api", "http", "rest", "请求", "request", "响应"],
+                "login": ["登录", "login", "认证", "auth", "密码", "password"],
+            }
             if s.category:
-                if s.category == "testing" and any(kw in task_lower for kw in ["测试", "test", "验证"]):
-                    score += 5
-                if s.category == "browser" and any(kw in task_lower for kw in ["浏览器", "页面", "browser", "web"]):
-                    score += 5
-                if s.category == "api" and any(kw in task_lower for kw in ["接口", "api", "http"]):
-                    score += 5
+                kws = category_keywords.get(s.category, [])
+                matched = sum(1 for kw in kws if kw in task_lower)
+                score += matched * 3
+
             # 描述关键词匹配
             desc = (s.description or "").lower()
             summary = (s.content or "").lower()
-            for word in task_lower.split():
-                if len(word) >= 2:
-                    if word in desc:
-                        score += 2
-                    if word in summary:
-                        score += 1
+            for word in task_words:
+                if word in desc:
+                    score += 2
+                if word in summary:
+                    score += 1
 
             if score > 0:
                 config = {}

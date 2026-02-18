@@ -5,7 +5,9 @@ Moonshot/Kimi Provider 实现
 
 作者: Ai_Test_Agent Team
 """
+import json
 import os
+import re
 import logging
 from typing import Any, Dict, List
 
@@ -75,3 +77,45 @@ class MoonshotProvider(BaseOpenAICompatibleProvider):
     def supports_structured_output(self) -> bool:
         """Moonshot 可能不完全支持结构化输出"""
         return False
+
+    def parse_json_response(self, content: str) -> dict:
+        """
+        Moonshot/Kimi JSON 解析
+
+        Moonshot 的特点：
+        - 不完全支持 response_format=json_object
+        - 输出通常比较规范，但偶尔有 markdown 包裹
+        - 可能在 JSON 前加 "以下是..." 等中文前缀
+        """
+        if not content:
+            raise ValueError("LLM 响应为空")
+
+        text = content.strip()
+
+        # 1. 剥离 markdown 代码块
+        text = self._extract_json(text)
+
+        # 2. 直接尝试
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+
+        # 3. 移除尾部逗号
+        fixed = re.sub(r',\s*([}\]])', r'\1', text)
+        try:
+            return json.loads(fixed)
+        except json.JSONDecodeError:
+            pass
+
+        # 4. 提取第一个 JSON 对象
+        match = re.search(r'\{[\s\S]*\}', text)
+        if match:
+            try:
+                candidate = re.sub(r',\s*([}\]])', r'\1', match.group(0))
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                pass
+
+        # 5. 回退到基类
+        return super().parse_json_response(content)

@@ -174,12 +174,17 @@
               <div
                 v-for="(c, ci) in generatedCases"
                 :key="ci"
-                class="flex items-start gap-2 p-3 bg-white rounded-2xl border border-slate-200 hover:border-emerald-300 transition-colors"
+                class="flex items-start gap-2 p-3 bg-white rounded-2xl border border-slate-200 hover:border-emerald-300 transition-colors cursor-pointer group"
+                @click.self="openCaseDetail(ci)"
               >
                 <n-checkbox v-model:checked="c._checked" size="small" class="mt-0.5" />
-                <div class="min-w-0 flex-1">
-                  <div class="text-xs text-slate-400">{{ ci + 1 }}</div>
+                <div class="min-w-0 flex-1" @click="openCaseDetail(ci)">
+                  <div class="flex items-center gap-1">
+                    <span class="text-xs text-slate-400">{{ ci + 1 }}</span>
+                    <i class="fas fa-pen text-[9px] text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                  </div>
                   <div class="text-sm text-slate-800 mt-0.5 break-words">{{ c.title }}</div>
+                  <div v-if="c.module" class="text-[11px] text-slate-400 mt-0.5">{{ c.module }}</div>
                 </div>
                 <n-tag size="tiny" :type="c.priority === '1' ? 'error' : c.priority === '2' ? 'warning' : 'info'" round>
                   P{{ c.priority || 3 }}
@@ -208,6 +213,93 @@
       </div>
     </div>
 
+    <!-- 用例详情/编辑弹窗 -->
+    <n-modal v-model:show="showCaseModal" preset="card" :title="caseEditing ? '编辑用例' : '用例详情'"
+      style="width: 600px; max-width: 92vw;" :bordered="false" :segmented="{ content: true, footer: true }">
+      <template v-if="editingCase">
+        <div class="space-y-4">
+          <div>
+            <label class="text-xs text-slate-500 font-medium">用例标题</label>
+            <n-input v-if="caseEditing" v-model:value="editingCase.title" placeholder="用例标题" class="mt-1" />
+            <div v-else class="text-sm text-slate-800 mt-1">{{ editingCase.title }}</div>
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="text-xs text-slate-500 font-medium">所属模块</label>
+              <n-input v-if="caseEditing" v-model:value="editingCase.module" placeholder="模块名称" class="mt-1" size="small" />
+              <div v-else class="text-sm text-slate-800 mt-1">{{ editingCase.module || '-' }}</div>
+            </div>
+            <div>
+              <label class="text-xs text-slate-500 font-medium">优先级</label>
+              <n-select v-if="caseEditing" v-model:value="editingCase.priority" :options="priorityOptions" class="mt-1" size="small" />
+              <div v-else class="mt-1">
+                <n-tag size="small" :type="editingCase.priority === '1' ? 'error' : editingCase.priority === '2' ? 'warning' : 'info'" round>
+                  P{{ editingCase.priority || 3 }}
+                </n-tag>
+              </div>
+            </div>
+          </div>
+          <div>
+            <label class="text-xs text-slate-500 font-medium">测试步骤</label>
+            <div v-if="caseEditing" class="mt-1 space-y-2">
+              <div v-for="(step, si) in editingCase.steps" :key="si" class="flex items-center gap-2">
+                <span class="text-xs text-slate-400 w-5 text-right flex-shrink-0">{{ si + 1 }}.</span>
+                <n-input v-model:value="editingCase.steps[si]" size="small" class="flex-1" />
+                <n-button size="tiny" quaternary type="error" @click="editingCase.steps.splice(si, 1)" :disabled="editingCase.steps.length <= 1">
+                  <i class="fas fa-times"></i>
+                </n-button>
+              </div>
+              <n-button size="tiny" dashed block @click="editingCase.steps.push('')" class="!rounded-lg">
+                <template #icon><i class="fas fa-plus"></i></template>
+                添加步骤
+              </n-button>
+            </div>
+            <div v-else class="mt-1">
+              <ol class="list-decimal list-inside text-sm text-slate-700 space-y-1">
+                <li v-for="(step, si) in editingCase.steps" :key="si">{{ step }}</li>
+              </ol>
+            </div>
+          </div>
+          <div>
+            <label class="text-xs text-slate-500 font-medium">预期结果</label>
+            <n-input v-if="caseEditing" v-model:value="editingCase.expected" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" placeholder="预期结果" class="mt-1" />
+            <div v-else class="text-sm text-slate-700 mt-1 whitespace-pre-wrap">{{ editingCase.expected || '-' }}</div>
+          </div>
+          <div>
+            <label class="text-xs text-slate-500 font-medium">测试数据</label>
+            <n-input v-if="caseEditing" v-model:value="editingCaseTestDataStr" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" placeholder='JSON 格式，如 {"username":"test"}' class="mt-1" :status="testDataError ? 'error' : undefined" />
+            <div v-else class="text-sm text-slate-700 mt-1 font-mono bg-slate-50 rounded-lg p-2 break-all">{{ formatTestData(editingCase.test_data) }}</div>
+            <div v-if="testDataError" class="text-xs text-red-500 mt-1">JSON 格式不正确</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <label class="text-xs text-slate-500 font-medium">需要浏览器</label>
+            <n-switch v-if="caseEditing" v-model:value="editingCase.need_browser" size="small" />
+            <n-tag v-else size="tiny" :type="editingCase.need_browser !== false ? 'success' : 'default'" round>
+              {{ editingCase.need_browser !== false ? '是' : '否' }}
+            </n-tag>
+          </div>
+        </div>
+      </template>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <template v-if="caseEditing">
+            <n-button size="small" @click="caseEditing = false" class="!rounded-xl">取消</n-button>
+            <n-button size="small" type="primary" @click="saveCaseEdit" class="!rounded-xl" :disabled="testDataError">
+              <template #icon><i class="fas fa-check"></i></template>
+              保存
+            </n-button>
+          </template>
+          <template v-else>
+            <n-button size="small" @click="showCaseModal = false" class="!rounded-xl">关闭</n-button>
+            <n-button size="small" type="primary" ghost @click="caseEditing = true" class="!rounded-xl" :disabled="executing">
+              <template #icon><i class="fas fa-pen"></i></template>
+              编辑
+            </n-button>
+          </template>
+        </div>
+      </template>
+    </n-modal>
+
     <!-- 历史记录抽屉 -->
     <n-drawer v-model:show="showHistory" :width="400" placement="right">
       <n-drawer-content title="历史记录">
@@ -231,8 +323,8 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, onMounted } from 'vue'
-import { NInput, NButton, NTag, NCheckbox, NSpin, NDrawer, NDrawerContent, useMessage } from 'naive-ui'
+import { ref, computed, nextTick, onMounted, watch } from 'vue'
+import { NInput, NButton, NTag, NCheckbox, NSpin, NDrawer, NDrawerContent, NModal, NSelect, NSwitch, useMessage } from 'naive-ui'
 import { oneclickAPI } from '@/api/index.js'
 
 const message = useMessage()
@@ -247,6 +339,21 @@ const generatedCases = ref([])
 const showHistory = ref(false)
 const historyList = ref([])
 const messageContainer = ref(null)
+
+// 用例编辑相关
+const showCaseModal = ref(false)
+const caseEditing = ref(false)
+const editingCaseIndex = ref(-1)
+const editingCase = ref(null)
+const editingCaseTestDataStr = ref('{}')
+const testDataError = ref(false)
+
+const priorityOptions = [
+  { label: 'P1 - 最高', value: '1' },
+  { label: 'P2 - 高', value: '2' },
+  { label: 'P3 - 中', value: '3' },
+  { label: 'P4 - 低', value: '4' },
+]
 
 const quickHints = [
   '帮我测试登录功能',
@@ -358,6 +465,71 @@ function selectAll() {
 function deselectAll() {
   generatedCases.value.forEach(c => c._checked = false)
 }
+
+function openCaseDetail(index) {
+  const c = generatedCases.value[index]
+  editingCaseIndex.value = index
+  // 深拷贝，编辑时不影响原数据
+  editingCase.value = JSON.parse(JSON.stringify({
+    title: c.title || '',
+    module: c.module || '',
+    steps: Array.isArray(c.steps) ? [...c.steps] : (c.steps ? [c.steps] : ['']),
+    expected: c.expected || '',
+    priority: String(c.priority || '3'),
+    test_data: c.test_data || {},
+    need_browser: c.need_browser !== false,
+  }))
+  editingCaseTestDataStr.value = JSON.stringify(editingCase.value.test_data, null, 2)
+  testDataError.value = false
+  caseEditing.value = false
+  showCaseModal.value = true
+}
+
+function saveCaseEdit() {
+  // 校验 test_data JSON
+  let parsedData = {}
+  try {
+    parsedData = JSON.parse(editingCaseTestDataStr.value || '{}')
+    testDataError.value = false
+  } catch {
+    testDataError.value = true
+    return
+  }
+
+  const idx = editingCaseIndex.value
+  if (idx < 0 || idx >= generatedCases.value.length) return
+
+  const original = generatedCases.value[idx]
+  // 保留 _checked 状态，更新其他字段
+  generatedCases.value[idx] = {
+    ...original,
+    title: editingCase.value.title,
+    module: editingCase.value.module,
+    steps: editingCase.value.steps.filter(s => s.trim() !== ''),
+    expected: editingCase.value.expected,
+    priority: editingCase.value.priority,
+    test_data: parsedData,
+    need_browser: editingCase.value.need_browser,
+  }
+
+  caseEditing.value = false
+  message.success('用例已保存')
+}
+
+function formatTestData(data) {
+  if (!data || Object.keys(data).length === 0) return '-'
+  return JSON.stringify(data, null, 2)
+}
+
+// 监听 test_data 输入，实时校验 JSON
+watch(editingCaseTestDataStr, (val) => {
+  try {
+    JSON.parse(val || '{}')
+    testDataError.value = false
+  } catch {
+    testDataError.value = true
+  }
+})
 
 function clearAll() {
   inputText.value = ''

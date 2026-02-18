@@ -5,7 +5,9 @@ Anthropic Provider 实现
 
 作者: Ai_Test_Agent Team
 """
+import json
 import os
+import re
 import logging
 from typing import Any, Dict, List
 
@@ -175,3 +177,37 @@ class AnthropicProvider(BaseLLMProvider):
         """获取 Browser-Use LLM 实例"""
         # Browser-Use 使用 LangChain 的 Anthropic
         return self.get_langchain_llm()
+
+    def parse_json_response(self, content: str) -> dict:
+        """
+        Anthropic (Claude) JSON 解析
+
+        Claude 的特点：
+        - 经常在 JSON 前后添加解释性文字（如 "Here is the JSON:" 或 "以下是结果："）
+        - 有时用 markdown 代码块包裹
+        - JSON 本身通常格式规范，很少有尾部逗号等问题
+        """
+        if not content:
+            raise ValueError("LLM 响应为空")
+
+        text = content.strip()
+
+        # 1. 剥离 markdown 代码块
+        text = self._extract_json(text)
+
+        # 2. 直接尝试
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+
+        # 3. Claude 喜欢在 JSON 前后加文字，提取第一个完整 JSON 对象
+        match = re.search(r'\{[\s\S]*\}', text)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except json.JSONDecodeError:
+                pass
+
+        # 4. 回退到基类通用解析
+        return super().parse_json_response(content)

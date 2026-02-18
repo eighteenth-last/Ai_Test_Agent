@@ -10,6 +10,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Union, Type
 from enum import Enum
+import json
+import re
 import logging
 
 logger = logging.getLogger(__name__)
@@ -271,6 +273,84 @@ class BaseLLMProvider(ABC):
             content = content.split("```")[1].split("```")[0].strip()
         
         return content
+
+    def parse_json_response(self, content: str) -> dict:
+        """
+        从 LLM 响应中解析 JSON，处理各种不规范格式
+
+        不同模型的常见问题：
+        - OpenAI/Azure: 通常规范，偶尔有 markdown 包裹
+        - Anthropic (Claude): 喜欢在 JSON 前后加解释文字
+        - Google (Gemini): 可能返回 ```json 代码块，thinking 模型有 <think> 标签
+        - DeepSeek: R1 模型有 <think>...</think> 推理过程，不支持 response_format
+        - Ollama: 本地模型输出不稳定，可能有 <think> 标签、多余文字
+        - Moonshot/Alibaba/通用: 偶尔有尾部逗号、未闭合括号
+
+        Args:
+            content: LLM 原始响应文本
+
+        Returns:
+            解析后的 dict
+        """
+        if not content:
+            raise ValueError("LLM 响应为空")
+
+        text = content.strip()
+
+        # 1. 剥离推理标签 <think>...</think>（DeepSeek R1、Ollama deepseek-r1 等）
+        if "<think>" in text and "</think>" in text:
+            parts = text.split("</think>", 1)
+            text = parts[1].strip() if len(parts) >= 2 else text
+
+        # 2. 剥离 **JSON Response:** 格式（Ollama 常见）
+        if "**JSON Response:**" in text:
+            text = text.split("**JSON Response:**")[-1].strip()
+
+        # 3. 剥离 markdown 代码块
+        text = self._extract_json(text)
+
+        # 4. 直接尝试解析
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+
+        # 5. 移除尾部逗号: ,] → ] 和 ,} → }
+        fixed = re.sub(r',\s*([}\]])', r'\1', text)
+        try:
+            return json.loads(fixed)
+        except json.JSONDecodeError:
+            pass
+
+        # 6. 修复截断的 JSON（补全缺失的括号）
+        open_braces = fixed.count('{') - fixed.count('}')
+        open_brackets = fixed.count('[') - fixed.count(']')
+        if open_braces > 0 or open_brackets > 0:
+            patched = fixed
+            last_close = max(patched.rfind('}'), patched.rfind(']'))
+            if last_close > 0:
+                patched = patched[:last_close + 1]
+                open_braces = patched.count('{') - patched.count('}')
+                open_brackets = patched.count('[') - patched.count(']')
+            patched += ']' * open_brackets + '}' * open_braces
+            patched = re.sub(r',\s*([}\]])', r'\1', patched)
+            try:
+                return json.loads(patched)
+            except json.JSONDecodeError:
+                pass
+
+        # 7. 提取第一个 JSON 对象（Anthropic 常在 JSON 前后加解释文字）
+        match = re.search(r'\{[\s\S]*\}', text)
+        if match:
+            try:
+                candidate = match.group(0)
+                candidate = re.sub(r',\s*([}\]])', r'\1', candidate)
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                pass
+
+        # 8. 全部失败，抛出原始错误
+        return json.loads(text)
     
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(provider={self.provider_name}, model={self.config.model_name})"

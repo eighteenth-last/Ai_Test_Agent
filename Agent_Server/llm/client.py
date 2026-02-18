@@ -56,21 +56,16 @@ class LLMClient:
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
         max_tokens: int = 4000,
-        response_format: Optional[Dict[str, str]] = None
+        response_format: Optional[Dict[str, str]] = None,
+        source: str = "chat",
+        session_id: int = None,
     ) -> str:
         """
-        发送聊天请求
-        
-        Args:
-            messages: 消息列表
-            temperature: 温度参数
-            max_tokens: 最大 token 数
-            response_format: 响应格式
-        
-        Returns:
-            LLM 响应内容
+        发送聊天请求（带自动切换和详细 Token 统计）
         """
+        import time as _time
         self._ensure_provider()
+        start_ms = int(_time.time() * 1000)
         
         try:
             response = self._provider.chat(
@@ -80,14 +75,74 @@ class LLMClient:
                 response_format=response_format
             )
             
-            # 更新 token 使用量
-            if response.total_tokens > 0:
-                model_config_manager.increment_token_usage(response.total_tokens)
+            duration_ms = int(_time.time() * 1000) - start_ms
+
+            # 更新 token 使用量（增强版）
+            model_config_manager.increment_token_usage(
+                tokens=response.total_tokens,
+                prompt_tokens=response.prompt_tokens,
+                completion_tokens=response.completion_tokens,
+                source=source,
+                session_id=session_id,
+                success=True,
+                duration_ms=duration_ms,
+            )
             
             return response.content
             
         except Exception as e:
+            duration_ms = int(_time.time() * 1000) - start_ms
             logger.error(f"[LLMClient] 请求失败: {e}")
+
+            # 记录失败的 token 使用
+            model_config_manager.increment_token_usage(
+                tokens=0,
+                prompt_tokens=0,
+                completion_tokens=0,
+                source=source,
+                session_id=session_id,
+                success=False,
+                error_type=str(type(e).__name__),
+                duration_ms=duration_ms,
+            )
+
+            # 尝试自动切换
+            try:
+                from llm.auto_switch import get_auto_switcher, classify_failure_reason
+                switcher = get_auto_switcher()
+                # 确保 profiles 已加载（首次调用时可能为空）
+                if not switcher._profiles:
+                    switcher.load_profiles_from_db()
+                if switcher.enabled and self._config and len(switcher._profiles) > 1:
+                    reason = classify_failure_reason(e)
+                    current_id = self._config.get('id', 0)
+                    new_id = switcher.mark_failure(current_id, reason)
+                    if new_id and new_id != current_id:
+                        logger.info(f"[LLMClient] 🔄 自动切换: ID={current_id} → ID={new_id}，重试请求")
+                        self.refresh()
+                        self._ensure_provider()
+                        response = self._provider.chat(
+                            messages=messages,
+                            temperature=temperature,
+                            max_tokens=max_tokens,
+                            response_format=response_format
+                        )
+                        retry_duration = int(_time.time() * 1000) - start_ms
+                        model_config_manager.increment_token_usage(
+                            tokens=response.total_tokens,
+                            prompt_tokens=response.prompt_tokens,
+                            completion_tokens=response.completion_tokens,
+                            source=source,
+                            session_id=session_id,
+                            success=True,
+                            duration_ms=retry_duration,
+                        )
+                        return response.content
+                    else:
+                        logger.warning(f"[LLMClient] ❌ 没有可用的备选模型 (current={current_id}, new={new_id})")
+            except Exception as retry_err:
+                logger.error(f"[LLMClient] 自动切换重试也失败: {retry_err}")
+
             raise
     
     async def achat(
@@ -95,10 +150,14 @@ class LLMClient:
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
         max_tokens: int = 4000,
-        response_format: Optional[Dict[str, str]] = None
+        response_format: Optional[Dict[str, str]] = None,
+        source: str = "chat",
+        session_id: int = None,
     ) -> str:
-        """异步聊天请求"""
+        """异步聊天请求（带自动切换和详细 Token 统计）"""
+        import time as _time
         self._ensure_provider()
+        start_ms = int(_time.time() * 1000)
         
         try:
             response = await self._provider.achat(
@@ -108,13 +167,66 @@ class LLMClient:
                 response_format=response_format
             )
             
-            if response.total_tokens > 0:
-                model_config_manager.increment_token_usage(response.total_tokens)
+            duration_ms = int(_time.time() * 1000) - start_ms
+
+            model_config_manager.increment_token_usage(
+                tokens=response.total_tokens,
+                prompt_tokens=response.prompt_tokens,
+                completion_tokens=response.completion_tokens,
+                source=source,
+                session_id=session_id,
+                success=True,
+                duration_ms=duration_ms,
+            )
             
             return response.content
             
         except Exception as e:
+            duration_ms = int(_time.time() * 1000) - start_ms
             logger.error(f"[LLMClient] 异步请求失败: {e}")
+
+            model_config_manager.increment_token_usage(
+                tokens=0, prompt_tokens=0, completion_tokens=0,
+                source=source, session_id=session_id,
+                success=False, error_type=str(type(e).__name__),
+                duration_ms=duration_ms,
+            )
+
+            # 尝试自动切换
+            try:
+                from llm.auto_switch import get_auto_switcher, classify_failure_reason
+                switcher = get_auto_switcher()
+                # 确保 profiles 已加载（首次调用时可能为空）
+                if not switcher._profiles:
+                    switcher.load_profiles_from_db()
+                if switcher.enabled and self._config and len(switcher._profiles) > 1:
+                    reason = classify_failure_reason(e)
+                    current_id = self._config.get('id', 0)
+                    new_id = switcher.mark_failure(current_id, reason)
+                    if new_id and new_id != current_id:
+                        logger.info(f"[LLMClient] 🔄 自动切换: ID={current_id} → ID={new_id}，重试异步请求")
+                        self.refresh()
+                        self._ensure_provider()
+                        response = await self._provider.achat(
+                            messages=messages,
+                            temperature=temperature,
+                            max_tokens=max_tokens,
+                            response_format=response_format
+                        )
+                        retry_duration = int(_time.time() * 1000) - start_ms
+                        model_config_manager.increment_token_usage(
+                            tokens=response.total_tokens,
+                            prompt_tokens=response.prompt_tokens,
+                            completion_tokens=response.completion_tokens,
+                            source=source, session_id=session_id,
+                            success=True, duration_ms=retry_duration,
+                        )
+                        return response.content
+                    else:
+                        logger.warning(f"[LLMClient] ❌ 没有可用的备选模型 (current={current_id}, new={new_id})")
+            except Exception as retry_err:
+                logger.error(f"[LLMClient] 自动切换重试也失败: {retry_err}")
+
             raise
     
     def generate_test_cases(
@@ -335,6 +447,21 @@ class LLMClient:
         self._config = None
         self._provider = None
         model_config_manager.refresh_config()
+
+    def parse_json_response(self, content: str) -> dict:
+        """
+        使用当前 Provider 的 JSON 解析器解析 LLM 响应
+
+        自动根据当前活跃的模型 Provider 选择最合适的解析策略
+
+        Args:
+            content: LLM 原始响应文本
+
+        Returns:
+            解析后的 dict
+        """
+        self._ensure_provider()
+        return self._provider.parse_json_response(content)
 
 
 # 全局实例

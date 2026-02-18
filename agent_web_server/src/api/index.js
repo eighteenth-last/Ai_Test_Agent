@@ -154,6 +154,28 @@ export const modelAPI = {
   },
   getProviders() {
     return api.get('/models/providers')
+  },
+  // 自动切换
+  getAutoSwitchStatus() {
+    return api.get('/models/auto-switch/status')
+  },
+  toggleAutoSwitch(enabled) {
+    return api.post('/models/auto-switch/toggle', null, { params: { enabled } })
+  },
+  resetAutoSwitch(modelId = null) {
+    const params = {}
+    if (modelId) params.model_id = modelId
+    return api.post('/models/auto-switch/reset', null, { params })
+  },
+  // Token 统计
+  getTokenStatsSummary() {
+    return api.get('/models/token-stats/summary')
+  },
+  getRecentTokenLogs(limit = 50) {
+    return api.get('/models/token-stats/recent', { params: { limit } })
+  },
+  resetTodayTokens() {
+    return api.post('/models/token-stats/reset-today')
   }
 }
 

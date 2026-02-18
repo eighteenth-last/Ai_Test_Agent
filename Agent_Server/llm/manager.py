@@ -204,31 +204,94 @@ class ModelConfigManager:
         
         return browser_use_config
     
-    def increment_token_usage(self, tokens: int, db=None):
+    def increment_token_usage(
+        self,
+        tokens: int = 0,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        source: str = "chat",
+        session_id: int = None,
+        success: bool = True,
+        error_type: str = None,
+        duration_ms: int = 0,
+        db=None,
+    ):
         """
-        增加今日 Token 使用量和总 Token 使用量
+        增加 Token 使用量（增强版，支持详细统计）
         
         Args:
-            tokens: 使用的 token 数量
+            tokens: 总 token 数量（如果为 0 则自动计算）
+            prompt_tokens: 输入 token
+            completion_tokens: 输出 token
+            source: 来源 (chat/browser_use/oneclick/api_test)
+            session_id: 关联会话 ID
+            success: 是否成功
+            error_type: 错误类型
+            duration_ms: 耗时毫秒
             db: 数据库会话
         """
+        total = tokens if tokens > 0 else (prompt_tokens + completion_tokens)
+        if total <= 0:
+            return
+
         close_db = False
         if db is None:
             db = self._get_db_session()
             close_db = True
         
         try:
-            from database.connection import LLMModel
+            from database.connection import LLMModel, TokenUsageLog
+            from datetime import datetime
             
             active_model = db.query(LLMModel).filter(LLMModel.is_active == 1).first()
             if active_model:
-                active_model.tokens_used_today = (active_model.tokens_used_today or 0) + tokens
-                active_model.tokens_used_total = (active_model.tokens_used_total or 0) + tokens
+                active_model.tokens_used_today = (active_model.tokens_used_today or 0) + total
+                active_model.tokens_used_total = (active_model.tokens_used_total or 0) + total
+                active_model.tokens_input_total = (active_model.tokens_input_total or 0) + prompt_tokens
+                active_model.tokens_output_total = (active_model.tokens_output_total or 0) + completion_tokens
+                active_model.request_count_total = (active_model.request_count_total or 0) + 1
+                active_model.request_count_today = (active_model.request_count_today or 0) + 1
+                active_model.last_used_at = datetime.now()
+                if not success:
+                    active_model.failure_count_total = (active_model.failure_count_total or 0) + 1
+                    active_model.last_failure_reason = error_type
+
+                # 写入详细日志
+                log_entry = TokenUsageLog(
+                    model_id=active_model.id,
+                    model_name=active_model.model_name,
+                    provider=active_model.provider,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=total,
+                    source=source,
+                    session_id=session_id,
+                    success=1 if success else 0,
+                    error_type=error_type,
+                    duration_ms=duration_ms,
+                )
+                db.add(log_entry)
                 db.commit()
-                logger.debug(f"[ModelConfigManager] Token 使用量更新: +{tokens}")
+
+                # 同步到 auto_switcher
+                try:
+                    from llm.auto_switch import get_auto_switcher
+                    switcher = get_auto_switcher()
+                    if success:
+                        switcher.mark_success(active_model.id, total)
+                except Exception:
+                    pass
+
+                logger.debug(
+                    f"[ModelConfigManager] Token 使用量更新: +{total} "
+                    f"(in={prompt_tokens}, out={completion_tokens}, src={source})"
+                )
         except Exception as e:
             logger.warning(f"[ModelConfigManager] 更新 Token 使用量失败: {e}")
-            db.rollback()
+            try:
+                db.rollback()
+            except Exception:
+                pass
         finally:
             if close_db:
                 db.close()
