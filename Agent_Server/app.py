@@ -58,7 +58,7 @@ async def lifespan(app: FastAPI):
     print("\n" + "=" * 80)
     print("🤖 LLM 模型配置检查")
     print("=" * 80)
-    
+
     try:
         from llm import get_active_llm_config
         config = get_active_llm_config()
