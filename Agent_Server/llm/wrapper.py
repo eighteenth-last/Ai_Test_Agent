@@ -8,6 +8,7 @@ LLM 包装器模块
 """
 import json
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -138,6 +139,14 @@ class LLMWrapper:
                 elif "```" in content:
                     content = content.split("```")[1].split("```")[0].strip()
                 
+                # 尝试从自由文本中提取 JSON 对象
+                content = content.strip()
+                if not content.startswith('{'):
+                    import re
+                    match = re.search(r'\{[\s\S]*\}', content)
+                    if match:
+                        content = match.group(0)
+                
                 # 解析 JSON
                 data = json.loads(content)
                 
@@ -150,13 +159,27 @@ class LLMWrapper:
                 
                 return result
                 
+            except json.JSONDecodeError as je:
+                logger.error(f"[LLMWrapper] JSON 解析失败: {je}")
+                logger.error(f"[LLMWrapper] 原始响应: {response.content[:500]}")
+                raise
             except Exception as e:
-                logger.error(f"[LLMWrapper] 解析响应失败: {e}")
+                logger.error(f"[LLMWrapper] 构造 {output_format.__name__} 失败: {e}")
                 logger.error(f"[LLMWrapper] 原始响应: {response.content[:500]}")
                 raise
         else:
             return await self._original_ainvoke(converted_messages, **kwargs)
     
+    # browser-use AgentOutput 中合法的 action 类型
+    VALID_BROWSER_ACTIONS = {
+        'click', 'input', 'navigate', 'search', 'wait', 'done',
+        'go_back', 'scroll_down', 'scroll_up', 'send_keys',
+        'extract_content', 'switch_tab', 'open_tab', 'close_tab',
+        'drag_drop', 'select_option', 'save_pdf', 'upload_file',
+        'go_to_url', 'click_element', 'input_text', 'scroll_to_text',
+        'get_dropdown_options', 'select_dropdown_option',
+    }
+
     def _fix_action_format(self, data):
         """
         修正 LLM 输出的 action 格式错误
@@ -164,6 +187,7 @@ class LLMWrapper:
         常见错误:
         1. {'wait': 3} -> {'wait': {'seconds': 3}}
         2. {'input': {'index': 509, 'value': 'xxx'}} -> {'input': {'index': 509, 'text': 'xxx'}}
+        3. 完全无效的 action 类型（如 'replace_file'）-> 过滤掉
         """
         if 'action' not in data:
             return data
@@ -173,13 +197,25 @@ class LLMWrapper:
             return data
         
         fixed_actions = []
+        has_valid = False
         for action in actions:
             if not isinstance(action, dict):
                 fixed_actions.append(action)
                 continue
             
             fixed_action = {}
+            action_valid = False
             for key, value in action.items():
+                # 检查是否为合法的 browser-use action 类型
+                if key not in self.VALID_BROWSER_ACTIONS:
+                    logger.warning(
+                        f"[LLMWrapper] 过滤无效 action 类型: '{key}'，"
+                        f"不在合法列表中"
+                    )
+                    continue
+                
+                action_valid = True
+
                 # 修正 wait 格式
                 if key == 'wait':
                     if isinstance(value, (int, float)):
@@ -204,7 +240,18 @@ class LLMWrapper:
                 else:
                     fixed_action[key] = value
             
-            fixed_actions.append(fixed_action)
+            if fixed_action:
+                fixed_actions.append(fixed_action)
+                has_valid = True
+            elif not action_valid:
+                logger.warning(f"[LLMWrapper] 整个 action 被过滤（无合法字段）: {action}")
+        
+        # 如果所有 action 都被过滤了，插入一个 done 防止 Pydantic 验证崩溃
+        if not has_valid and actions:
+            logger.warning(
+                f"[LLMWrapper] 所有 action 均无效，回退为 done。原始 actions: {actions}"
+            )
+            fixed_actions = [{"done": {"text": "操作无法执行：模型返回了无效的动作类型", "success": False}}]
         
         data['action'] = fixed_actions
         return data

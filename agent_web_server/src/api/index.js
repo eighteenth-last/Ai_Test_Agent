@@ -352,6 +352,25 @@ export const oneclickAPI = {
   }
 }
 
+// 测试环境管理
+export const testEnvAPI = {
+  getList() {
+    return api.get('/test-env/list')
+  },
+  create(data) {
+    return api.post('/test-env/create', data)
+  },
+  update(envId, data) {
+    return api.put(`/test-env/${envId}`, data)
+  },
+  delete(envId) {
+    return api.delete(`/test-env/${envId}`)
+  },
+  setDefault(envId) {
+    return api.put(`/test-env/${envId}/set-default`)
+  }
+}
+
 // Skills - 技能管理
 export const skillsAPI = {
   getList(category = null) {

@@ -15,7 +15,8 @@ from database.connection import OneclickSession
 # 状态机定义
 VALID_TRANSITIONS = {
     'init': ['analyzing'],
-    'analyzing': ['page_scanned', 'cases_generated', 'failed'],
+    'analyzing': ['exploring', 'page_scanned', 'cases_generated', 'failed'],
+    'exploring': ['page_scanned', 'cases_generated', 'failed'],
     'page_scanned': ['cases_generated', 'failed'],
     'cases_generated': ['confirmed', 'failed'],
     'confirmed': ['executing', 'failed'],

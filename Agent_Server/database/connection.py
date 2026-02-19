@@ -311,6 +311,25 @@ class OneclickSession(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
 
 
+class TestEnvironment(Base):
+    """测试环境配置表 — 存储被测系统的 URL、账号密码等"""
+    __tablename__ = 'test_environments'
+    __table_args__ = {'extend_existing': True}
+
+    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    name = Column(String(100), nullable=False, comment='环境名称（如：开发环境、测试环境）')
+    base_url = Column(String(500), nullable=False, comment='系统首页URL')
+    login_url = Column(String(500), comment='登录页URL（为空则与base_url相同）')
+    username = Column(String(200), comment='登录账号')
+    password = Column(String(200), comment='登录密码')
+    extra_credentials = Column(JSON, comment='额外凭据（如验证码、token等）')
+    description = Column(Text, comment='环境描述')
+    is_default = Column(Integer, default=0, comment='是否为默认环境（0:否 1:是）')
+    is_active = Column(Integer, default=1, comment='是否启用')
+    created_at = Column(DateTime, default=datetime.now, comment='创建时间')
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
+
+
 class Skill(Base):
     """Skills管理表"""
     __tablename__ = 'skills'
@@ -329,6 +348,7 @@ class Skill(Base):
     install_count = Column(Integer, default=0, comment='安装次数')
     created_at = Column(DateTime, default=datetime.now, comment='创建时间')
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
+
 
 
 # ============================================
@@ -357,6 +377,7 @@ def init_db():
             'api_spec_versions': ApiSpecVersion,
             'api_endpoints': ApiEndpoint,
             'oneclick_sessions': OneclickSession,
+            'test_environments': TestEnvironment,
             'skills': Skill
         }
         

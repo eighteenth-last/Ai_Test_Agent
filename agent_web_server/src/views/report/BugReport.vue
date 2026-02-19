@@ -171,11 +171,16 @@
           <!-- 复现步骤 -->
           <n-card v-if="currentBug.reproduce_steps && currentBug.reproduce_steps.length > 0" size="small" style="margin-bottom: 20px">
             <template #header>
-              <strong>复现步骤</strong>
+              <strong>{{ isConsolidatedBug(currentBug) ? '各Bug复现步骤' : '复现步骤' }}</strong>
             </template>
             <div class="bug-steps">
-              <ol>
-                <li v-for="(step, index) in currentBug.reproduce_steps" :key="index">
+              <!-- 整合报告：按段落展示 -->
+              <div v-if="isConsolidatedBug(currentBug)" style="white-space: pre-line; line-height: 1.8;">
+                {{ typeof currentBug.reproduce_steps === 'string' ? currentBug.reproduce_steps : currentBug.reproduce_steps.join('\n') }}
+              </div>
+              <!-- 普通报告：列表展示 -->
+              <ol v-else>
+                <li v-for="(step, index) in parseSteps(currentBug.reproduce_steps)" :key="index">
                   {{ step }}
                 </li>
               </ol>
@@ -187,7 +192,20 @@
             <template #header>
               <strong>结果反馈</strong>
             </template>
-            <n-descriptions :column="1" label-placement="left" bordered>
+            <!-- 整合报告：多行文本展示 -->
+            <div v-if="isConsolidatedBug(currentBug)">
+              <div class="bug-description" style="margin-bottom: 12px;">{{ currentBug.result_feedback }}</div>
+              <n-descriptions :column="1" label-placement="left" bordered>
+                <n-descriptions-item label="预期结果">
+                  <div style="white-space: pre-line;">{{ currentBug.expected_result || '-' }}</div>
+                </n-descriptions-item>
+                <n-descriptions-item label="实际结果">
+                  <div style="white-space: pre-line;">{{ currentBug.actual_result || '-' }}</div>
+                </n-descriptions-item>
+              </n-descriptions>
+            </div>
+            <!-- 普通报告 -->
+            <n-descriptions v-else :column="1" label-placement="left" bordered>
               <n-descriptions-item label="预期结果">{{ currentBug.expected_result || '-' }}</n-descriptions-item>
               <n-descriptions-item label="实际结果">{{ currentBug.actual_result || '-' }}</n-descriptions-item>
               <n-descriptions-item label="分析">{{ currentBug.result_feedback }}</n-descriptions-item>
@@ -427,12 +445,20 @@ const parseSteps = (steps) => {
   if (Array.isArray(steps)) return steps
   if (typeof steps === 'string') {
     try {
-      return JSON.parse(steps)
+      const parsed = JSON.parse(steps)
+      if (Array.isArray(parsed)) return parsed
+      return steps.split('\n').filter(s => s.trim())
     } catch {
       return steps.split('\n').filter(s => s.trim())
     }
   }
   return []
+}
+
+// 判断是否为整合型 Bug 报告（一键测试会话汇总）
+const isConsolidatedBug = (bug) => {
+  if (!bug) return false
+  return bug.bug_name && bug.bug_name.includes('Bug汇总')
 }
 
 // 表格列定义

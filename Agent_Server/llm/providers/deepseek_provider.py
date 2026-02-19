@@ -219,11 +219,13 @@ class DeepSeekProvider(BaseOpenAICompatibleProvider):
         )
     
     def get_browser_use_llm(self) -> Any:
-        """获取 Browser-Use LLM 实例"""
+        """获取 Browser-Use LLM 实例（使用 LLMWrapper 确保结构化输出兼容）"""
+        from ..wrapper import wrap_llm
+        
         try:
             from browser_use.llm.openai.chat import ChatOpenAI as BrowserUseChatOpenAI
             
-            return BrowserUseChatOpenAI(
+            raw_llm = BrowserUseChatOpenAI(
                 model=self.config.model_name,
                 api_key=self.config.api_key,
                 base_url=self.config.base_url,
@@ -232,7 +234,10 @@ class DeepSeekProvider(BaseOpenAICompatibleProvider):
             )
         except ImportError:
             logger.warning("[DeepSeek] browser-use 未安装，回退到 LangChain")
-            return self.get_langchain_llm()
+            raw_llm = self.get_langchain_llm()
+        
+        # 用 LLMWrapper 包装，处理 output_format 和 action 格式修正
+        return wrap_llm(raw_llm)
     
     def supports_structured_output(self) -> bool:
         """DeepSeek 不支持结构化输出"""
@@ -248,6 +253,7 @@ class DeepSeekProvider(BaseOpenAICompatibleProvider):
           可能仍包含 <think>...</think> 标签（取决于 API 版本）
         - deepseek-chat 通常比较规范，但偶尔有 markdown 包裹
         - 可能在 JSON 后面追加解释文字
+        - 可能缺少逗号分隔符或有多余逗号
         """
         if not content:
             raise ValueError("LLM 响应为空")
@@ -272,8 +278,8 @@ class DeepSeekProvider(BaseOpenAICompatibleProvider):
         except json.JSONDecodeError:
             pass
 
-        # 5. 移除尾部逗号
-        fixed = re.sub(r',\s*([}\]])', r'\1', text)
+        # 5. 修复常见 JSON 格式问题
+        fixed = self._fix_common_json_issues(text)
         try:
             return json.loads(fixed)
         except json.JSONDecodeError:
@@ -283,10 +289,23 @@ class DeepSeekProvider(BaseOpenAICompatibleProvider):
         match = re.search(r'\{[\s\S]*\}', text)
         if match:
             try:
-                candidate = re.sub(r',\s*([}\]])', r'\1', match.group(0))
+                candidate = self._fix_common_json_issues(match.group(0))
                 return json.loads(candidate)
             except json.JSONDecodeError:
                 pass
 
         # 7. 回退到基类通用解析
         return super().parse_json_response(content)
+
+    @staticmethod
+    def _fix_common_json_issues(text: str) -> str:
+        """修复 DeepSeek 常见的 JSON 格式问题"""
+        # 移除尾部逗号: ,} 或 ,]
+        fixed = re.sub(r',\s*([}\]])', r'\1', text)
+        # 修复缺少逗号: "value"\n"key" → "value",\n"key"
+        fixed = re.sub(r'"\s*\n(\s*")', r'",\n\1', fixed)
+        # 修复缺少逗号: }\n{ 或 ]\n{
+        fixed = re.sub(r'(\})\s*\n(\s*\{)', r'\1,\n\2', fixed)
+        # 修复缺少逗号: true/false/null/数字 后面直接跟 "key"
+        fixed = re.sub(r'(true|false|null|\d+)\s*\n(\s*")', r'\1,\n\2', fixed)
+        return fixed

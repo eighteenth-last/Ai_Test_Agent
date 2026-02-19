@@ -30,6 +30,16 @@ class InstallSkillRequest(BaseModel):
 class ToggleSkillRequest(BaseModel):
     is_active: bool
 
+class TestEnvRequest(BaseModel):
+    name: str
+    base_url: str
+    login_url: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    extra_credentials: Optional[dict] = None
+    description: Optional[str] = None
+    is_default: Optional[int] = 0
+
 
 # ============ 一键测试 API ============
 
@@ -128,3 +138,120 @@ async def search_skills(q: str = ""):
     if not q:
         return {"success": False, "message": "请输入搜索关键词"}
     return await SkillManager.search_skills(q)
+
+
+# ============ 测试环境管理 API ============
+
+@router.get("/test-env/list")
+def list_test_envs(db: Session = Depends(get_db)):
+    """获取所有测试环境配置"""
+    from database.connection import TestEnvironment
+    envs = db.query(TestEnvironment).order_by(
+        TestEnvironment.is_default.desc(),
+        TestEnvironment.created_at.desc()
+    ).all()
+    return {
+        "success": True,
+        "data": [
+            {
+                "id": e.id,
+                "name": e.name,
+                "base_url": e.base_url,
+                "login_url": e.login_url,
+                "username": e.username,
+                "password": e.password,
+                "extra_credentials": e.extra_credentials,
+                "description": e.description,
+                "is_default": e.is_default,
+                "is_active": e.is_active,
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+            }
+            for e in envs
+        ]
+    }
+
+
+@router.post("/test-env/create")
+def create_test_env(req: TestEnvRequest, db: Session = Depends(get_db)):
+    """创建测试环境"""
+    from database.connection import TestEnvironment
+
+    # 如果设为默认，先取消其他默认
+    if req.is_default:
+        db.query(TestEnvironment).filter(
+            TestEnvironment.is_default == 1
+        ).update({"is_default": 0})
+
+    env = TestEnvironment(
+        name=req.name,
+        base_url=req.base_url,
+        login_url=req.login_url,
+        username=req.username,
+        password=req.password,
+        extra_credentials=req.extra_credentials,
+        description=req.description,
+        is_default=req.is_default or 0,
+    )
+    db.add(env)
+    db.commit()
+    db.refresh(env)
+    return {"success": True, "data": {"id": env.id}, "message": "创建成功"}
+
+
+@router.put("/test-env/{env_id}")
+def update_test_env(env_id: int, req: TestEnvRequest, db: Session = Depends(get_db)):
+    """更新测试环境"""
+    from database.connection import TestEnvironment
+
+    env = db.query(TestEnvironment).filter(TestEnvironment.id == env_id).first()
+    if not env:
+        return {"success": False, "message": "环境不存在"}
+
+    # 如果设为默认，先取消其他默认
+    if req.is_default and not env.is_default:
+        db.query(TestEnvironment).filter(
+            TestEnvironment.is_default == 1
+        ).update({"is_default": 0})
+
+    env.name = req.name
+    env.base_url = req.base_url
+    env.login_url = req.login_url
+    env.username = req.username
+    env.password = req.password
+    env.extra_credentials = req.extra_credentials
+    env.description = req.description
+    env.is_default = req.is_default or 0
+    db.commit()
+    return {"success": True, "message": "更新成功"}
+
+
+@router.delete("/test-env/{env_id}")
+def delete_test_env(env_id: int, db: Session = Depends(get_db)):
+    """删除测试环境"""
+    from database.connection import TestEnvironment
+
+    env = db.query(TestEnvironment).filter(TestEnvironment.id == env_id).first()
+    if not env:
+        return {"success": False, "message": "环境不存在"}
+    db.delete(env)
+    db.commit()
+    return {"success": True, "message": "删除成功"}
+
+
+@router.put("/test-env/{env_id}/set-default")
+def set_default_env(env_id: int, db: Session = Depends(get_db)):
+    """设置默认测试环境"""
+    from database.connection import TestEnvironment
+
+    env = db.query(TestEnvironment).filter(TestEnvironment.id == env_id).first()
+    if not env:
+        return {"success": False, "message": "环境不存在"}
+
+    # 取消所有默认
+    db.query(TestEnvironment).filter(
+        TestEnvironment.is_default == 1
+    ).update({"is_default": 0})
+
+    env.is_default = 1
+    db.commit()
+    return {"success": True, "message": "已设为默认"}

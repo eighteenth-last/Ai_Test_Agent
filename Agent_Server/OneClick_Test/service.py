@@ -24,15 +24,24 @@ from sqlalchemy.orm import Session
 
 from database.connection import (
     ExecutionCase, OneclickSession, Skill,
-    ExecutionBatch, TestRecord, TestReport, BugReport
+    ExecutionBatch, TestRecord, TestReport, BugReport,
+    TestEnvironment,
 )
 from llm.client import get_llm_client
 from llm.auto_switch import get_auto_switcher, classify_failure_reason
 from Api_request.prompts import (
     ONECLICK_INTENT_ANALYSIS_SYSTEM,
     ONECLICK_INTENT_ANALYSIS_USER_TEMPLATE,
+    ONECLICK_INTENT_ANALYSIS_V2_SYSTEM,
+    ONECLICK_INTENT_ANALYSIS_V2_USER_TEMPLATE,
     ONECLICK_GENERATE_CASES_SYSTEM,
     ONECLICK_GENERATE_CASES_USER_TEMPLATE,
+    ONECLICK_GENERATE_CASES_V2_SYSTEM,
+    ONECLICK_GENERATE_CASES_V2_USER_TEMPLATE,
+    ONECLICK_EXPLORE_SYSTEM,
+    ONECLICK_EXPLORE_TASK_TEMPLATE,
+    ONECLICK_SUBTASK_GENERATION_SYSTEM,
+    ONECLICK_SUBTASK_GENERATION_USER_TEMPLATE,
 )
 from OneClick_Test.session import SessionManager
 from OneClick_Test.skill_manager import SkillManager
@@ -54,11 +63,14 @@ class OneClickService:
     @staticmethod
     async def start_session(db: Session, user_input: str, skill_ids: List[int] = None) -> Dict:
         """
-        启动一键测试会话
+        启动一键测试会话（全自主流程）
+
+        流程：
         1. 创建会话
-        2. LLM 分析用户意图
-        3. 从数据库查询相关用例
-        4. 获取测试环境信息
+        2. LLM 分析用户意图（快速返回）
+        3. 从数据库获取测试环境
+        4. 后台异步执行：浏览器探索 → 子任务生成 → 用例生成
+        5. 前端通过轮询 session 获取进度
         """
         # 创建会话
         session = SessionManager.create_session(db, user_input)
@@ -67,46 +79,65 @@ class OneClickService:
         try:
             # 更新状态
             SessionManager.update_status(db, session, 'analyzing')
-            SessionManager.add_message(db, session, 'assistant', '正在分析您的需求...')
+            SessionManager.add_message(db, session, 'assistant', '🔍 正在分析您的需求...')
 
-            # 1. LLM 分析意图
-            intent = await OneClickService._analyze_intent(user_input, db)
+            # 1. LLM 分析意图（增强版）
+            intent = await OneClickService._analyze_intent_v2(user_input, db)
             logger.info(f"[OneClick] 意图分析: {intent}")
+            SessionManager.add_message(
+                db, session, 'assistant',
+                f'✅ 意图分析完成: {intent.get("test_scope", user_input)}'
+            )
 
-            # 2. 从数据库查询相关用例
-            existing_cases = OneClickService._query_related_cases(db, intent)
-            case_info = f"从数据库找到 {len(existing_cases)} 条相关用例" if existing_cases else "数据库中暂无相关用例"
-            SessionManager.add_message(db, session, 'assistant', f'✅ {case_info}')
-
-            # 3. 获取测试环境
-            env_info = OneClickService._get_env_info()
+            # 2. 获取测试环境
+            env_info = OneClickService._resolve_environment(intent, db)
             target_url = env_info.get('base_url', '')
+
+            if not target_url:
+                SessionManager.add_message(db, session, 'assistant',
+                    '⚠️ 未找到测试环境配置，请在「测试环境」中配置或在指令中提供URL')
+                session.status = 'failed'
+                db.commit()
+                return {"success": False, "session_id": session_id,
+                        "message": "未找到测试环境，请先配置或在指令中提供URL"}
+
             session.target_url = target_url
             session.login_info = json.dumps(env_info, ensure_ascii=False)
 
-            env_msg = f"✅ 测试环境: {target_url}"
-            SessionManager.add_message(db, session, 'assistant', env_msg)
-
-            # 4. 保存 skill_ids
-            if skill_ids:
-                session.skill_ids = json.dumps(skill_ids)
-
-            db.commit()
-
-            # 5. 生成测试用例
-            cases_result = await OneClickService._generate_test_cases(
-                db, session, user_input, intent, existing_cases, env_info, skill_ids
+            env_source = env_info.get('_source', '环境变量')
+            SessionManager.add_message(
+                db, session, 'assistant',
+                f'✅ 测试环境: {target_url}（来源: {env_source}）'
             )
 
+            if skill_ids:
+                session.skill_ids = json.dumps(skill_ids)
+            db.commit()
+
+            # 3. 启动后台异步任务（探索 + 生成）
+            SessionManager.add_message(db, session, 'assistant',
+                '🌐 正在启动浏览器探索目标页面，请稍候...')
+            db.commit()
+
+            asyncio.create_task(
+                OneClickService._background_explore_and_generate(
+                    session_id, user_input, intent, env_info, skill_ids
+                )
+            )
+
+            # 快速返回，前端通过轮询获取后续进度
             return {
                 "success": True,
                 "session_id": session_id,
                 "status": session.status,
                 "data": {
                     "intent": intent,
-                    "existing_cases_count": len(existing_cases),
+                    "existing_cases_count": 0,
                     "target_url": target_url,
-                    "generated_cases": cases_result.get("cases", []),
+                    "env_source": env_source,
+                    "page_exploration": None,
+                    "subtasks": [],
+                    "generated_cases": [],
                     "messages": SessionManager.get_messages(session),
                 }
             }
@@ -118,13 +149,108 @@ class OneClickService:
             db.commit()
             return {"success": False, "session_id": session_id, "message": str(e)}
 
+    @staticmethod
+    async def _background_explore_and_generate(
+        session_id: int, user_input: str, intent: Dict,
+        env_info: Dict, skill_ids: List[int] = None
+    ):
+        """
+        后台异步执行：浏览器探索 → 子任务生成 → 用例生成
+
+        独立数据库会话，不阻塞前端请求
+        """
+        from database.connection import SessionLocal
+        db = SessionLocal()
+
+        try:
+            session = SessionManager.get_session(db, session_id)
+            if not session:
+                logger.error(f"[OneClick] 后台任务：会话 {session_id} 不存在")
+                return
+
+            # 1. 浏览器探索
+            SessionManager.update_status(db, session, 'exploring')
+
+            explore_result = await OneClickService._explore_page(
+                db, session, intent, env_info
+            )
+
+            page_data = {}
+            subtasks = {}
+
+            if explore_result.get("success"):
+                page_data = explore_result.get("page_data", {})
+                session.page_analysis = json.dumps(page_data, ensure_ascii=False)
+                SessionManager.update_status(db, session, 'page_scanned')
+                db.commit()
+
+                sections = page_data.get("page_sections", [])
+                actions = page_data.get("available_actions", [])
+                SessionManager.add_message(
+                    db, session, 'assistant',
+                    f'✅ 页面探索完成！发现 {len(sections)} 个功能区域，'
+                    f'{len(actions)} 种可执行操作'
+                )
+
+                # 2. 生成子任务
+                SessionManager.add_message(db, session, 'assistant',
+                    '📋 正在规划测试子任务...')
+                subtasks = await OneClickService._generate_subtasks(
+                    user_input, page_data
+                )
+                subtask_list = subtasks.get("subtasks", [])
+                total_est = subtasks.get("total_estimated_cases", 0)
+                SessionManager.add_message(
+                    db, session, 'assistant',
+                    f'✅ 已规划 {len(subtask_list)} 个子任务，'
+                    f'预计生成 {total_est} 条测试用例'
+                )
+            else:
+                SessionManager.add_message(
+                    db, session, 'assistant',
+                    f'⚠️ 页面探索未完成: {explore_result.get("message", "未知原因")}，'
+                    f'将使用传统模式生成用例'
+                )
+                # 更新状态，让前端知道探索阶段已结束
+                SessionManager.update_status(db, session, 'page_scanned')
+
+            # 3. 查询相关用例
+            existing_cases = OneClickService._query_related_cases(db, intent)
+
+            # 4. 生成测试用例
+            await OneClickService._generate_test_cases(
+                db, session, user_input, intent, existing_cases, env_info,
+                skill_ids, page_data=page_data, subtasks=subtasks
+            )
+
+            logger.info(f"[OneClick] ✅ 后台任务完成: session_id={session_id}")
+
+        except Exception as e:
+            logger.error(f"[OneClick] 后台任务失败: {e}\n{traceback.format_exc()}")
+            try:
+                session = SessionManager.get_session(db, session_id)
+                if session and session.status not in ('cases_generated', 'completed', 'failed'):
+                    session.status = 'failed'
+                    SessionManager.add_message(db, session, 'assistant',
+                        f'❌ 后台处理失败: {str(e)}')
+                    db.commit()
+            except Exception:
+                pass
+        finally:
+            db.close()
+
     # ========== Phase 2: 用户确认 & 执行测试 ==========
 
     @staticmethod
     async def confirm_and_execute(
         db: Session, session_id: int, confirmed_cases: List[Dict] = None
     ) -> Dict:
-        """用户确认测试用例后执行"""
+        """
+        用户确认测试用例后执行（异步模式）
+
+        改进：不再阻塞等待全部执行完成，而是立即返回，
+        后台异步执行测试，前端通过轮询 session 获取实时进度。
+        """
         session = SessionManager.get_session(db, session_id)
         if not session:
             return {"success": False, "message": "会话不存在"}
@@ -149,8 +275,51 @@ class OneClickService:
             SessionManager.update_status(db, session, 'executing')
             SessionManager.add_message(db, session, 'assistant', '🚀 开始执行测试...')
 
+            # 启动后台异步任务执行测试，立即返回
+            asyncio.create_task(
+                OneClickService._background_execute(session_id, cases)
+            )
+
+            return {
+                "success": True,
+                "session_id": session_id,
+                "status": "executing",
+                "data": {
+                    "messages": SessionManager.get_messages(session),
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"[OneClick] 执行启动失败: {e}\n{traceback.format_exc()}")
+            session.status = 'failed'
+            SessionManager.add_message(db, session, 'assistant', f'❌ 执行异常: {str(e)}')
+            db.commit()
+            return {"success": False, "session_id": session_id, "message": str(e)}
+
+    @staticmethod
+    async def _background_execute(session_id: int, cases: List[Dict]):
+        """
+        后台异步执行测试用例
+
+        独立数据库会话，不阻塞前端请求。
+        前端通过轮询 /oneclick/session/{id} 获取实时进度。
+        """
+        from database.connection import SessionLocal
+        db = SessionLocal()
+
+        try:
+            session = SessionManager.get_session(db, session_id)
+            if not session:
+                logger.error(f"[OneClick] 后台执行：会话 {session_id} 不存在")
+                return
+
             # 执行测试
             result = await OneClickService._execute_tests(db, session, cases)
+
+            # 重新获取 session（防止过期）
+            session = SessionManager.get_session(db, session_id)
+            if not session:
+                return
 
             # 更新会话
             session.execution_result = json.dumps(result, ensure_ascii=False)
@@ -171,7 +340,7 @@ class OneClickService:
                     if report_info.get("report_id"):
                         msg += f"\n📄 测试报告已生成 (ID: {report_info['report_id']})"
                     if report_info.get("bug_count", 0) > 0:
-                        msg += f"\n🐛 已生成 {report_info['bug_count']} 条 Bug 报告"
+                        msg += f"\n🐛 已生成 Bug 报告（包含 {report_info['bug_count']} 个Bug）"
                     # 邮件发送结果
                     email_info = report_info.get("email", {})
                     if email_info.get("success"):
@@ -187,31 +356,29 @@ class OneClickService:
             SessionManager.add_message(db, session, 'assistant', msg)
             db.commit()
 
-            return {
-                "success": True,
-                "session_id": session_id,
-                "status": session.status,
-                "data": {
-                    "result": result,
-                    "messages": SessionManager.get_messages(session),
-                }
-            }
+            logger.info(f"[OneClick] ✅ 后台执行完成: session_id={session_id}")
 
         except Exception as e:
-            logger.error(f"[OneClick] 执行失败: {e}\n{traceback.format_exc()}")
-            session.status = 'failed'
-            SessionManager.add_message(db, session, 'assistant', f'❌ 执行异常: {str(e)}')
-            db.commit()
-            return {"success": False, "session_id": session_id, "message": str(e)}
+            logger.error(f"[OneClick] 后台执行失败: {e}\n{traceback.format_exc()}")
+            try:
+                session = SessionManager.get_session(db, session_id)
+                if session and session.status not in ('completed', 'failed'):
+                    session.status = 'failed'
+                    SessionManager.add_message(db, session, 'assistant',
+                        f'❌ 执行异常: {str(e)}')
+                    db.commit()
+            except Exception:
+                pass
         finally:
             # 清理运行状态
             _running_sessions.pop(session_id, None)
+            db.close()
 
     # ========== 内部方法 ==========
 
     @staticmethod
     async def _analyze_intent(user_input: str, db: Session) -> Dict:
-        """LLM 分析用户意图"""
+        """LLM 分析用户意图（旧版，保留兼容）"""
         llm = get_llm_client()
 
         # 获取数据库中已有的模块列表
@@ -244,6 +411,283 @@ class OneClickService:
                 "need_login": True,
                 "test_type": "功能测试"
             }
+
+    @staticmethod
+    async def _analyze_intent_v2(user_input: str, db: Session) -> Dict:
+        """LLM 分析用户意图（增强版：识别用户提供的 URL/凭据）"""
+        llm = get_llm_client()
+
+        # 获取数据库中已有的模块列表
+        modules = db.query(ExecutionCase.module).distinct().all()
+        module_list = [m[0] for m in modules if m[0]]
+
+        # 获取数据库中已配置的测试环境
+        envs = db.query(TestEnvironment).filter(TestEnvironment.is_active == 1).all()
+        env_list_parts = []
+        for env in envs:
+            default_tag = " [默认]" if env.is_default else ""
+            env_list_parts.append(
+                f"- {env.name}{default_tag}: {env.base_url}"
+                f" ({env.description or '无描述'})"
+            )
+        env_list = "\n".join(env_list_parts) if env_list_parts else "暂无配置"
+
+        user_prompt = ONECLICK_INTENT_ANALYSIS_V2_USER_TEMPLATE.format(
+            user_input=user_input,
+            module_list=', '.join(module_list) if module_list else '暂无',
+            env_list=env_list,
+        )
+
+        try:
+            response = llm.chat(
+                messages=[
+                    {"role": "system", "content": ONECLICK_INTENT_ANALYSIS_V2_SYSTEM},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.3,
+                response_format={"type": "json_object"}
+            )
+            result = llm.parse_json_response(response)
+            # 确保必要字段存在
+            result.setdefault("target_module", user_input)
+            result.setdefault("test_scope", user_input)
+            result.setdefault("keywords", user_input.split())
+            result.setdefault("need_login", True)
+            result.setdefault("test_type", "功能测试")
+            return result
+        except Exception as e:
+            logger.warning(f"[OneClick] 意图分析V2失败: {e}")
+            return {
+                "target_module": user_input,
+                "test_scope": user_input,
+                "keywords": user_input.split(),
+                "need_login": True,
+                "test_type": "功能测试",
+                "user_provided_url": None,
+                "user_provided_username": None,
+                "user_provided_password": None,
+                "navigation_hints": [],
+            }
+
+    @staticmethod
+    def _resolve_environment(intent: Dict, db: Session) -> Dict:
+        """
+        解析测试环境配置
+
+        优先级：
+        1. 用户在指令中明确提供的 URL/凭据
+        2. 数据库中的默认测试环境
+        3. 数据库中第一个激活的测试环境
+        4. 环境变量兜底
+        """
+        user_url = intent.get("user_provided_url")
+        user_username = intent.get("user_provided_username")
+        user_password = intent.get("user_provided_password")
+
+        # 1. 用户明确提供了 URL
+        if user_url:
+            return {
+                "base_url": user_url,
+                "login_url": user_url,
+                "username": user_username or "",
+                "password": user_password or "",
+                "headless": os.getenv("HEADLESS", "false").lower() == "true",
+                "_source": "用户输入",
+            }
+
+        # 2. 从数据库获取默认环境
+        default_env = db.query(TestEnvironment).filter(
+            TestEnvironment.is_default == 1,
+            TestEnvironment.is_active == 1,
+        ).first()
+
+        if not default_env:
+            # 3. 获取第一个激活的环境
+            default_env = db.query(TestEnvironment).filter(
+                TestEnvironment.is_active == 1,
+            ).first()
+
+        if default_env:
+            return {
+                "base_url": default_env.base_url,
+                "login_url": default_env.login_url or default_env.base_url,
+                "username": user_username or default_env.username or "",
+                "password": user_password or default_env.password or "",
+                "headless": os.getenv("HEADLESS", "false").lower() == "true",
+                "_source": f"数据库({default_env.name})",
+                "_env_id": default_env.id,
+            }
+
+        # 4. 环境变量兜底
+        base_url = os.getenv("API_BASE_URL", "")
+        if base_url:
+            return {
+                "base_url": base_url,
+                "login_url": base_url,
+                "username": user_username or "",
+                "password": user_password or "",
+                "headless": os.getenv("HEADLESS", "false").lower() == "true",
+                "_source": "环境变量",
+            }
+
+        return {"base_url": "", "_source": "未配置"}
+
+    @staticmethod
+    async def _explore_page(
+        db: Session, session: OneclickSession,
+        intent: Dict, env_info: Dict
+    ) -> Dict:
+        """
+        拉起浏览器，导航到目标页面并进行页面探索
+
+        流程：
+        1. 创建浏览器实例
+        2. 使用 browser-use Agent 执行探索任务
+        3. 收集页面结构、可交互元素、功能点
+        4. 关闭浏览器
+        5. 返回探索结果
+        """
+        explore_browser = None
+        try:
+            from llm import get_active_browser_use_llm
+            from browser_use import Agent, BrowserSession
+            from Execute_test.service import find_chrome_path
+
+            headless = env_info.get("headless", False)
+            chrome_path = os.getenv('BROWSER_PATH', '').strip() or find_chrome_path()
+
+            explore_browser = BrowserSession(
+                headless=headless,
+                disable_security=os.getenv('DISABLE_SECURITY', 'false').lower() == 'true',
+                executable_path=chrome_path if chrome_path else None,
+                minimum_wait_page_load_time=1.0,
+                wait_between_actions=0.8,
+                keep_alive=True,  # 保持存活，由 finally 块手动 kill
+            )
+
+            llm = get_active_browser_use_llm()
+            max_steps = int(os.getenv("EXPLORE_MAX_STEPS", "15"))
+
+            # 构建探索任务
+            target_url = env_info.get("login_url") or env_info.get("base_url", "")
+            username = env_info.get("username", "")
+            password = env_info.get("password", "")
+
+            # 只要环境中有凭据就传入（不依赖 need_login 判断）
+            login_instruction = ""
+            login_steps = ""
+            if username and password:
+                login_instruction = f"登录账号: {username}\n登录密码: {password}"
+                login_steps = (
+                    "2. 如果当前是登录页面，使用提供的账号密码完成登录，等待页面跳转\n"
+                )
+            else:
+                login_instruction = "未提供登录凭据（如需登录请在「测试环境」中配置账号密码）"
+                login_steps = "2. 如果需要登录，请观察登录页面结构并记录\n"
+
+            nav_hints = intent.get("navigation_hints", [])
+            nav_hints_text = " → ".join(nav_hints) if nav_hints else "根据页面导航自行探索"
+
+            explore_target = intent.get("target_module", intent.get("test_scope", ""))
+
+            task = ONECLICK_EXPLORE_TASK_TEMPLATE.format(
+                target_url=target_url,
+                login_instruction=login_instruction,
+                explore_target=explore_target,
+                navigation_hints=nav_hints_text,
+                login_steps=login_steps,
+            )
+
+            agent = Agent(
+                task=task,
+                llm=llm,
+                browser_session=explore_browser,
+                use_vision=os.getenv("LLM_USE_VISION", "false").lower() == "true",
+                max_actions_per_step=int(os.getenv("MAX_ACTIONS", "10")),
+                extend_system_message=ONECLICK_EXPLORE_SYSTEM,
+            )
+
+            logger.info(f"[OneClick] 🌐 开始页面探索: {target_url}")
+            SessionManager.add_message(db, session, 'assistant',
+                f'🔍 正在探索页面: {explore_target}...')
+
+            history = await agent.run(max_steps=max_steps)
+
+            # 解析探索结果
+            final_result = history.final_result() if hasattr(history, 'final_result') else ""
+            total_steps = len(history.history) if hasattr(history, 'history') else 0
+
+            logger.info(f"[OneClick] 🌐 页面探索完成，共 {total_steps} 步")
+
+            # 尝试从 final_result 中解析 JSON
+            page_data = {}
+            if final_result:
+                try:
+                    llm_client = get_llm_client()
+                    page_data = llm_client.parse_json_response(final_result)
+                except Exception:
+                    # 如果解析失败，将原始文本作为描述
+                    page_data = {
+                        "raw_description": final_result[:3000],
+                        "page_sections": [],
+                        "available_actions": [],
+                    }
+            else:
+                # Agent 未能成功完成探索（如 JSON 解析连续失败导致提前停止）
+                logger.warning(f"[OneClick] ⚠️ 页面探索未返回结果（Agent 可能因连续错误停止）")
+                return {
+                    "success": False,
+                    "message": "页面探索未返回结果，Agent 可能因连续错误提前停止"
+                }
+
+            page_data["explore_steps"] = total_steps
+            page_data["explore_url"] = target_url
+
+            return {"success": True, "page_data": page_data}
+
+        except Exception as e:
+            logger.error(f"[OneClick] 页面探索失败: {e}\n{traceback.format_exc()}")
+            return {"success": False, "message": str(e)}
+        finally:
+            if explore_browser:
+                try:
+                    await explore_browser.kill()
+                    logger.info("[OneClick] 🌐 探索浏览器已关闭")
+                except Exception as e:
+                    logger.warning(f"[OneClick] ⚠️ 关闭探索浏览器异常: {e}")
+
+    @staticmethod
+    async def _generate_subtasks(user_input: str, page_data: Dict) -> Dict:
+        """基于页面探索结果，LLM 生成测试子任务"""
+        llm = get_llm_client()
+
+        page_exploration_text = json.dumps(page_data, ensure_ascii=False, indent=2)
+        # 截断过长的探索结果
+        if len(page_exploration_text) > 8000:
+            page_exploration_text = page_exploration_text[:8000] + "\n... (已截断)"
+
+        user_prompt = ONECLICK_SUBTASK_GENERATION_USER_TEMPLATE.format(
+            user_input=user_input,
+            page_exploration=page_exploration_text,
+        )
+
+        try:
+            response = llm.chat(
+                messages=[
+                    {"role": "system", "content": ONECLICK_SUBTASK_GENERATION_SYSTEM},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.4,
+                max_tokens=6000,
+                response_format={"type": "json_object"}
+            )
+            result = llm.parse_json_response(response)
+            result.setdefault("subtasks", [])
+            result.setdefault("total_estimated_cases", 0)
+            return result
+        except Exception as e:
+            logger.warning(f"[OneClick] 子任务生成失败: {e}")
+            return {"subtasks": [], "total_estimated_cases": 0, "test_strategy": ""}
 
     @staticmethod
     def _query_related_cases(db: Session, intent: Dict) -> List[Dict]:
@@ -312,8 +756,10 @@ class OneClickService:
         existing_cases: List[Dict],
         env_info: Dict,
         skill_ids: List[int] = None,
+        page_data: Dict = None,
+        subtasks: Dict = None,
     ) -> Dict:
-        """LLM 生成测试用例"""
+        """LLM 生成测试用例（支持基于页面探索结果增强）"""
         llm = get_llm_client()
 
         # 构建上下文
@@ -330,8 +776,11 @@ class OneClickService:
         # 环境信息
         context_parts.append(f"\n## 测试环境：")
         context_parts.append(f"- 目标地址: {env_info.get('base_url', 'N/A')}")
+        if env_info.get('username'):
+            context_parts.append(f"- 登录账号: {env_info['username']}")
+            context_parts.append(f"- 登录密码: {env_info.get('password', '')}")
 
-        # Skills 知识（从 MinIO 以便签形式加载）
+        # Skills 知识
         skills_notes = SkillManager.load_skills_as_notes(
             db, skill_ids=skill_ids, task=user_input
         )
@@ -340,13 +789,37 @@ class OneClickService:
 
         context = "\n".join(context_parts)
 
-        system_prompt = ONECLICK_GENERATE_CASES_SYSTEM
+        # 根据是否有页面探索结果，选择不同的 prompt
+        has_exploration = page_data and page_data.get("page_sections")
 
-        user_prompt = ONECLICK_GENERATE_CASES_USER_TEMPLATE.format(
-            user_input=user_input,
-            intent_json=json.dumps(intent, ensure_ascii=False),
-            context=context,
-        )
+        if has_exploration:
+            # 使用 V2 prompt（基于探索结果）
+            page_exploration_text = json.dumps(page_data, ensure_ascii=False, indent=2)
+            if len(page_exploration_text) > 6000:
+                page_exploration_text = page_exploration_text[:6000] + "\n... (已截断)"
+
+            subtasks_text = ""
+            if subtasks and subtasks.get("subtasks"):
+                subtasks_text = json.dumps(subtasks, ensure_ascii=False, indent=2)
+                if len(subtasks_text) > 4000:
+                    subtasks_text = subtasks_text[:4000] + "\n... (已截断)"
+
+            system_prompt = ONECLICK_GENERATE_CASES_V2_SYSTEM
+            user_prompt = ONECLICK_GENERATE_CASES_V2_USER_TEMPLATE.format(
+                user_input=user_input,
+                intent_json=json.dumps(intent, ensure_ascii=False),
+                page_exploration=page_exploration_text,
+                subtasks=subtasks_text or "无子任务规划",
+                context=context,
+            )
+        else:
+            # 降级到传统模式
+            system_prompt = ONECLICK_GENERATE_CASES_SYSTEM
+            user_prompt = ONECLICK_GENERATE_CASES_USER_TEMPLATE.format(
+                user_input=user_input,
+                intent_json=json.dumps(intent, ensure_ascii=False),
+                context=context,
+            )
 
         try:
             SessionManager.add_message(db, session, 'assistant', '正在生成测试用例...')
@@ -370,17 +843,22 @@ class OneClickService:
             # 保存到会话
             session.generated_cases = json.dumps(cases, ensure_ascii=False)
             SessionManager.update_status(db, session, 'cases_generated')
+
+            mode_tag = "🔍 基于页面探索" if has_exploration else "📝 基于文本分析"
             SessionManager.add_message(
                 db, session, 'assistant',
-                f'✅ 已生成 {len(cases)} 条测试用例\n{summary}',
+                f'✅ 已生成 {len(cases)} 条测试用例（{mode_tag}）\n{summary}',
                 extra={"type": "cases_generated", "count": len(cases)}
             )
 
             return {"cases": cases, "summary": summary}
 
         except Exception as e:
-            logger.error(f"[OneClick] 生成用例失败: {e}")
+            logger.error(f"[OneClick] 生成用例失败: {e}\n{traceback.format_exc()}")
             SessionManager.add_message(db, session, 'assistant', f'⚠️ 用例生成失败: {str(e)}')
+            # 即使失败也要更新状态，否则前端轮询永远不会停止
+            session.generated_cases = json.dumps([], ensure_ascii=False)
+            SessionManager.update_status(db, session, 'cases_generated')
             return {"cases": [], "summary": ""}
 
     @staticmethod
@@ -898,56 +1376,99 @@ class OneClickService:
         except Exception as e:
             logger.warning(f"[OneClick] 保存测试报告失败: {e}")
 
-        # ---- 2. 为失败用例生成 Bug 报告 ----
+        # ---- 2. 将所有失败用例整合为一条 Bug 报告 ----
+        failed_items = []
+        highest_severity = "四级"
+        severity_rank = {"一级": 1, "二级": 2, "三级": 3, "四级": 4}
+        error_types_set = set()
+
         for r in results_list:
             status = r.get("status", "")
             if status not in ("fail", "error"):
                 continue
 
+            idx = r.get("index", 0) - 1
+            case = cases[idx] if 0 <= idx < len(cases) else {}
+
+            # 根据状态判断严重程度
+            if status == "error":
+                severity = "一级"
+                error_type = "系统错误"
+            elif "rate_limited" in r.get("message", ""):
+                severity = "三级"
+                error_type = "环境问题"
+            else:
+                severity = "二级"
+                error_type = "功能错误"
+
+            error_types_set.add(error_type)
+            if severity_rank.get(severity, 4) < severity_rank.get(highest_severity, 4):
+                highest_severity = severity
+
+            failed_items.append({
+                "title": r.get("title", "未知用例"),
+                "status": status,
+                "severity": severity,
+                "error_type": error_type,
+                "expected": case.get("expected", ""),
+                "actual": (r.get("message", "") or "")[:500],
+                "steps": case.get("steps", []),
+            })
+
+        bug_count = len(failed_items)
+
+        if bug_count > 0:
             try:
-                idx = r.get("index", 0) - 1
-                case = cases[idx] if 0 <= idx < len(cases) else {}
+                # 整合复现步骤：每个失败用例作为一个段落
+                reproduce_sections = []
+                actual_sections = []
+                expected_sections = []
+                for i, item in enumerate(failed_items, 1):
+                    reproduce_sections.append(f"【Bug {i}】{item['title']}（{item['severity']}/{item['error_type']}）")
+                    steps = item["steps"]
+                    if isinstance(steps, list):
+                        for s_idx, step in enumerate(steps, 1):
+                            step_text = step if isinstance(step, str) else json.dumps(step, ensure_ascii=False)
+                            reproduce_sections.append(f"  {s_idx}. {step_text}")
+                    else:
+                        reproduce_sections.append(f"  {steps}")
+                    reproduce_sections.append("")
 
-                # 根据状态判断严重程度
-                if status == "error":
-                    severity = "一级"
-                    error_type = "系统错误"
-                elif "rate_limited" in r.get("message", ""):
-                    severity = "三级"
-                    error_type = "环境问题"
-                else:
-                    severity = "二级"
-                    error_type = "功能错误"
+                    expected_sections.append(f"【Bug {i}】{item['title']}: {item['expected']}")
+                    actual_sections.append(f"【Bug {i}】{item['title']}: {item['actual']}")
 
-                steps = case.get("steps", [])
-                if isinstance(steps, list):
-                    reproduce_text = json.dumps(steps, ensure_ascii=False)
-                else:
-                    reproduce_text = str(steps)
+                reproduce_text = "\n".join(reproduce_sections)
+                expected_text = "\n".join(expected_sections)
+                actual_text = "\n".join(actual_sections)
+
+                # 汇总反馈
+                feedback_lines = [f"本次一键测试共发现 {bug_count} 个问题："]
+                for i, item in enumerate(failed_items, 1):
+                    feedback_lines.append(f"  {i}. [{item['severity']}][{item['error_type']}] {item['title']}")
+                feedback_text = "\n".join(feedback_lines)
+
+                combined_error_type = "/".join(sorted(error_types_set)) if error_types_set else "功能错误"
 
                 bug = BugReport(
                     test_record_id=None,
-                    bug_name=f"[一键测试] {r.get('title', '未知用例')}",
+                    bug_name=f"[一键测试] 会话#{session.id} Bug汇总（{bug_count}项）",
                     test_case_id=None,
                     location_url=session.target_url or "",
-                    error_type=error_type,
-                    severity_level=severity,
-                    reproduce_steps=reproduce_text,
-                    result_feedback=r.get("message", "")[:2000],
-                    expected_result=case.get("expected", ""),
-                    actual_result=r.get("message", "")[:1000],
+                    error_type=combined_error_type,
+                    severity_level=highest_severity,
+                    reproduce_steps=reproduce_text[:5000],
+                    result_feedback=feedback_text[:2000],
+                    expected_result=expected_text[:2000],
+                    actual_result=actual_text[:2000],
                     status="待处理",
-                    description=f"一键测试会话 #{session.id} 中用例 [{r.get('title', '')}] 执行{status}",
+                    description=f"一键测试会话 #{session.id}（{session.user_input[:50]}）共发现 {bug_count} 个Bug",
                     case_type="功能测试",
                     execution_mode="一键测试",
                 )
                 db.add(bug)
-                bug_count += 1
+                logger.info(f"[OneClick] 🐛 已生成 1 条整合 Bug 报告（包含 {bug_count} 个Bug）")
             except Exception as e:
                 logger.warning(f"[OneClick] 保存 Bug 报告失败: {e}")
-
-        if bug_count > 0:
-            logger.info(f"[OneClick] 🐛 已生成 {bug_count} 条 Bug 报告")
 
         try:
             db.commit()

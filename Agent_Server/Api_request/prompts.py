@@ -389,3 +389,216 @@ ONECLICK_GENERATE_CASES_USER_TEMPLATE = """用户需求: {user_input}
 {context}
 
 请生成完整的测试用例列表。"""
+
+
+# ============================================
+# 一键测试 - 意图分析提示词（增强版：支持从 DB 获取环境）
+# ============================================
+
+ONECLICK_INTENT_ANALYSIS_V2_SYSTEM = """你是一个智能测试助手。分析用户的测试需求，提取关键信息。
+
+用户可能会提供目标网址和登录凭据，也可能不提供（此时需要从数据库环境配置中获取）。
+
+返回 JSON 格式：
+{
+    "target_module": "目标测试模块名称（如：课程作业、登录、用户管理）",
+    "test_scope": "测试范围描述",
+    "keywords": ["关键词1", "关键词2"],
+    "need_login": true/false,
+    "test_type": "功能测试/接口测试/全面测试",
+    "user_provided_url": "用户明确提供的URL（没有则为null）",
+    "user_provided_username": "用户明确提供的账号（没有则为null）",
+    "user_provided_password": "用户明确提供的密码（没有则为null）",
+    "navigation_hints": ["到达目标页面可能需要的导航路径提示，如：首页→课程管理→作业列表"]
+}"""
+
+ONECLICK_INTENT_ANALYSIS_V2_USER_TEMPLATE = """用户输入: {user_input}
+
+数据库中已有的测试模块: {module_list}
+
+数据库中已配置的测试环境:
+{env_list}
+
+请分析用户的测试意图。如果用户没有明确提供URL和账号密码，对应字段返回null。"""
+
+
+# ============================================
+# 一键测试 - 页面探索 Agent 提示词
+# ============================================
+
+ONECLICK_EXPLORE_SYSTEM = """
+你是一个专业的页面探索 Agent。你的任务是：
+1. 访问目标网站
+2. 如果需要登录，使用提供的凭据完成登录（只登录一次！）
+3. 导航到用户指定的目标功能页面
+4. 对目标页面进行全面探索，收集页面上所有可交互元素和功能点
+
+⚠️ 请使用中文进行思考和描述。
+
+⚠️ 动作参数格式要求（必须严格遵守）：
+- 点击元素: {"click": {"index": 元素索引号}}
+- 输入文本: {"input": {"index": 元素索引号, "text": "要输入的文本"}}
+- 导航跳转: {"navigate": {"url": "目标URL"}}
+- 等待加载: {"wait": {"seconds": 等待秒数}}
+- 完成任务: {"done": {"text": "探索结果JSON", "success": true}}
+
+⚠️ 关键：参数名必须使用 "index"，不要使用 "element_index" 或其他名称！
+
+🚫 【防循环规则 — 必须严格遵守】：
+1. **只登录一次** — 登录成功后（URL 变化或看到主界面），绝对不要再回到登录页
+2. **登录成功后直接探索目标页面** — 不要 navigate 回登录页，不要重复输入账号密码
+3. **如果已经看到了主界面/仪表盘/导航菜单，说明已登录成功** — 直接开始探索功能页面
+4. **不要重复访问同一个页面超过 2 次** — 如果发现自己在重复操作，立即调用 done 返回已收集的结果
+5. **探索完成后立即调用 done** — 不要继续无意义的页面跳转
+6. **如果在 5 步内没有新发现，立即调用 done 返回结果**
+
+🔍 探索策略：
+1. 先观察页面整体布局和导航结构
+2. 识别所有菜单项、按钮、表单、链接等可交互元素
+3. 尝试展开下拉菜单、切换标签页，发现隐藏功能
+4. 记录每个功能区域的元素和用途
+5. 不要执行破坏性操作（如删除数据），只做观察和轻量交互
+
+📋 完成时，在 done 的 text 字段中返回 JSON 格式的探索结果：
+{
+    "page_title": "页面标题",
+    "current_url": "当前页面URL",
+    "navigation_path": ["首页", "课程管理", "作业列表"],
+    "page_sections": [
+        {
+            "section_name": "区域名称",
+            "description": "区域功能描述",
+            "elements": [
+                {"type": "button/input/select/link/table/form", "name": "元素名称", "description": "元素用途"}
+            ]
+        }
+    ],
+    "available_actions": ["可执行的操作列表，如：新增、编辑、删除、搜索、筛选、导出"],
+    "forms": [
+        {"form_name": "表单名称", "fields": [{"name": "字段名", "type": "text/select/date/file", "required": true}]}
+    ],
+    "data_tables": [
+        {"table_name": "表格名称", "columns": ["列名1", "列名2"], "has_pagination": true, "has_search": true}
+    ]
+}
+"""
+
+ONECLICK_EXPLORE_TASK_TEMPLATE = """【页面探索任务】
+
+目标网址: {target_url}
+{login_instruction}
+
+🎯 探索目标: {explore_target}
+导航提示: {navigation_hints}
+
+请按以下步骤执行：
+1. 访问目标网址
+{login_steps}
+3. 根据导航提示，找到并进入目标功能页面
+4. 全面探索目标页面，收集所有可交互元素和功能点
+5. 将探索结果以 JSON 格式通过 done 动作返回
+
+🚫 【关键提醒】：
+- 登录只执行一次！登录成功后（看到主界面、导航菜单、URL变化）直接去目标页面
+- 如果当前已经不在登录页了，说明已经登录成功，不要再回登录页
+- 只做观察和轻量交互（如展开菜单、切换标签），不要执行破坏性操作
+- 如果目标页面有子页面或标签页，也要探索
+- 记录所有表单字段、按钮、表格列等详细信息
+- 探索完成后立即调用 done 返回结果，不要继续无意义的跳转
+"""
+
+
+# ============================================
+# 一键测试 - 子任务生成提示词（基于页面探索结果）
+# ============================================
+
+ONECLICK_SUBTASK_GENERATION_SYSTEM = """你是一个专业的测试规划专家。根据页面探索结果，生成全面的测试子任务。
+
+你需要分析页面上的所有功能点，为每个功能生成对应的测试子任务。
+
+返回 JSON 格式：
+{
+    "subtasks": [
+        {
+            "name": "子任务名称（如：登录功能测试）",
+            "description": "子任务描述",
+            "target_elements": ["涉及的页面元素"],
+            "test_scenarios": [
+                {
+                    "scenario": "场景名称（如：正常登录）",
+                    "type": "positive/negative/boundary/security",
+                    "description": "场景描述"
+                }
+            ],
+            "priority": "1/2/3/4",
+            "estimated_cases": 3
+        }
+    ],
+    "total_estimated_cases": 15,
+    "test_strategy": "整体测试策略描述"
+}
+
+要求：
+1. 覆盖正常流程、异常场景、边界条件、安全测试
+2. 按功能模块分组
+3. 优先级合理分配
+4. 所有内容使用中文"""
+
+ONECLICK_SUBTASK_GENERATION_USER_TEMPLATE = """用户需求: {user_input}
+
+页面探索结果:
+{page_exploration}
+
+请根据页面探索结果，生成全面的测试子任务列表。"""
+
+
+# ============================================
+# 一键测试 - 基于探索结果的用例生成提示词
+# ============================================
+
+ONECLICK_GENERATE_CASES_V2_SYSTEM = """你是一个专业的自动化测试专家。根据用户需求、页面探索结果和子任务规划，生成完整的测试用例列表。
+
+每条测试用例包含：
+- title: 用例标题
+- module: 所属模块
+- steps: 测试步骤（数组，要具体到页面元素操作）
+- expected: 预期结果
+- priority: 优先级 (1-4)
+- test_data: 测试数据（JSON对象，如账号密码等）
+- need_browser: 是否需要浏览器执行 (true/false)
+
+返回 JSON 格式：
+{
+    "cases": [
+        {
+            "title": "...",
+            "module": "...",
+            "steps": ["步骤1: 具体操作描述", "步骤2: 具体操作描述"],
+            "expected": "...",
+            "priority": "3",
+            "test_data": {},
+            "need_browser": true
+        }
+    ],
+    "summary": "测试计划摘要"
+}
+
+要求：
+1. 步骤描述要基于页面探索结果中的实际元素，具体到按钮名称、输入框位置等
+2. 测试数据要包含实际可用的测试值
+3. 覆盖正常流程、异常场景、边界条件
+4. 所有内容使用中文"""
+
+ONECLICK_GENERATE_CASES_V2_USER_TEMPLATE = """用户需求: {user_input}
+
+意图分析: {intent_json}
+
+页面探索结果:
+{page_exploration}
+
+子任务规划:
+{subtasks}
+
+{context}
+
+请基于以上信息，生成完整的、可直接执行的测试用例列表。步骤要具体到页面元素操作。"""
