@@ -51,6 +51,7 @@ def _load_providers():
     from .providers.azure_provider import AzureOpenAIProvider
     from .providers.mistral_provider import MistralProvider
     from .providers.moonshot_provider import MoonshotProvider
+    from .providers.minimax_provider import MiniMaxProvider
     from .providers.generic_provider import (
         GenericOpenAIProvider,
         SiliconFlowProvider,
@@ -70,6 +71,7 @@ def _load_providers():
         "azure_openai": AzureOpenAIProvider,
         "mistral": MistralProvider,
         "moonshot": MoonshotProvider,
+        "minimax": MiniMaxProvider,
         
         # 通用 OpenAI 兼容 Provider
         "siliconflow": SiliconFlowProvider,

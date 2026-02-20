@@ -1,7 +1,7 @@
 """
-Moonshot/Kimi Provider 实现
+MiniMax Provider 实现
 
-支持月之暗面 Moonshot 系列模型，兼容 OpenAI API
+支持 MiniMax 系列模型（abab6.5s、abab6.5、abab5.5s 等），兼容 OpenAI API
 
 作者: Ai_Test_Agent Team
 """
@@ -17,75 +17,99 @@ from ..config import PROVIDER_DEFAULT_ENDPOINTS, get_api_key_env_var
 logger = logging.getLogger(__name__)
 
 
-class MoonshotProvider(BaseOpenAICompatibleProvider):
+class MiniMaxProvider(BaseOpenAICompatibleProvider):
     """
-    Moonshot/Kimi Provider
-    
-    支持 Moonshot 系列模型
+    MiniMax Provider
+
+    支持 MiniMax 系列模型:
+    - abab6.5s-chat
+    - abab6.5-chat
+    - abab5.5s-chat
+    - abab5.5-chat
     """
-    
+
     @property
     def provider_name(self) -> str:
-        return "Moonshot"
-    
+        return "MiniMax"
+
     @property
     def provider_type(self) -> ProviderType:
-        return ProviderType.MOONSHOT
-    
+        return ProviderType.MINIMAX
+
     def __init__(self, config: LLMConfig):
         # 设置默认 base_url
         if not config.base_url:
             config.base_url = os.getenv(
-                "MOONSHOT_ENDPOINT",
-                PROVIDER_DEFAULT_ENDPOINTS.get("moonshot", "https://api.moonshot.cn/v1")
+                "MINIMAX_ENDPOINT",
+                PROVIDER_DEFAULT_ENDPOINTS.get("minimax", "https://api.minimax.chat/v1"),
             )
-        
+
         # 从环境变量获取 API Key
         if not config.api_key:
-            env_var = get_api_key_env_var("moonshot")
+            env_var = get_api_key_env_var("minimax")
             config.api_key = os.getenv(env_var, "")
-        
+
         super().__init__(config)
-    
+
     def get_langchain_llm(self) -> Any:
         """获取 LangChain LLM 实例"""
         from langchain_openai import ChatOpenAI
-        
+
         return ChatOpenAI(
             model=self.config.model_name,
             api_key=self.config.api_key,
             base_url=self.config.base_url,
             temperature=self.config.temperature,
+            max_tokens=self.config.max_tokens,
         )
-    
+
     def get_browser_use_llm(self) -> Any:
-        """获取 Browser-Use LLM 实例"""
-        try:
-            from browser_use.llm.openai.chat import ChatOpenAI as BrowserUseChatOpenAI
-            
-            return BrowserUseChatOpenAI(
-                model=self.config.model_name,
-                api_key=self.config.api_key,
-                base_url=self.config.base_url,
-                temperature=self.config.temperature,
-                dont_force_structured_output=True,  # Moonshot 可能不完全支持结构化输出
-            )
-        except ImportError:
-            logger.warning("[Moonshot] browser-use 未安装，回退到 LangChain")
-            return self.get_langchain_llm()
-    
+        """
+        获取 Browser-Use LLM 实例
+
+        使用 langchain_openai.ChatOpenAI + LLMWrapper，而非 BrowserUseChatOpenAI。
+        原因：BrowserUseChatOpenAI 的序列化器不接受 LangChain 消息类型，
+        而 LLMWrapper 会将消息转为 LangChain 类型，两者冲突。
+        """
+        from ..wrapper import wrap_llm
+        from langchain_openai import ChatOpenAI
+
+        timeout = max(self.config.timeout, 120)
+
+        raw_llm = ChatOpenAI(
+            model=self.config.model_name,
+            api_key=self.config.api_key,
+            base_url=self.config.base_url,
+            temperature=self.config.temperature,
+            request_timeout=timeout,
+        )
+
+        # MiniMax 特有的 action 别名
+        minimax_aliases = {
+            'extract_content': 'extract',
+            'scroll_down': 'scroll',
+            'scroll_up': 'scroll',
+            'click_element': 'click',
+            'input_text': 'input',
+            'evaluate': 'run_javascript',
+            'execute_js': 'run_javascript',
+            'go_to_url': 'navigate',
+        }
+
+        return wrap_llm(raw_llm, action_aliases=minimax_aliases)
+
     def supports_structured_output(self) -> bool:
-        """Moonshot 可能不完全支持结构化输出"""
+        """MiniMax 不支持结构化输出"""
         return False
 
     def parse_json_response(self, content: str) -> dict:
         """
-        Moonshot/Kimi JSON 解析
+        MiniMax JSON 解析
 
-        Moonshot 的特点：
-        - 不完全支持 response_format=json_object
-        - 输出通常比较规范，但偶尔有 markdown 包裹
-        - 可能在 JSON 前加 "以下是..." 等中文前缀
+        MiniMax 的特点：
+        - 不支持 response_format=json_object
+        - 输出通常比较规范，偶尔有 markdown 代码块包裹
+        - 可能在 JSON 前后加中文说明文字
         """
         if not content:
             raise ValueError("LLM 响应为空")
@@ -122,10 +146,10 @@ class MoonshotProvider(BaseOpenAICompatibleProvider):
             from json_repair import repair_json
             repaired = repair_json(text, return_objects=True)
             if isinstance(repaired, dict):
-                logger.info(f"[Moonshot] json_repair 成功修复 JSON ({len(text)} 字符)")
+                logger.info(f"[MiniMax] json_repair 成功修复 JSON ({len(text)} 字符)")
                 return repaired
         except Exception as e:
-            logger.debug(f"[Moonshot] json_repair 失败: {e}")
+            logger.debug(f"[MiniMax] json_repair 失败: {e}")
 
         # 6. 回退到基类
         return super().parse_json_response(content)

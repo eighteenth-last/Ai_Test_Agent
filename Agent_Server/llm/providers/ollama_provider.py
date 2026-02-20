@@ -363,5 +363,15 @@ class OllamaProvider(BaseLLMProvider):
             except json.JSONDecodeError:
                 pass
 
-        # 8. 回退到基类
+        # 8. 使用 json_repair 库修复
+        try:
+            from json_repair import repair_json
+            repaired = repair_json(text, return_objects=True)
+            if isinstance(repaired, dict):
+                logger.info(f"[Ollama] json_repair 成功修复 JSON ({len(text)} 字符)")
+                return repaired
+        except Exception as e:
+            logger.debug(f"[Ollama] json_repair 失败: {e}")
+
+        # 9. 回退到基类
         return super().parse_json_response(content)

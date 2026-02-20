@@ -17,6 +17,48 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _find_matching_brace(text: str) -> int:
+    """
+    找到与第一个 '{' 匹配的 '}' 的位置索引。
+    正确处理 JSON 字符串中的转义字符和嵌套括号。
+    返回 -1 表示未找到匹配。
+    """
+    if not text or text[0] != '{':
+        return -1
+
+    depth = 0
+    in_string = False
+    escape_next = False
+    i = 0
+
+    while i < len(text):
+        ch = text[i]
+
+        if escape_next:
+            escape_next = False
+            i += 1
+            continue
+
+        if ch == '\\' and in_string:
+            escape_next = True
+            i += 1
+            continue
+
+        if ch == '"' and not escape_next:
+            in_string = not in_string
+        elif not in_string:
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    return i
+
+        i += 1
+
+    return -1
+
+
 class ProviderType(Enum):
     """Provider 类型枚举"""
     OPENAI = "openai"
@@ -47,7 +89,7 @@ class LLMConfig:
     base_url: str = ""
     temperature: float = 0.0
     max_tokens: int = 4096
-    timeout: int = 60
+    timeout: int = 180
     
     # 可选配置
     api_version: str = ""  # Azure OpenAI 需要
@@ -297,10 +339,8 @@ class BaseLLMProvider(ABC):
 
         text = content.strip()
 
-        # 1. 剥离推理标签 <think>...</think>（DeepSeek R1、Ollama deepseek-r1 等）
-        if "<think>" in text and "</think>" in text:
-            parts = text.split("</think>", 1)
-            text = parts[1].strip() if len(parts) >= 2 else text
+        # 1. 剥离所有 <think>...</think> 推理标签（包括嵌在 JSON 字段值内的）
+        text = re.sub(r'<think>[\s\S]*?</think>', '', text).strip()
 
         # 2. 剥离 **JSON Response:** 格式（Ollama 常见）
         if "**JSON Response:**" in text:
@@ -309,20 +349,48 @@ class BaseLLMProvider(ABC):
         # 3. 剥离 markdown 代码块
         text = self._extract_json(text)
 
-        # 4. 直接尝试解析
+        # 4. 如果不是以 { 开头，找到第一个 {
+        if text and text[0] != '{':
+            idx = text.find('{')
+            if idx >= 0:
+                text = text[idx:]
+
+        # 5. 用括号匹配提取完整 JSON 对象（解决 Extra data / trailing characters）
+        if text and text.startswith('{'):
+            end_idx = _find_matching_brace(text)
+            if end_idx > 0:
+                extracted = text[:end_idx + 1]
+                if end_idx < len(text) - 1:
+                    logger.debug(
+                        f"[parse_json_response] 括号匹配截断: "
+                        f"原始 {len(text)} → 提取 {len(extracted)} 字符"
+                    )
+                text = extracted
+
+        # 6. 直接尝试解析
         try:
             return json.loads(text)
         except json.JSONDecodeError:
             pass
 
-        # 5. 移除尾部逗号: ,] → ] 和 ,} → }
+        # 7. 移除尾部逗号: ,] → ] 和 ,} → }
         fixed = re.sub(r',\s*([}\]])', r'\1', text)
         try:
             return json.loads(fixed)
         except json.JSONDecodeError:
             pass
 
-        # 6. 修复截断的 JSON（补全缺失的括号）
+        # 7.5 修复缺少逗号: "value"\n"key" → "value",\n"key" 等
+        fixed2 = re.sub(r'"\s*\n(\s*")', r'",\n\1', fixed)
+        fixed2 = re.sub(r'(\})\s*\n(\s*\{)', r'\1,\n\2', fixed2)
+        fixed2 = re.sub(r'(true|false|null|\d+)\s*\n(\s*")', r'\1,\n\2', fixed2)
+        if fixed2 != fixed:
+            try:
+                return json.loads(fixed2)
+            except json.JSONDecodeError:
+                pass
+
+        # 8. 修复截断的 JSON（补全缺失的括号）
         open_braces = fixed.count('{') - fixed.count('}')
         open_brackets = fixed.count('[') - fixed.count(']')
         if open_braces > 0 or open_brackets > 0:
@@ -339,17 +407,17 @@ class BaseLLMProvider(ABC):
             except json.JSONDecodeError:
                 pass
 
-        # 7. 提取第一个 JSON 对象（Anthropic 常在 JSON 前后加解释文字）
-        match = re.search(r'\{[\s\S]*\}', text)
-        if match:
-            try:
-                candidate = match.group(0)
-                candidate = re.sub(r',\s*([}\]])', r'\1', candidate)
-                return json.loads(candidate)
-            except json.JSONDecodeError:
-                pass
+        # 9. 使用 json_repair 库作为最终修复手段
+        try:
+            from json_repair import repair_json
+            repaired = repair_json(text, return_objects=True)
+            if isinstance(repaired, dict):
+                logger.info(f"[parse_json_response] json_repair 成功修复 JSON ({len(text)} 字符)")
+                return repaired
+        except Exception as e:
+            logger.debug(f"[parse_json_response] json_repair 也失败: {e}")
 
-        # 8. 全部失败，抛出原始错误
+        # 10. 全部失败，抛出原始错误
         return json.loads(text)
     
     def __repr__(self) -> str:

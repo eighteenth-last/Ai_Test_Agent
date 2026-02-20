@@ -56,3 +56,6 @@ langchain-core<2.0.0,>=1.2.6
 
 # ====================== Pydantic & Validation ======================
 pydantic[email]>=2.0.0    # 包含 email-validator 支持
+
+# ====================== JSON Repair ================================
+json-repair                # 修复 LLM 输出的畸形 JSON

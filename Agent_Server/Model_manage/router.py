@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from datetime import datetime
 
 from database.connection import get_db, LLMModel, ModelProvider, TokenUsageLog
+from llm.client import get_llm_client
 
 router = APIRouter(
     prefix="/api/models",
@@ -107,7 +108,7 @@ async def get_models(db: Session = Depends(get_db)):
 
 @router.get("/providers", response_model=dict)
 async def get_model_providers(db: Session = Depends(get_db)):
-    """获取所有模型供应商列表"""
+    """获取所有模型供应商列表（仅启用的，用于下拉选择）"""
     try:
         providers = db.query(ModelProvider).filter(
             ModelProvider.is_active == 1
@@ -132,6 +133,194 @@ async def get_model_providers(db: Session = Depends(get_db)):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取供应商列表失败: {str(e)}")
+
+
+# ============================================
+# 供应商管理 API
+# ============================================
+
+class ProviderCreate(BaseModel):
+    """创建供应商的请求模型"""
+    name: str
+    code: str
+    display_name: str
+    default_base_url: str = None
+    is_active: int = 1
+    sort_order: int = 0
+    description: str = None
+
+
+class ProviderUpdate(BaseModel):
+    """更新供应商的请求模型"""
+    name: str = None
+    code: str = None
+    display_name: str = None
+    default_base_url: str = None
+    is_active: int = None
+    sort_order: int = None
+    description: str = None
+
+
+@router.get("/providers/all", response_model=dict)
+async def get_all_providers(db: Session = Depends(get_db)):
+    """获取所有供应商列表（包含禁用的，用于供应商管理页面）"""
+    try:
+        providers = db.query(ModelProvider).order_by(ModelProvider.sort_order).all()
+
+        # 统计每个供应商下的模型数量
+        from sqlalchemy import func
+        model_counts = dict(
+            db.query(LLMModel.provider, func.count(LLMModel.id))
+            .group_by(LLMModel.provider).all()
+        )
+
+        provider_list = [
+            {
+                "id": p.id,
+                "name": p.name,
+                "code": p.code,
+                "display_name": p.display_name,
+                "default_base_url": p.default_base_url,
+                "is_active": p.is_active,
+                "sort_order": p.sort_order,
+                "description": p.description,
+                "model_count": model_counts.get(p.code, 0),
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+                "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+            }
+            for p in providers
+        ]
+
+        return {"success": True, "data": provider_list}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取供应商列表失败: {str(e)}")
+
+
+@router.post("/providers", response_model=dict)
+async def create_provider(data: ProviderCreate, db: Session = Depends(get_db)):
+    """创建新供应商"""
+    try:
+        existing = db.query(ModelProvider).filter(
+            (ModelProvider.code == data.code) | (ModelProvider.name == data.name)
+        ).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="供应商名称或代码已存在")
+
+        provider = ModelProvider(
+            name=data.name,
+            code=data.code,
+            display_name=data.display_name,
+            default_base_url=data.default_base_url,
+            is_active=data.is_active,
+            sort_order=data.sort_order,
+            description=data.description,
+        )
+        db.add(provider)
+        db.commit()
+        db.refresh(provider)
+
+        return {
+            "success": True,
+            "message": "供应商创建成功",
+            "data": {"id": provider.id, "name": provider.name, "code": provider.code}
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"创建供应商失败: {str(e)}")
+
+
+@router.put("/providers/{provider_id}", response_model=dict)
+async def update_provider(provider_id: int, data: ProviderUpdate, db: Session = Depends(get_db)):
+    """更新供应商信息"""
+    try:
+        provider = db.query(ModelProvider).filter(ModelProvider.id == provider_id).first()
+        if not provider:
+            raise HTTPException(status_code=404, detail="供应商不存在")
+
+        update_data = data.dict(exclude_unset=True)
+
+        # 检查 code/name 唯一性
+        if "code" in update_data and update_data["code"] != provider.code:
+            dup = db.query(ModelProvider).filter(
+                ModelProvider.code == update_data["code"], ModelProvider.id != provider_id
+            ).first()
+            if dup:
+                raise HTTPException(status_code=400, detail="供应商代码已被使用")
+
+        if "name" in update_data and update_data["name"] != provider.name:
+            dup = db.query(ModelProvider).filter(
+                ModelProvider.name == update_data["name"], ModelProvider.id != provider_id
+            ).first()
+            if dup:
+                raise HTTPException(status_code=400, detail="供应商名称已被使用")
+
+        for field, value in update_data.items():
+            setattr(provider, field, value)
+
+        provider.updated_at = datetime.now()
+        db.commit()
+        db.refresh(provider)
+
+        return {
+            "success": True,
+            "message": "供应商更新成功",
+            "data": {"id": provider.id, "name": provider.name}
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"更新供应商失败: {str(e)}")
+
+
+@router.delete("/providers/{provider_id}", response_model=dict)
+async def delete_provider(provider_id: int, db: Session = Depends(get_db)):
+    """删除供应商"""
+    try:
+        provider = db.query(ModelProvider).filter(ModelProvider.id == provider_id).first()
+        if not provider:
+            raise HTTPException(status_code=404, detail="供应商不存在")
+
+        # 检查是否有模型在使用该供应商
+        model_count = db.query(LLMModel).filter(LLMModel.provider == provider.code).count()
+        if model_count > 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"该供应商下有 {model_count} 个模型正在使用，无法删除"
+            )
+
+        db.delete(provider)
+        db.commit()
+
+        return {"success": True, "message": "供应商删除成功"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"删除供应商失败: {str(e)}")
+
+
+@router.put("/providers/{provider_id}/toggle", response_model=dict)
+async def toggle_provider(provider_id: int, db: Session = Depends(get_db)):
+    """启用/禁用供应商"""
+    try:
+        provider = db.query(ModelProvider).filter(ModelProvider.id == provider_id).first()
+        if not provider:
+            raise HTTPException(status_code=404, detail="供应商不存在")
+
+        provider.is_active = 0 if provider.is_active == 1 else 1
+        provider.updated_at = datetime.now()
+        db.commit()
+
+        status = "启用" if provider.is_active == 1 else "禁用"
+        return {"success": True, "message": f"供应商已{status}"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"操作失败: {str(e)}")
 
 
 @router.get("/active/current", response_model=dict)
@@ -465,3 +654,61 @@ async def reset_today_tokens(db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/test_connection")
+def test_connection(request_data: dict = None):
+    """
+    测试模型连接
+    如果不传参数，测试当前活动模型
+    如果传 { "model_id": 1 }，测试指定模型
+    """
+    try:
+        model_id = request_data.get("model_id") if request_data else None
+        
+        if model_id:
+            # 测试指定模型
+            db = next(get_db())
+            model = db.query(LLMModel).filter(LLMModel.id == model_id).first()
+            if not model:
+                return {"status": "error", "message": "模型不存在"}
+            
+            # 临时创建 Provider
+            from llm.factory import create_llm_provider
+            
+            try:
+                provider = create_llm_provider(
+                    provider=model.provider,
+                    model_name=model.model_name,
+                    api_key=model.api_key,
+                    base_url=model.base_url,
+                    temperature=0.1,
+                    max_tokens=5
+                )
+                
+                response = provider.chat(
+                    messages=[{"role": "user", "content": "Hello"}],
+                    max_tokens=5,
+                    temperature=0.1
+                )
+                
+                return {"status": "success", "message": "模型连接正常", "response": response.content}
+            except Exception as provider_err:
+                 return {"status": "error", "message": f"模型初始化或调用失败: {str(provider_err)}"}
+            
+        else:
+            # 测试当前活动模型
+            client = get_llm_client()
+            # 强制重新加载配置以确保测试的是最新激活的模型
+            client._config = None
+            client._provider = None
+            
+            response = client.chat(
+                messages=[{"role": "user", "content": "Hello"}],
+                max_tokens=5,
+                temperature=0.1
+            )
+            return {"status": "success", "message": "模型连接正常", "response": response}
+            
+    except Exception as e:
+        return {"status": "error", "message": f"模型连接失败: {str(e)}"}

@@ -50,6 +50,10 @@ class AlibabaProvider(BaseOpenAICompatibleProvider):
             env_var = get_api_key_env_var("alibaba")
             config.api_key = os.getenv(env_var, "")
         
+        # 大参数模型（如 Qwen3.5-397B）响应较慢，确保足够的超时
+        if '397b' in config.model_name.lower() or '235b' in config.model_name.lower():
+            config.timeout = max(config.timeout, 240)
+        
         super().__init__(config)
     
     def chat(
@@ -85,26 +89,50 @@ class AlibabaProvider(BaseOpenAICompatibleProvider):
         """
         获取 Browser-Use LLM 实例
 
-        关键配置：
-        - dont_force_structured_output=True: Qwen 模型不可靠支持 browser-use 的
-          结构化输出 schema，强制使用会导致 {"thinking": "..."} 等无效输出
-        - add_schema_to_system_prompt=True: 将 JSON schema 注入 system prompt，
-          引导模型按正确格式输出
+        重要：使用 langchain_openai.ChatOpenAI 而非 browser_use.llm.openai.chat.ChatOpenAI。
+        
+        原因：browser-use 0.11.1 的 ChatOpenAI.ainvoke() 内部调用
+        OpenAIMessageSerializer.serialize_messages()，该序列化器只接受
+        browser-use 自定义消息类型（browser_use.llm.messages.UserMessage 等），
+        不认识 LangChain 消息类型（langchain_core.messages.HumanMessage 等），
+        会抛出 ValueError('Unknown message type: ...')。
+
+        而 LLMWrapper 拦截 ainvoke 后会将消息转为 LangChain 类型再传给底层 LLM，
+        这与 BrowserUseChatOpenAI 的期望冲突。
+
+        解决方案（参考 web-ui-3.0.0 的做法）：
+        - 使用 langchain_openai.ChatOpenAI（接受 LangChain 消息类型）
+        - 通过 LLMWrapper 处理 output_format 和 action 格式修正
         """
-        try:
-            from browser_use.llm.openai.chat import ChatOpenAI as BrowserUseChatOpenAI
-            
-            return BrowserUseChatOpenAI(
-                model=self.config.model_name,
-                api_key=self.config.api_key,
-                base_url=self.config.base_url,
-                temperature=self.config.temperature,
-                dont_force_structured_output=True,
-                add_schema_to_system_prompt=True,
-            )
-        except ImportError:
-            logger.warning("[Alibaba] browser-use 未安装，回退到 LangChain")
-            return self.get_langchain_llm()
+        from ..wrapper import wrap_llm
+        from langchain_openai import ChatOpenAI
+
+        # Qwen3.5-397B 等大参数模型响应较慢，使用更长的超时
+        timeout = max(self.config.timeout, 120)
+
+        raw_llm = ChatOpenAI(
+            model=self.config.model_name,
+            api_key=self.config.api_key,
+            base_url=self.config.base_url,
+            temperature=self.config.temperature,
+            request_timeout=timeout,
+        )
+
+        # Qwen 系列特有的 action 别名
+        # Qwen3.5 等模型可能返回 click_element, input_text 等非标准名称
+        qwen_aliases = {
+            'click_element': 'click',
+            'input_text': 'input',
+            'type_text': 'input',
+            'scroll_down': 'scroll',
+            'scroll_up': 'scroll',
+            'extract_content': 'extract',
+            'go_to_url': 'navigate',
+            'evaluate': 'run_javascript',
+            'execute_js': 'run_javascript',
+        }
+
+        return wrap_llm(raw_llm, action_aliases=qwen_aliases)
     
     def supports_structured_output(self) -> bool:
         """Qwen 模型对 browser-use 的复杂 schema 支持不稳定"""
@@ -120,36 +148,60 @@ class AlibabaProvider(BaseOpenAICompatibleProvider):
         - 可能在 JSON 前后添加中文解释文字
         - 偶尔有 markdown 代码块包裹
         - 可能返回 ```json\n{...}\n``` 格式
+        - <think> 内容可能嵌在 JSON 字段值内
         """
         if not content:
             raise ValueError("LLM 响应为空")
 
         text = content.strip()
 
-        # 1. 剥离 markdown 代码块
+        # 1. 剥离所有 <think>...</think>（包括嵌在 JSON 字段值内的）
+        text = re.sub(r'<think>[\s\S]*?</think>', '', text).strip()
+
+        # 2. 剥离 markdown 代码块
         text = self._extract_json(text)
 
-        # 2. 直接尝试解析
+        # 3. 如果不是以 { 开头，找到第一个 {
+        if text and text[0] != '{':
+            idx = text.find('{')
+            if idx >= 0:
+                text = text[idx:]
+
+        # 4. 用括号匹配提取完整 JSON 对象
+        from ..base import _find_matching_brace
+        if text and text.startswith('{'):
+            end_idx = _find_matching_brace(text)
+            if end_idx > 0:
+                extracted = text[:end_idx + 1]
+                if end_idx < len(text) - 1:
+                    logger.debug(
+                        f"[Alibaba] 括号匹配截断: "
+                        f"原始 {len(text)} → 提取 {len(extracted)} 字符"
+                    )
+                text = extracted
+
+        # 5. 直接尝试解析
         try:
             return json.loads(text)
         except json.JSONDecodeError:
             pass
 
-        # 3. 移除尾部逗号
+        # 6. 移除尾部逗号
         fixed = re.sub(r',\s*([}\]])', r'\1', text)
         try:
             return json.loads(fixed)
         except json.JSONDecodeError:
             pass
 
-        # 4. 提取第一个 JSON 对象（Qwen 可能在 JSON 前后加中文解释）
-        match = re.search(r'\{[\s\S]*\}', text)
-        if match:
-            try:
-                candidate = re.sub(r',\s*([}\]])', r'\1', match.group(0))
-                return json.loads(candidate)
-            except json.JSONDecodeError:
-                pass
+        # 7. 使用 json_repair 库修复
+        try:
+            from json_repair import repair_json
+            repaired = repair_json(text, return_objects=True)
+            if isinstance(repaired, dict):
+                logger.info(f"[Alibaba] json_repair 成功修复 JSON ({len(text)} 字符)")
+                return repaired
+        except Exception as e:
+            logger.debug(f"[Alibaba] json_repair 失败: {e}")
 
-        # 5. 回退到基类通用解析（含截断修复等）
+        # 8. 回退到基类通用解析（含截断修复等）
         return super().parse_json_response(content)

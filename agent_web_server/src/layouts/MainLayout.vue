@@ -96,7 +96,8 @@ const menuList = [
     icon: 'fa-brain',
     label: '模型管理模块',
     children: [
-      { label: '模型信息与切换', path: '/model/manage' }
+      { label: '模型信息与切换', path: '/model/manage' },
+      { label: '供应商管理', path: '/model/providers' }
     ]
   },
   {

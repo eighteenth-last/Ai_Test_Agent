@@ -8,11 +8,12 @@
   ![Node.js](https://img.shields.io/badge/Node.js-18%2B-green.svg)
   ![FastAPI](https://img.shields.io/badge/FastAPI-0.115.0-009688.svg)
   ![Vue](https://img.shields.io/badge/Vue-3.4.0-4FC08D.svg)
+  ![Browser--Use](https://img.shields.io/badge/Browser--Use-0.11.1-FF6B35.svg)
 </div>
 
 ## 项目简介
 
-AI Test Agent 是一个基于人工智能的自动化测试平台，利用大语言模型（LLM）和浏览器自动化技术，实现测试用例的智能生成、自动执行、Bug 分析和报告生成。平台采用 **适配器模式（Adapter Pattern）** 重构了底层模型架构，支持 15+ 主流大模型供应商，并内置了智能止损、模糊匹配、Agent 判定优先等策略，大幅提升了测试的稳定性和效率。
+AI Test Agent 是一个基于人工智能的自动化测试平台，利用大语言模型（LLM）和浏览器自动化技术，实现测试用例的智能生成、自动执行、Bug 分析和报告生成。平台采用 **适配器模式（Adapter Pattern）** 重构了底层模型架构，支持 15+ 主流大模型供应商，并内置了智能止损、模糊匹配、Agent 判定优先、瞬态 UI 感知、用例间状态隔离等策略，大幅提升了测试的稳定性和效率。
 
 ## 核心特性
 
@@ -23,7 +24,7 @@ AI Test Agent 是一个基于人工智能的自动化测试平台，利用大语
 - 智能覆盖正常、异常、边界及安全测试场景
 
 ### 2. 自动化测试执行与智能策略
-- **基于 Browser-Use 0.11.1 的智能执行**：利用视觉识别和 DOM 分析进行精准操作
+- **基于 Browser-Use 0.11.1 的智能执行**：利用 CDP 协议和 DOM 分析进行精准操作
 - **单量 / 批量执行模式**：
   - 单量执行：逐条执行并生成独立报告
   - 批量执行：多用例连续执行，生成统一汇总报告，支持暂停/恢复/停止控制
@@ -33,12 +34,31 @@ AI Test Agent 是一个基于人工智能的自动化测试平台，利用大语
 - **模糊匹配验证 (Fuzzy Matching)**：
   - 支持语义级断言（如"账号或密码错误"与"密码错误"视为匹配），减少误报
 - **Agent 判定优先**：
-  - Agent 自身的 `done(success=True/False)` 判定优先于 browser-use 内置 judge 的判定
-  - 解决 Toast 等瞬时提示消失后 DOM 无法捕获导致的误判问题
-- **主动回溯与重触发**：
-  - 验证失败时自动回溯上一步操作，精准捕捉瞬时 Toast 提示
+  - Agent 自身的 `done(success=True/False)` 判定优先于关键词匹配和 browser-use 内置 judge 的判定
+  - `success` 语义为"实际结果是否符合预期结果"：异常场景测试（如错误密码登录）预期失败且确实失败 → `success: true`
+  - 解决了旧版关键词匹配（搜索"失败"/"error"等词）导致异常场景用例被误判为 fail 的问题
+- **瞬态 UI 感知**：
+  - 针对 Toast/Message/Notification 等 1-3 秒自动消失的前端提示，Agent 被指导先 wait 再观察浏览器状态
+  - 禁止使用 `extract`/`run_javascript` 搜索已消失的瞬态 DOM 元素
+  - 通过 URL 变化、页面内容变化、表单是否仍在等间接证据判断操作结果
+- **用例间状态隔离**：
+  - 每条用例执行前通过 CDP 清除 Cookies + localStorage/sessionStorage
+  - 自动导航回目标 URL，确保从干净状态开始
+  - 解决了上一条用例登录态残留导致下一条用例结果不准确的问题
 
-### 3. 接口测试（API Testing）
+### 3. LLM 输出容错与 JSON 修复
+- **Provider 感知的 JSON 解析**：每个 Provider 内置 `parse_json_response()` 方法，针对各模型输出特点进行专门处理
+- **多层修复管线**：
+  1. 剥离 `<think>` 推理标签、markdown 代码块、前后缀文字
+  2. 括号匹配提取完整 JSON 对象（`_find_matching_brace`）
+  3. 修复尾部逗号、缺少逗号（`"value"\n"key"` → `"value",\n"key"`）
+  4. 截断 JSON 补全（未闭合括号自动补全）
+  5. `json-repair` 库作为最终 fallback（所有 Provider 统一集成）
+- **JSON 解析失败自动重试**：用例生成等关键流程在 JSON 解析失败时自动降低 temperature 重新请求 LLM
+- **Action 别名映射**：`LLMWrapper` 内置 `DEFAULT_ACTION_ALIASES`（20+ 映射），自动将模型返回的非标准 action 名称转换为 browser-use 0.11.1 的标准名称（如 `evaluate` → `run_javascript`、`scroll_down` → `scroll`、`click_element` → `click`）
+- **Provider 特定别名**：每个 Provider 的 `get_browser_use_llm()` 可传入额外的 provider-specific 别名映射
+
+### 4. 接口测试（API Testing）
 - **接口文件管理**：上传 Markdown 接口文档到 MinIO，自动解析提取 endpoints（method/path/summary/params/examples）
   - 多策略解析器：支持标题内联格式、中文 KV 格式（`- **路径**: /v1/xxx`）、Markdown 表格、全文正则扫描兜底
   - 卡片式文件管理界面，支持查看详情、原文预览、删除
@@ -49,7 +69,7 @@ AI Test Agent 是一个基于人工智能的自动化测试平台，利用大语
   3. 配置环境（Base URL、Headers）后执行，LLM 生成可执行 DSL → HTTP Runner 发送请求 → 断言验证
 - **全链路闭环**：执行结果写入 `test_records` → 自动生成 `test_reports` → 失败用例创建 `bug_reports` → 自动邮件通知 `auto_receive_bug=1` 联系人
 
-### 4. 一键测试（OneClick Test）
+### 5. 一键测试（OneClick Test）
 - **全自主 AI 测试**：输入一句话任务（如"测试登录功能"），AI 全权执行：意图分析 → 自动获取环境 → 浏览器探索页面 → 生成子任务 → 生成用例 → 用户确认 → 执行测试
 - **测试环境管理**：在「测试环境」中配置被测系统的 URL、登录账号密码，一键测试时自动从数据库获取，无需每次手动输入
 - **智能环境解析**：优先使用用户指令中提供的 URL/凭据 → 数据库默认环境 → 环境变量兜底，三级降级策略
@@ -59,7 +79,7 @@ AI Test Agent 是一个基于人工智能的自动化测试平台，利用大语
 - **对话式交互界面**：类 ChatGPT 的对话流 UI，实时展示分析进度、探索结果、子任务规划和执行结果
 - **用户确认机制**：生成用例后展示给用户确认或编辑，确认后重新拉起浏览器执行
 - **浏览器复用**：执行阶段所有用例共享一个 BrowserSession，避免每条用例都启动/关闭浏览器
-- **用例间状态隔离**：每条用例执行前自动清除 Cookies 并导航到目标 URL，防止登录态等状态在用例间泄漏
+- **用例间状态隔离**：每条用例执行前通过 CDP 清除 Cookies + localStorage/sessionStorage 并导航到目标 URL，防止登录态等状态在用例间泄漏
 - **循环检测 (LoopDetector)**：实时监测 Agent 是否陷入重复操作，达到阈值自动熔断
 - **模型自动切换 (FailoverChatModel)**：当主模型遇到 429 限流或连续失败时，自动切换到备用模型
 - **真正的停止控制**：通过 asyncio.Event 取消机制 + 浏览器强制关闭，点击停止后立即生效
@@ -67,7 +87,7 @@ AI Test Agent 是一个基于人工智能的自动化测试平台，利用大语
 - **自动邮件通知**：测试完成后自动将测试报告 + Bug 报告整合为 HTML 邮件，发送给 `auto_receive_bug=1` 的联系人
 - **Skills 知识注入**：执行时自动加载相关 Skills 作为"便签"注入 LLM 提示词
 
-### 5. Skills 管理
+### 6. Skills 管理
 - **知识增强系统**：Skills 是 Markdown 格式的程序化知识文件，为 AI Agent 提供测试领域的专业指导
 - **MinIO 存储**：Skills 文件存储在 MinIO 对象存储中，数据库仅保存索引信息
 - **多种安装方式**：
@@ -76,38 +96,41 @@ AI Test Agent 是一个基于人工智能的自动化测试平台，利用大语
 - **卡片式管理界面**：直观展示已安装 Skills，支持启用/禁用/删除/查看详情
 - **便签式注入**：执行测试时，将相关 Skills 内容以"便签"形式注入到 LLM 系统提示词中
 
-### 6. 多模型适配与管理
+### 7. 多模型适配与管理
 - **全平台支持**：内置适配器支持以下模型供应商：
   - **OpenAI** (GPT-4o, GPT-3.5)
-  - **DeepSeek** (DeepSeek-V3, R1)
+  - **DeepSeek** (DeepSeek-V3, R1) — 含 `<think>` 推理标签处理、R1 专用 ChatOpenAI 实现
   - **Anthropic** (Claude 3.5 Sonnet/Opus)
-  - **Google** (Gemini 1.5 Pro/Flash)
+  - **Google** (Gemini 1.5 Pro/Flash) — 含 Thinking 模型推理标签处理
   - **Azure OpenAI**
-  - **Alibaba / ModelScope** (Qwen3-235B, Qwen3.5-397B 等通义系列)
-  - **Ollama** (本地模型)
+  - **Alibaba / ModelScope** (Qwen3-235B, Qwen3.5-397B 等通义系列) — 含结构化输出适配
+  - **MiniMax** (abab6.5s, abab6.5 等) — 兼容 OpenAI API
+  - **Ollama** (本地模型) — 含 DeepSeek R1 专用实现、`<think>` 标签处理
   - **Mistral AI**
   - **Moonshot** (Kimi)
-  - 以及更多通用 OpenAI 兼容接口
-- **Provider 感知的 JSON 解析**：每个 Provider 内置 `parse_json_response()` 方法，针对各模型的输出特点（`<think>` 标签、markdown 包裹、截断修复、尾部逗号等）进行专门处理
-- **Alibaba/Qwen 结构化输出适配**：针对 Qwen3.5 等大参数模型在 browser-use 场景下不支持结构化输出的问题，自动启用 `dont_force_structured_output` + `add_schema_to_system_prompt` 策略
+  - **通用 OpenAI 兼容** — 覆盖硅基流动、魔搭社区、智谱 AI、Grok (xAI)、OpenRouter 等
+- **供应商管理页面**：前端可视化管理模型供应商（CRUD），配置 API Key、Base URL、默认参数
+- **Provider 感知的 JSON 解析**：每个 Provider 内置 `parse_json_response()` + `json-repair` 库 fallback
+- **Alibaba/Qwen 结构化输出适配**：针对 Qwen3.5 等大参数模型自动启用 `dont_force_structured_output` + `add_schema_to_system_prompt`
+- **LLMWrapper 统一包装**：拦截 `ainvoke`，处理消息格式转换、JSON 清洗（`_clean_llm_json_output`）、action 格式修正（`_fix_action_format`）、别名映射
 - **智能调度**：基于数据库配置的优先级和激活状态自动选择最佳模型
 - **模型自动切换**：内置 `ModelAutoSwitcher`，当模型遇到 429 限流、超时或连续失败时，自动切换到下一个可用模型
 - **成本监控**：实时统计 Token 使用量和 API 成本，支持按模型、按来源查看使用日志
 
-### 7. 智能 Bug 分析
+### 8. 智能 Bug 分析
 - 自动分析失败原因，区分系统 Bug 与脚本错误
 - 智能定级（一级致命至四级轻微）
 - 自动提取复现步骤，生成带截图的 Bug 报告
 - 关联测试用例，记录预期结果与实际结果
 
-### 8. 报告与通知
+### 9. 报告与通知
 - **运行测试报告**：详细执行日志、思维链（Thinking）、步骤截图
 - **综合评估报告**：AI 驱动的多报告聚合分析，包含质量评级（A/B/C/D）、通过率、改进建议，Markdown 渲染展示
 - **邮件推送**：集成阿里云 DirectMail 和 Resend，支持自动发送格式化 HTML 邮件给联系人
-- **一键测试自动通知**：一键测试完成后自动将测试报告 + Bug 报告整合为一封 HTML 邮件，发送给 `auto_receive_bug=1` 的联系人，邮件包含通过率概览、用例执行详情表格和 Bug 详情表格
+- **一键测试自动通知**：一键测试完成后自动将测试报告 + Bug 报告整合为一封 HTML 邮件，发送给 `auto_receive_bug=1` 的联系人
 - **Bug 报告**：按严重程度、状态、错误类型多维度管理
 
-### 9. 数据可视化仪表盘
+### 10. 数据可视化仪表盘
 - 测试结果分布（通过/失败/待执行）
 - 用例优先级与类型分布
 - 测试趋势图（支持近一月/一季/一年）
@@ -123,8 +146,9 @@ AI Test Agent 是一个基于人工智能的自动化测试平台，利用大语
 - **框架**: FastAPI 0.115.0 + Uvicorn
 - **架构模式**: Adapter Pattern (LLM Layer), Factory Pattern
 - **数据库**: MySQL + SQLAlchemy 2.0.25
-- **核心引擎**: Browser-Use 0.11.1 + Playwright
-- **LLM 集成**: 支持 OpenAI, Anthropic, Google GenAI, Ollama, Alibaba 等多协议
+- **核心引擎**: Browser-Use 0.11.1 (CDP 架构) + Playwright
+- **LLM 集成**: 支持 OpenAI, Anthropic, Google GenAI, DeepSeek, Alibaba, MiniMax, Ollama 等多协议
+- **LLM 容错**: json-repair 库 + 多层 JSON 修复管线 + LLMWrapper 统一包装
 - **对象存储**: MinIO（接口文件存储与版本管理）
 - **邮件服务**: 阿里云 DirectMail (HMAC-SHA1 签名) + Resend
 - **其他**: PyPDF2, Pandas, python-docx, Markdown, requests
@@ -144,25 +168,27 @@ Ai_Test_Agent/
 ├── Agent_Server/                # 后端服务
 │   ├── app.py                  # FastAPI 入口
 │   ├── llm/                    # LLM 核心模块
-│   │   ├── base.py             # Provider 基类 + 通用 JSON 解析
+│   │   ├── base.py             # Provider 基类 + 通用 JSON 解析 + _find_matching_brace
 │   │   ├── factory.py          # Provider 工厂
 │   │   ├── client.py           # LLM 客户端（兼容层）
 │   │   ├── manager.py          # 模型配置管理
 │   │   ├── config.py           # 默认配置 + Provider 特性
 │   │   ├── auto_switch.py      # 模型自动切换 + FailoverChatModel
-│   │   ├── wrapper.py          # LLM 包装器
+│   │   ├── wrapper.py          # LLMWrapper（消息转换/JSON清洗/action别名映射/格式修正）
+│   │   ├── examples.py         # 示例配置
 │   │   ├── exceptions.py       # 异常定义
-│   │   └── providers/          # 具体 Provider 实现
+│   │   └── providers/          # 具体 Provider 实现（每个含 parse_json_response + json-repair）
 │   │       ├── openai_provider.py
 │   │       ├── anthropic_provider.py
 │   │       ├── google_provider.py
-│   │       ├── deepseek_provider.py
-│   │       ├── alibaba_provider.py
-│   │       ├── ollama_provider.py
+│   │       ├── deepseek_provider.py    # 含 DeepSeekR1ChatOpenAI
+│   │       ├── alibaba_provider.py     # 含 Qwen 结构化输出适配
+│   │       ├── minimax_provider.py
+│   │       ├── ollama_provider.py      # 含 DeepSeekR1ChatOllama
 │   │       ├── mistral_provider.py
 │   │       ├── moonshot_provider.py
 │   │       ├── azure_provider.py
-│   │       └── generic_provider.py
+│   │       └── generic_provider.py     # 通用 OpenAI 兼容（含 SiliconFlow/ModelScope/Zhipu/Grok 子类）
 │   ├── Api_Spec/               # 接口文件管理（MinIO + 解析器）
 │   │   ├── router.py           # 上传/列表/详情/删除 API
 │   │   ├── parser.py           # Markdown 多策略解析器
@@ -172,11 +198,11 @@ Ai_Test_Agent/
 │   │   └── service.py          # 匹配/DSL生成/HTTP Runner/报告/Bug/邮件
 │   ├── OneClick_Test/          # 一键测试模块
 │   │   ├── router.py           # 一键测试 + Skills 管理 API
-│   │   ├── service.py          # 核心服务（意图分析/用例生成/浏览器执行/停止控制/429熔断/自动邮件）
+│   │   ├── service.py          # 核心服务（意图分析/页面探索/用例生成/浏览器执行/状态隔离/停止控制/429熔断/自动邮件）
 │   │   ├── session.py          # 会话状态机管理
 │   │   ├── loop_detection.py   # 循环检测器（防止 Agent 无限循环）
 │   │   └── skill_manager.py    # Skills 管理（MinIO存储/GitHub下载/手动上传/便签注入）
-│   ├── Api_request/            # 提示词模板（集中管理所有 LLM 提示词）
+│   ├── Api_request/            # 提示词模板（集中管理所有 LLM 提示词，含瞬态UI处理规则）
 │   ├── Bug_Analysis/           # Bug 分析服务
 │   ├── Build_Report/           # 报告生成服务
 │   ├── Build_Use_case/         # 用例生成服务
@@ -184,11 +210,10 @@ Ai_Test_Agent/
 │   ├── Dashboard/              # 仪表盘数据
 │   ├── Contact_manage/         # 联系人管理
 │   ├── Email_manage/           # 邮件管理
-│   ├── Model_manage/           # 模型配置管理
+│   ├── Model_manage/           # 模型配置管理 + 供应商管理
 │   ├── Browser_Control/        # 浏览器控制
 │   ├── Test_Tools/             # 任务管理器
 │   ├── database/               # 数据库模型与连接
-│   ├── docs/                   # 开发文档
 │   └── save_floder/            # 截图等文件存储
 ├── agent_web_server/           # 前端服务
 │   ├── src/
@@ -212,8 +237,15 @@ Ai_Test_Agent/
 │   │   │   │   ├── BugReport.vue     # Bug 报告
 │   │   │   │   └── MixedReport.vue   # 综合评估报告
 │   │   │   ├── model/          # 模型配置
+│   │   │   │   ├── ModelManage.vue   # 模型管理
+│   │   │   │   └── ProviderManage.vue # 供应商管理
 │   │   │   ├── mail/           # 邮件发送与配置
+│   │   │   │   ├── SendMail.vue      # 邮件发送
+│   │   │   │   ├── EmailConfig.vue   # 邮件配置
+│   │   │   │   ├── ContactManage.vue # 联系人管理
+│   │   │   │   └── Contacts.vue      # 联系人列表
 │   │   │   └── prompt/         # 提示词管理
+│   │   │       └── PromptList.vue
 │   │   ├── components/         # 公共组件
 │   │   ├── composables/        # 组合式函数
 │   │   ├── router/             # 路由配置
@@ -291,7 +323,7 @@ npm run dev
 ## 使用指南
 
 ### 1. 模型配置
-进入"模型管理"页面，添加模型时选择对应的 Provider（如 `openai`、`deepseek`、`alibaba`）。系统会根据 `is_active=1` 且优先级最高的规则自动调用对应模型。
+进入"模型管理"页面，添加模型时选择对应的 Provider（如 `openai`、`deepseek`、`alibaba`、`minimax`）。系统会根据 `is_active=1` 且优先级最高的规则自动调用对应模型。也可在"供应商管理"页面管理模型供应商的 API Key、Base URL 等配置。
 
 ### 2. 功能测试（Browser-Use）
 - **单量执行**：在"功能测试"页面选择单条用例执行，Agent 自动启动浏览器完成操作并生成报告。
@@ -313,7 +345,7 @@ npm run dev
 - 探索完成后，AI 基于真实页面结构规划子任务并生成精准测试用例
 - 浏览器关闭，用例展示在右侧面板，可勾选/编辑/调整优先级
 - 确认后点击"确认执行"，系统重新拉起浏览器逐条执行
-- 每条用例执行前自动清除 Cookies 并导航到目标页面，确保用例间状态隔离
+- 每条用例执行前自动清除 Cookies + localStorage/sessionStorage 并导航到目标页面，确保用例间状态隔离
 - 执行过程中可随时点击"停止"按钮，系统会立即终止当前任务并关闭浏览器
 - 如遇 API 配额耗尽（429），系统自动停止后续用例并尝试切换备用模型
 - 测试完成后自动生成测试报告和 Bug 报告，并将整合邮件发送给自动接收 Bug 的联系人

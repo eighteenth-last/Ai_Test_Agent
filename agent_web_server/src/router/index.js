@@ -69,6 +69,12 @@ const routes = [
     component: () => import('@/views/model/ModelManage.vue'),
     meta: { title: '模型信息与切换', menu: 'model' }
   },
+  {
+    path: '/model/providers',
+    name: 'ProviderManage',
+    component: () => import('@/views/model/ProviderManage.vue'),
+    meta: { title: '供应商管理', menu: 'model' }
+  },
   // 测试用例生成模块
   {
     path: '/case/generate',

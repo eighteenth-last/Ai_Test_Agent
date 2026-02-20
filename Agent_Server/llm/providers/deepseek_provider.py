@@ -219,25 +219,40 @@ class DeepSeekProvider(BaseOpenAICompatibleProvider):
         )
     
     def get_browser_use_llm(self) -> Any:
-        """获取 Browser-Use LLM 实例（使用 LLMWrapper 确保结构化输出兼容）"""
+        """
+        获取 Browser-Use LLM 实例
+
+        使用 langchain_openai.ChatOpenAI + LLMWrapper，而非 BrowserUseChatOpenAI。
+        原因：BrowserUseChatOpenAI 的序列化器不接受 LangChain 消息类型，
+        而 LLMWrapper 会将消息转为 LangChain 类型，两者冲突。
+        """
         from ..wrapper import wrap_llm
-        
-        try:
-            from browser_use.llm.openai.chat import ChatOpenAI as BrowserUseChatOpenAI
-            
-            raw_llm = BrowserUseChatOpenAI(
-                model=self.config.model_name,
-                api_key=self.config.api_key,
-                base_url=self.config.base_url,
-                temperature=self.config.temperature,
-                dont_force_structured_output=True,  # DeepSeek 不支持结构化输出
-            )
-        except ImportError:
-            logger.warning("[DeepSeek] browser-use 未安装，回退到 LangChain")
-            raw_llm = self.get_langchain_llm()
-        
-        # 用 LLMWrapper 包装，处理 output_format 和 action 格式修正
-        return wrap_llm(raw_llm)
+        from langchain_openai import ChatOpenAI
+
+        timeout = max(self.config.timeout, 120)
+
+        raw_llm = ChatOpenAI(
+            model=self.config.model_name,
+            api_key=self.config.api_key,
+            base_url=self.config.base_url,
+            temperature=self.config.temperature,
+            request_timeout=timeout,
+        )
+
+        # DeepSeek 特有的 action 别名
+        # deepseek-chat 倾向于返回 extract_content, scroll_down, evaluate 等非标准名称
+        deepseek_aliases = {
+            'extract_content': 'extract',
+            'scroll_down': 'scroll',
+            'scroll_up': 'scroll',
+            'evaluate': 'run_javascript',
+            'execute_js': 'run_javascript',
+            'click_element': 'click',
+            'input_text': 'input',
+            'go_to_url': 'navigate',
+        }
+
+        return wrap_llm(raw_llm, action_aliases=deepseek_aliases)
     
     def supports_structured_output(self) -> bool:
         """DeepSeek 不支持结构化输出"""
@@ -254,16 +269,15 @@ class DeepSeekProvider(BaseOpenAICompatibleProvider):
         - deepseek-chat 通常比较规范，但偶尔有 markdown 包裹
         - 可能在 JSON 后面追加解释文字
         - 可能缺少逗号分隔符或有多余逗号
+        - <think> 内容可能嵌在 JSON 字段值内（如 "thinking": "<think>..."）
         """
         if not content:
             raise ValueError("LLM 响应为空")
 
         text = content.strip()
 
-        # 1. 剥离 <think>...</think> 推理过程（R1 模型）
-        if "<think>" in text and "</think>" in text:
-            parts = text.split("</think>", 1)
-            text = parts[1].strip() if len(parts) >= 2 else text
+        # 1. 剥离所有 <think>...</think>（包括嵌在 JSON 字段值内的）
+        text = re.sub(r'<think>[\s\S]*?</think>', '', text).strip()
 
         # 2. 剥离 **JSON Response:** 格式
         if "**JSON Response:**" in text:
@@ -272,29 +286,49 @@ class DeepSeekProvider(BaseOpenAICompatibleProvider):
         # 3. 剥离 markdown 代码块
         text = self._extract_json(text)
 
-        # 4. 直接尝试
+        # 4. 如果不是以 { 开头，找到第一个 {
+        if text and text[0] != '{':
+            idx = text.find('{')
+            if idx >= 0:
+                text = text[idx:]
+
+        # 5. 用括号匹配提取完整 JSON 对象
+        from ..base import _find_matching_brace
+        if text and text.startswith('{'):
+            end_idx = _find_matching_brace(text)
+            if end_idx > 0:
+                extracted = text[:end_idx + 1]
+                if end_idx < len(text) - 1:
+                    logger.debug(
+                        f"[DeepSeek] 括号匹配截断: "
+                        f"原始 {len(text)} → 提取 {len(extracted)} 字符"
+                    )
+                text = extracted
+
+        # 6. 直接尝试
         try:
             return json.loads(text)
         except json.JSONDecodeError:
             pass
 
-        # 5. 修复常见 JSON 格式问题
+        # 7. 修复常见 JSON 格式问题
         fixed = self._fix_common_json_issues(text)
         try:
             return json.loads(fixed)
         except json.JSONDecodeError:
             pass
 
-        # 6. 提取第一个 JSON 对象（DeepSeek 可能在 JSON 后追加文字）
-        match = re.search(r'\{[\s\S]*\}', text)
-        if match:
-            try:
-                candidate = self._fix_common_json_issues(match.group(0))
-                return json.loads(candidate)
-            except json.JSONDecodeError:
-                pass
+        # 8. 使用 json_repair 库修复
+        try:
+            from json_repair import repair_json
+            repaired = repair_json(text, return_objects=True)
+            if isinstance(repaired, dict):
+                logger.info(f"[DeepSeek] json_repair 成功修复 JSON ({len(text)} 字符)")
+                return repaired
+        except Exception as e:
+            logger.debug(f"[DeepSeek] json_repair 失败: {e}")
 
-        # 7. 回退到基类通用解析
+        # 9. 回退到基类通用解析
         return super().parse_json_response(content)
 
     @staticmethod

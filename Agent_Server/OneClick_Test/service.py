@@ -162,6 +162,22 @@ class OneClickService:
         from database.connection import SessionLocal
         db = SessionLocal()
 
+        # 注册 cancel_event，使 stop_session 能在探索阶段发送取消信号
+        cancel_event = asyncio.Event()
+        _running_sessions[session_id] = {
+            "cancel_event": cancel_event,
+            "browser_session": None,
+            "loop_detector": None,
+        }
+
+        def _is_cancelled() -> bool:
+            """检查会话是否已被手动停止"""
+            if cancel_event.is_set():
+                return True
+            # 双重检查：从数据库刷新状态
+            db.refresh(session)
+            return session.status == 'failed'
+
         try:
             session = SessionManager.get_session(db, session_id)
             if not session:
@@ -175,13 +191,20 @@ class OneClickService:
                 db, session, intent, env_info
             )
 
+            # 检查是否已被取消
+            if _is_cancelled():
+                logger.info(f"[OneClick] ⏹️ 后台任务已取消（探索后）: session_id={session_id}")
+                return
+
             page_data = {}
             subtasks = {}
 
             if explore_result.get("success"):
                 page_data = explore_result.get("page_data", {})
                 session.page_analysis = json.dumps(page_data, ensure_ascii=False)
-                SessionManager.update_status(db, session, 'page_scanned')
+                if not SessionManager.update_status(db, session, 'page_scanned'):
+                    logger.info(f"[OneClick] ⏹️ 状态更新被拒绝，任务中止: session_id={session_id}")
+                    return
                 db.commit()
 
                 sections = page_data.get("page_sections", [])
@@ -191,6 +214,11 @@ class OneClickService:
                     f'✅ 页面探索完成！发现 {len(sections)} 个功能区域，'
                     f'{len(actions)} 种可执行操作'
                 )
+
+                # 检查是否已被取消
+                if _is_cancelled():
+                    logger.info(f"[OneClick] ⏹️ 后台任务已取消（子任务生成前）: session_id={session_id}")
+                    return
 
                 # 2. 生成子任务
                 SessionManager.add_message(db, session, 'assistant',
@@ -211,8 +239,16 @@ class OneClickService:
                     f'⚠️ 页面探索未完成: {explore_result.get("message", "未知原因")}，'
                     f'将使用传统模式生成用例'
                 )
-                # 更新状态，让前端知道探索阶段已结束
-                SessionManager.update_status(db, session, 'page_scanned')
+                # 更新状态并立即提交，让前端轮询尽快感知到探索阶段已结束
+                if not SessionManager.update_status(db, session, 'page_scanned'):
+                    logger.info(f"[OneClick] ⏹️ 状态更新被拒绝，任务中止: session_id={session_id}")
+                    return
+                db.commit()
+
+            # 检查是否已被取消
+            if _is_cancelled():
+                logger.info(f"[OneClick] ⏹️ 后台任务已取消（用例生成前）: session_id={session_id}")
+                return
 
             # 3. 查询相关用例
             existing_cases = OneClickService._query_related_cases(db, intent)
@@ -237,6 +273,7 @@ class OneClickService:
             except Exception:
                 pass
         finally:
+            _running_sessions.pop(session_id, None)
             db.close()
 
     # ========== Phase 2: 用户确认 & 执行测试 ==========
@@ -834,8 +871,29 @@ class OneClickService:
                 response_format={"type": "json_object"}
             )
 
-            # 使用 Provider 感知的 JSON 解析
-            result = llm.parse_json_response(response)
+            # 使用 Provider 感知的 JSON 解析（带重试）
+            result = None
+            last_error = None
+            for attempt in range(2):
+                try:
+                    result = llm.parse_json_response(response)
+                    break
+                except (json.JSONDecodeError, ValueError) as parse_err:
+                    last_error = parse_err
+                    if attempt == 0:
+                        logger.warning(f"[OneClick] 用例 JSON 解析失败（第1次），重新请求 LLM: {parse_err}")
+                        response = llm.chat(
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_prompt + "\n\n⚠️ 请确保输出是合法的 JSON 格式，不要在 JSON 外添加任何文字。"}
+                            ],
+                            temperature=0.3,
+                            max_tokens=8000,
+                            response_format={"type": "json_object"}
+                        )
+
+            if result is None:
+                raise last_error
 
             cases = result.get("cases", [])
             summary = result.get("summary", "")
@@ -1096,33 +1154,53 @@ class OneClickService:
     @staticmethod
     async def _reset_browser_state(browser_session, target_url: str):
         """
-        用例间状态隔离：清除 cookies + 导航到目标页面
+        用例间状态隔离：清除 cookies/storage + 导航到目标页面
 
         解决问题：用例1登录成功后，用例2（如错误密码测试）会在已登录状态下开始，
         导致测试结果不准确。
 
-        策略：
-        1. 获取当前 browser context，清除所有 cookies
-        2. 导航到目标 URL，确保从干净状态开始
+        策略（适配 browser-use 0.11.1 CDP 架构）：
+        1. 清除所有 cookies（通过 BrowserSession.clear_cookies）
+        2. 清除 localStorage/sessionStorage（通过 CDP Runtime.evaluate）
+        3. 导航到目标 URL，确保从干净状态开始
         """
         import asyncio
 
         try:
-            context = await browser_session.get_browser_context()
+            # 1. 清除所有 cookies
+            try:
+                await browser_session.clear_cookies()
+                logger.debug("[OneClick] 🧹 已清除浏览器 cookies")
+            except Exception as e:
+                logger.warning(f"[OneClick] ⚠️ 清除 cookies 失败: {e}")
 
-            # 清除所有 cookies（确保登录态被清除）
-            await context.clear_cookies()
-            logger.debug("[OneClick] 🧹 已清除浏览器 cookies")
+            # 2. 清除 localStorage 和 sessionStorage（通过 CDP）
+            try:
+                page = await browser_session.must_get_current_page()
+                # 使用 CDP Runtime.evaluate 清除 storage
+                await page.evaluate("try { localStorage.clear(); sessionStorage.clear(); } catch(e) {}")
+                logger.debug("[OneClick] 🧹 已清除 localStorage/sessionStorage")
+            except Exception as e:
+                logger.debug(f"[OneClick] 清除 storage 失败（非致命）: {e}")
 
-            # 获取当前页面并导航到目标 URL
-            pages = context.pages
-            if pages:
-                page = pages[0]
-                await page.goto(target_url, wait_until="domcontentloaded", timeout=15000)
-                await asyncio.sleep(0.5)
+            # 3. 导航到目标 URL
+            try:
+                from browser_use.browser.events import NavigateToUrlEvent
+                await browser_session.event_bus.dispatch(
+                    NavigateToUrlEvent(url=target_url, new_tab=False)
+                )
+                await asyncio.sleep(1.0)
                 logger.debug(f"[OneClick] 🔄 已导航到目标页面: {target_url}")
-            else:
-                logger.warning("[OneClick] ⚠️ 没有可用的页面，跳过导航")
+            except Exception as e:
+                logger.warning(f"[OneClick] ⚠️ 导航到目标页面失败: {e}")
+                # 备用方案：通过 CDP 直接导航
+                try:
+                    page = await browser_session.must_get_current_page()
+                    await page.evaluate(f"window.location.href = '{target_url}'")
+                    await asyncio.sleep(1.5)
+                    logger.debug(f"[OneClick] 🔄 已通过 JS 导航到目标页面: {target_url}")
+                except Exception as e2:
+                    logger.warning(f"[OneClick] ⚠️ JS 导航也失败: {e2}")
 
         except Exception as e:
             logger.warning(f"[OneClick] ⚠️ 重置浏览器状态异常: {e}")
@@ -1187,7 +1265,19 @@ class OneClickService:
 预期结果: {case.get('expected', '')}
 {data_text}
 
-请按照步骤执行测试，并验证预期结果。"""
+请按照步骤执行测试，并验证预期结果。
+
+⚠️ 重要提醒：
+- 点击按钮后，先用 wait 等待 2 秒，再观察浏览器页面状态来判断结果
+- 不要使用 extract 或 run_javascript 去搜索 Toast/消息提示（它们只显示1-3秒就消失了）
+- 通过 URL 变化、页面内容变化、表单是否仍在等间接证据来判断操作结果
+
+🔴 【关键】done 的 success 字段判定规则：
+- success 表示"实际结果是否符合预期结果"，而不是"操作本身是否成功"
+- 如果预期结果是"登录失败/提示错误/停留在登录页"，而实际确实登录失败了 → success: true（符合预期）
+- 如果预期结果是"登录成功/跳转到首页"，而实际确实登录成功了 → success: true（符合预期）
+- 如果预期结果是"登录失败"，但实际登录成功了 → success: false（不符合预期）
+- 简单来说：实际结果 == 预期结果 → success: true，实际结果 != 预期结果 → success: false"""
 
             # Skills 便签注入（从 MinIO 加载）
             skills_notes = SkillManager.load_skills_as_notes(db, task=task)
@@ -1230,12 +1320,31 @@ class OneClickService:
             final_result = history.final_result() if hasattr(history, 'final_result') else ""
 
             # 判断成功/失败
+            # 优先使用 Agent 自身的判定（done action 的 success 字段）
+            # Agent 会根据预期结果来判断：如果预期"登录失败"且确实失败了，success=true
             status = "pass"
-            if hasattr(history, 'has_errors') and history.has_errors():
+            
+            # 1. 优先：Agent 的 done action 中的 success 字段
+            agent_success = None
+            if hasattr(history, 'is_successful'):
+                agent_success = history.is_successful()
+            
+            if agent_success is not None:
+                # Agent 明确给出了判定
+                status = "pass" if agent_success else "fail"
+                logger.info(f"[OneClick] Agent 判定结果: success={agent_success} → status={status}")
+            elif hasattr(history, 'has_errors') and history.has_errors():
+                # 2. Agent 没有明确判定，但执行过程有错误
                 status = "fail"
-            elif final_result and isinstance(final_result, str):
-                if any(kw in final_result.lower() for kw in ['fail', '失败', 'error', '错误']):
-                    status = "fail"
+                logger.info("[OneClick] Agent 未给出判定，但执行过程有错误 → status=fail")
+            elif not (hasattr(history, 'is_done') and history.is_done()):
+                # 3. Agent 没有正常完成（没有调用 done）
+                status = "fail"
+                logger.info("[OneClick] Agent 未正常完成（未调用 done）→ status=fail")
+            else:
+                # 4. Agent 调用了 done 但 success 字段为 None（兼容旧版本）
+                # 此时保持 pass，因为 Agent 认为任务完成了
+                logger.info("[OneClick] Agent 调用了 done 但未设置 success 字段 → status=pass")
 
             total_steps = len(history.history) if hasattr(history, 'history') else 0
 
@@ -1786,6 +1895,7 @@ class OneClickService:
 
         # 3. 更新数据库状态
         session.status = 'failed'
+        session.updated_at = datetime.now()
         SessionManager.add_message(db, session, 'assistant', '⏹️ 测试已手动停止')
         db.commit()
         return {"success": True, "message": "已停止"}

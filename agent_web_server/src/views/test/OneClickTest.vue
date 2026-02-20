@@ -559,7 +559,7 @@ async function sendMessage() {
 let pollTimer = null
 let lastMsgCount = 0
 let pollStartTime = 0
-const POLL_TIMEOUT_MS = 5 * 60 * 1000 // 5 分钟超时
+const POLL_TIMEOUT_MS = Infinity // 不限制轮询时间，后台任务完成后自动停止
 
 function startPolling(sessionId) {
   stopPolling()
@@ -673,7 +673,7 @@ async function confirmExecute() {
 // ============ 执行阶段轮询 ============
 let execPollTimer = null
 let execPollStartTime = 0
-const EXEC_POLL_TIMEOUT_MS = 30 * 60 * 1000 // 30 分钟超时（执行时间较长）
+const EXEC_POLL_TIMEOUT_MS = Infinity // 不限制执行轮询时间，后台任务完成后自动停止
 
 function startExecutionPolling(sessionId) {
   stopExecutionPolling()

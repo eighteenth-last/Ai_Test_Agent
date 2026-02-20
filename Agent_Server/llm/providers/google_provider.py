@@ -226,5 +226,15 @@ class GoogleProvider(BaseLLMProvider):
         except json.JSONDecodeError:
             pass
 
-        # 4. 回退到基类通用解析
+        # 4. 使用 json_repair 库修复
+        try:
+            from json_repair import repair_json
+            repaired = repair_json(text, return_objects=True)
+            if isinstance(repaired, dict):
+                logger.info(f"[Google] json_repair 成功修复 JSON ({len(text)} 字符)")
+                return repaired
+        except Exception as e:
+            logger.debug(f"[Google] json_repair 失败: {e}")
+
+        # 5. 回退到基类通用解析
         return super().parse_json_response(content)

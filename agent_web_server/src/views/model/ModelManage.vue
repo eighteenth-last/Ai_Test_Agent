@@ -118,115 +118,126 @@
             <p class="text-slate-500">暂无模型配置</p>
           </div>
           
-          <div v-else class="grid grid-cols-1 gap-5">
+          <div v-else class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
             <div
               v-for="model in models"
               :key="model.id"
-              class="model-card-modern"
-              :class="{ 'active': model.is_active === 1 }"
+              class="model-card group relative flex flex-col h-full bg-white rounded-xl border border-slate-200 hover:shadow-lg transition-all duration-300"
+              :class="{ 'ring-2 ring-blue-500 ring-offset-2': model.is_active === 1 }"
             >
-              <!-- 上半部分：模型信息和操作 -->
-              <div class="flex items-start justify-between gap-4 mb-4">
-                <div class="flex items-start gap-3 flex-1 min-w-0">
-                  <div class="flex flex-col gap-2 flex-shrink-0">
-                    <n-tag :type="getPriorityType(model.priority)" size="small" round>
-                      P{{ model.priority }}
-                    </n-tag>
-                    <span v-if="model.is_active === 1" class="status-badge-active">
-                      <i class="fas fa-circle text-xs"></i>
-                      活动
-                    </span>
-                    <!-- 自动切换健康状态 -->
-                    <span v-if="getProfileStatus(model.id)" class="text-xs px-2 py-0.5 rounded-full"
-                      :class="getProfileStatus(model.id).is_cooling_down ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'">
-                      {{ getProfileStatus(model.id).is_cooling_down ? `冷却 ${getProfileStatus(model.id).cooldown_remaining}s` : '健康' }}
-                    </span>
-                  </div>
+              <!-- Active Indicator Strip -->
+              <div v-if="model.is_active === 1" class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-purple-600 rounded-t-xl"></div>
 
-                  <div class="flex-1 min-w-0">
-                    <div class="flex items-center gap-2 mb-2">
-                      <h3 class="text-lg font-bold text-slate-800 truncate" :title="model.model_name">
-                        {{ model.model_name }}
-                      </h3>
-                    </div>
-                    <div class="flex items-center gap-2 text-sm text-slate-500">
-                      <span v-if="model.provider_display_name || model.provider" class="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs rounded">
-                        {{ model.provider_display_name || model.provider }}
-                      </span>
-                      <span class="text-slate-400">|</span>
-                      <span :class="model.status === 'active' ? 'text-green-600 font-medium' : ''">
-                        {{ model.status || 'idle' }}
-                      </span>
-                      <!-- 失败次数 -->
-                      <template v-if="getProfileStatus(model.id)?.failure_count > 0">
-                        <span class="text-slate-400">|</span>
-                        <span class="text-red-500 text-xs">
-                          失败 {{ getProfileStatus(model.id).failure_count }} 次
-                          <template v-if="getProfileStatus(model.id).last_failure_reason">
-                            ({{ getProfileStatus(model.id).last_failure_reason }})
-                          </template>
-                        </span>
-                      </template>
-                    </div>
+              <div class="p-5 flex-1 flex flex-col">
+                <!-- Header: Priority & Health -->
+                <div class="flex items-center justify-between mb-3">
+                  <div class="flex items-center gap-2">
+                     <n-tag :type="getPriorityType(model.priority)" size="small" round :bordered="false">
+                        P{{ model.priority }}
+                     </n-tag>
+                     <!-- Health Badge -->
+                     <span v-if="getProfileStatus(model.id)" class="text-xs px-2 py-0.5 rounded-full flex items-center gap-1 transition-colors"
+                        :class="getProfileStatus(model.id).is_cooling_down ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'">
+                        <i class="fas" :class="getProfileStatus(model.id).is_cooling_down ? 'fa-exclamation-circle' : 'fa-check-circle'"></i>
+                        {{ getProfileStatus(model.id).is_cooling_down ? `冷却 ${getProfileStatus(model.id).cooldown_remaining}s` : '健康' }}
+                     </span>
+                  </div>
+                  
+                  <!-- Active Status Badge -->
+                  <div v-if="model.is_active === 1" class="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 text-blue-600 rounded-full text-xs font-medium">
+                    <span class="relative flex h-2 w-2">
+                      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                      <span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                    </span>
+                    当前使用
                   </div>
                 </div>
 
-                <n-space class="flex-shrink-0">
-                  <n-button
-                    v-if="model.is_active !== 1"
-                    size="small"
-                    type="success"
-                    @click="activateModel(model)"
-                  >
-                    <template #icon><i class="fas fa-play"></i></template>
-                  </n-button>
-                  <n-button size="small" @click="editModel(model)">
-                    <template #icon><i class="fas fa-edit"></i></template>
-                  </n-button>
-                  <n-button
-                    size="small"
-                    type="error"
-                    @click="deleteModel(model)"
-                    :disabled="model.is_active === 1"
-                  >
-                    <template #icon><i class="fas fa-trash"></i></template>
-                  </n-button>
-                </n-space>
+                <!-- Main Info: Name & Provider -->
+                <div class="mb-5">
+                  <h3 class="text-lg font-bold text-slate-800 leading-tight mb-1 line-clamp-2" :title="model.model_name">
+                    {{ model.model_name }}
+                  </h3>
+                  <div class="flex items-center gap-2 text-sm text-slate-500">
+                    <i class="fas fa-server text-slate-400 text-xs"></i>
+                    <span class="truncate">{{ model.provider_display_name || model.provider }}</span>
+                  </div>
+                </div>
+
+                <!-- Stats Grid -->
+                <div class="grid grid-cols-2 gap-3 mb-5 p-3 bg-slate-50 rounded-lg border border-slate-100">
+                  <!-- Total Usage -->
+                  <div>
+                    <p class="text-xs text-slate-400 mb-0.5">总消耗</p>
+                    <p class="text-sm font-semibold text-slate-700">{{ formatNumber(model.tokens_used_total || 0) }}</p>
+                  </div>
+                  <!-- Today Usage -->
+                  <div>
+                    <p class="text-xs text-slate-400 mb-0.5">今日消耗</p>
+                    <p class="text-sm font-semibold text-slate-700">{{ formatNumber(model.tokens_used_today || 0) }}</p>
+                  </div>
+                  <!-- Utilization (Progress bar) -->
+                  <div class="col-span-2">
+                     <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
+                       <span>利用率</span>
+                       <span>{{ model.utilization || 0 }}%</span>
+                     </div>
+                     <div class="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                       <div class="h-full rounded-full transition-all duration-500"
+                            :class="getUtilizationColor(model.utilization || 0)"
+                            :style="{ width: `${Math.min(model.utilization || 0, 100)}%` }">
+                       </div>
+                     </div>
+                  </div>
+                </div>
+                
+                <!-- API Key Masked -->
+                <div class="mt-auto mb-4 flex items-center gap-2 text-xs text-slate-400 font-mono bg-white border border-slate-100 px-2 py-1 rounded w-fit" title="API Key">
+                  <i class="fas fa-key text-slate-300"></i>
+                  <span>{{ model.api_key ? '••••' + model.api_key.slice(-4) : '无密钥' }}</span>
+                </div>
+
               </div>
 
-              <!-- 下半部分：统计信息 -->
-              <div class="grid grid-cols-4 gap-4 pt-4 border-t border-slate-200">
-                <div>
-                  <span class="text-xs text-slate-500">利用率额度</span>
-                  <div class="flex items-center gap-2 mt-2">
-                    <div class="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                      <div 
-                        class="h-full transition-all duration-300"
-                        :class="model.utilization < 10 ? 'bg-red-500' : model.utilization < 30 ? 'bg-orange-500' : 'bg-green-500'"
-                        :style="{ width: model.utilization + '%' }"
-                      ></div>
-                    </div>
-                    <span class="text-sm font-semibold text-slate-700 w-10 text-right">{{ model.utilization }}%</span>
-                  </div>
-                </div>
-                <div>
-                  <span class="text-xs text-slate-500">总消耗</span>
-                  <p class="text-base font-semibold text-slate-700 mt-2">{{ formatNumber(model.tokens_used_total || 0) }}</p>
-                  <p class="text-xs text-slate-400 mt-1">tokens</p>
-                </div>
-                <div>
-                  <span class="text-xs text-slate-500">今日消耗</span>
-                  <p class="text-base font-semibold text-slate-700 mt-2">{{ formatNumber(model.tokens_used_today || 0) }}</p>
-                  <p class="text-xs text-slate-400 mt-1">tokens</p>
-                </div>
-                <div>
-                  <span class="text-xs text-slate-500">API Key</span>
-                  <p class="text-sm font-mono text-slate-600 mt-2 truncate" :title="model.api_key">
-                    {{ model.api_key ? '••••' + model.api_key.slice(-8) : '-' }}
-                  </p>
-                  <p class="text-xs text-slate-400 mt-1">已加密</p>
-                </div>
+              <!-- Actions Footer -->
+              <div class="px-5 py-3 border-t border-slate-100 flex items-center justify-end gap-2 bg-slate-50/50 rounded-b-xl">
+                 <n-tooltip trigger="hover">
+                   <template #trigger>
+                     <n-button size="small" secondary circle type="info" @click="testConnection(model.id)" :loading="testingModelIds.has(model.id)">
+                       <template #icon><i class="fas fa-plug text-xs"></i></template>
+                     </n-button>
+                   </template>
+                   测试连接
+                 </n-tooltip>
+
+                 <n-tooltip trigger="hover" v-if="model.is_active !== 1">
+                   <template #trigger>
+                     <n-button size="small" secondary circle type="success" @click="activateModel(model)">
+                       <template #icon><i class="fas fa-play text-xs"></i></template>
+                     </n-button>
+                   </template>
+                   激活模型
+                 </n-tooltip>
+
+                 <n-tooltip trigger="hover">
+                   <template #trigger>
+                     <n-button size="small" secondary circle @click="editModel(model)">
+                       <template #icon><i class="fas fa-pen text-xs"></i></template>
+                     </n-button>
+                   </template>
+                   编辑
+                 </n-tooltip>
+
+                 <n-popconfirm @positive-click="deleteModel(model)" :disabled="model.is_active === 1">
+                   <template #trigger>
+                     <n-button size="small" secondary circle type="error" :disabled="model.is_active === 1">
+                       <template #icon><i class="fas fa-trash text-xs"></i></template>
+                     </n-button>
+                   </template>
+                   确定删除此模型配置吗？
+                 </n-popconfirm>
               </div>
+
             </div>
           </div>
         </div>
@@ -441,13 +452,12 @@
 import { ref, reactive, onMounted, onUnmounted, computed, watch } from 'vue'
 import {
   NCard, NButton, NGrid, NGi, NStatistic, NSpace, NTag,
-  NSpin, NModal, NForm, NFormItem, NInput, NInputNumber, NSelect, NSwitch, NAlert, NTooltip, NPagination,
-  useMessage, useDialog
+  NSpin, NModal, NForm, NFormItem, NInput, NInputNumber, NSelect, NSwitch, NAlert, NTooltip, NPagination, NPopconfirm,
+  useMessage
 } from 'naive-ui'
 import { modelAPI, dashboardAPI } from '@/api'
 
 const message = useMessage()
-const dialog = useDialog()
 
 const models = ref([])
 const loading = ref(false)
@@ -456,6 +466,39 @@ const isEditing = ref(false)
 const submitting = ref(false)
 const formRef = ref(null)
 const autoSwitch = ref(true)
+const testingConnection = ref(false)
+const testingModelIds = reactive(new Set())
+
+const testConnection = async (modelId = null) => {
+  if (typeof modelId === 'object') {
+    // 兼容点击事件对象
+    modelId = null
+  }
+
+  if (modelId) {
+    testingModelIds.add(modelId)
+  } else {
+    testingConnection.value = true
+  }
+  
+  try {
+    const res = await modelAPI.testConnection(modelId)
+    if (res.status === 'success') {
+      message.success('模型连接测试成功: ' + res.response)
+    } else {
+      message.error(res.message || '模型连接测试失败')
+    }
+  } catch (err) {
+    console.error('Test connection error:', err)
+    message.error('模型连接测试异常: ' + (err.response?.data?.detail || err.message))
+  } finally {
+    if (modelId) {
+      testingModelIds.delete(modelId)
+    } else {
+      testingConnection.value = false
+    }
+  }
+}
 
 // 自动切换状态
 const autoSwitchProfiles = ref([])
@@ -551,6 +594,12 @@ const getPriorityType = (priority) => {
   if (priority === 2) return 'warning'
   if (priority === 3) return 'info'
   return 'default'
+}
+
+const getUtilizationColor = (util) => {
+  if (util < 30) return 'bg-green-500'
+  if (util < 70) return 'bg-yellow-500'
+  return 'bg-red-500'
 }
 
 // ===== API 调用 =====
@@ -717,22 +766,20 @@ const activateModel = async (model) => {
   }
 }
 
-const deleteModel = (model) => {
-  if (model.is_active === 1) { message.warning('无法删除激活中的模型'); return }
-  dialog.warning({
-    title: '确认删除',
-    content: `确定要删除模型 "${model.model_name}" 吗？`,
-    positiveText: '确定',
-    negativeText: '取消',
-    onPositiveClick: async () => {
-      try {
-        const result = await modelAPI.delete(model.id)
-        if (result.success) { message.success('删除成功'); loadModels() }
-      } catch (error) {
-        message.error('删除失败')
-      }
+const deleteModel = async (model) => {
+  if (model.is_active === 1) {
+    message.warning('无法删除激活中的模型')
+    return
+  }
+  try {
+    const result = await modelAPI.delete(model.id)
+    if (result.success) {
+      message.success('删除成功')
+      loadModels()
     }
-  })
+  } catch (error) {
+    message.error('删除失败')
+  }
 }
 
 // 获取系统日志
@@ -784,40 +831,10 @@ onUnmounted(() => {
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
 }
 
-.model-card-modern {
-  padding: 1.75rem;
-  background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 1rem;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-}
-.model-card-modern:hover {
-  border-color: #007857;
-  box-shadow: 0 8px 24px rgba(0, 120, 87, 0.12);
+.model-card:hover {
+  border-color: #6366f1;
   transform: translateY(-2px);
-}
-.model-card-modern.active {
-  background: linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%);
-  border: 2px solid #10b981;
-  box-shadow: 0 8px 24px rgba(16, 185, 129, 0.2);
-}
-
-.status-badge-active {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.25rem 0.5rem;
-  background: linear-gradient(135deg, #10b981, #059669);
-  color: white;
-  font-size: 0.75rem;
-  font-weight: 600;
-  border-radius: 9999px;
-  animation: pulse 2s infinite;
-}
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.8; }
+  box-shadow: 0 10px 25px -5px rgba(99, 102, 241, 0.15), 0 8px 10px -6px rgba(99, 102, 241, 0.1);
 }
 
 .log-line { margin-bottom: 0.5rem; font-size: 0.75rem; line-height: 1.5; }

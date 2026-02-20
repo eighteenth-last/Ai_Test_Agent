@@ -13,6 +13,7 @@ from .azure_provider import AzureOpenAIProvider
 from .mistral_provider import MistralProvider
 from .moonshot_provider import MoonshotProvider
 from .generic_provider import GenericOpenAIProvider
+from .minimax_provider import MiniMaxProvider
 
 __all__ = [
     "OpenAIProvider",
@@ -25,4 +26,5 @@ __all__ = [
     "MistralProvider",
     "MoonshotProvider",
     "GenericOpenAIProvider",
+    "MiniMaxProvider",
 ]

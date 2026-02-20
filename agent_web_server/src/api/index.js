@@ -176,6 +176,26 @@ export const modelAPI = {
   },
   resetTodayTokens() {
     return api.post('/models/token-stats/reset-today')
+  },
+  testConnection(modelId = null) {
+    const data = modelId ? { model_id: modelId } : {}
+    return api.post('/models/test_connection', data)
+  },
+  // 供应商管理
+  getAllProviders() {
+    return api.get('/models/providers/all')
+  },
+  createProvider(data) {
+    return api.post('/models/providers', data)
+  },
+  updateProvider(id, data) {
+    return api.put(`/models/providers/${id}`, data)
+  },
+  deleteProvider(id) {
+    return api.delete(`/models/providers/${id}`)
+  },
+  toggleProvider(id) {
+    return api.put(`/models/providers/${id}/toggle`)
   }
 }
 
