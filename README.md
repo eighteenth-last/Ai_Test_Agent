@@ -130,13 +130,31 @@ AI Test Agent 是一个基于人工智能的自动化测试平台，利用大语
 - **一键测试自动通知**：一键测试完成后自动将测试报告 + Bug 报告整合为一封 HTML 邮件，发送给 `auto_receive_bug=1` 的联系人
 - **Bug 报告**：按严重程度、状态、错误类型多维度管理
 
-### 10. 数据可视化仪表盘
+### 10. 安全测试（Security Testing）
+- **四种扫描类型**：
+  - **Web 扫描**：基于 OWASP ZAP（Docker 运行），支持 Spider 爬虫 + Active Scan，可选 sqlmap 二次验证 SQL 注入
+  - **API 攻击**：LLM 驱动的智能攻击生成，自动生成越权测试、参数越界、JWT 篡改、注入 payload 等攻击 DSL 并执行
+  - **依赖扫描**：集成 Safety、Bandit、npm audit、Trivy，扫描 Python/Node.js 依赖和 Docker 镜像的已知 CVE
+  - **基线检测**：检查安全响应头、Cookie 安全属性、HTTPS 配置、信息泄露、敏感路径等
+- **异步任务管理**：asyncio + BackgroundTasks 异步执行，支持实时进度轮询、任务停止、超时控制
+- **统一漏洞格式**：所有扫描来源（ZAP/sqlmap/Safety/LLM）的漏洞统一为标准结构（source/vuln_type/severity/url/param/description/solution）
+- **风险评分系统**：Critical×20 + High×10 + Medium×5 + Low×1，Score = max(0, 100 - total)，等级 A/B/C/D
+- **安全测试用例任务列表**：筛选 `case_type='安全测试'` 的用例，支持按状态（待测试/通过/Bug）筛选、搜索、分页，内联下拉切换状态
+- **报告生成**：自动生成 Markdown 安全报告，严重漏洞自动创建 Bug 单并邮件通知
+- **安全隔离**：扫描目标白名单、禁止公网 IP、限速、最大扫描时长、Docker 隔离运行 ZAP
+
+### 11. 数据可视化仪表盘
+- 五维统计卡片（测试用例、测试报告、Bug 报告、邮件发送、安全扫描）
 - 测试结果分布（通过/失败/待执行）
 - 用例优先级与类型分布
 - 测试趋势图（支持近一月/一季/一年）
 - Bug 严重程度分布（横向柱状图）
 - Bug 状态分布（环形饼图）
 - Bug 错误类型分布（雷达图）
+- 安全扫描类型分布（环形图）
+- 安全风险等级分布（柱状图）
+- 漏洞严重程度汇总（横向柱状图）
+- 安全测试用例状态分布（环形图）
 - 邮件发送统计
 - 系统日志聚合（从测试报告、Bug、邮件、Token 使用记录中实时聚合）
 
@@ -152,6 +170,7 @@ AI Test Agent 是一个基于人工智能的自动化测试平台，利用大语
 - **对象存储**: MinIO（接口文件存储与版本管理）
 - **邮件服务**: 阿里云 DirectMail (HMAC-SHA1 签名) + Resend
 - **其他**: PyPDF2, Pandas, python-docx, Markdown, requests
+- **安全扫描**: OWASP ZAP (Docker)、sqlmap、Safety、Bandit、npm audit、Trivy
 
 ### 前端技术栈
 - **框架**: Vue 3.4.0 + Naive UI 2.38.0
@@ -203,6 +222,18 @@ Ai_Test_Agent/
 │   │   ├── loop_detection.py   # 循环检测器（防止 Agent 无限循环）
 │   │   └── skill_manager.py    # Skills 管理（MinIO存储/GitHub下载/手动上传/便签注入）
 │   ├── Api_request/            # 提示词模板（集中管理所有 LLM 提示词，含瞬态UI处理规则）
+│   ├── Security_Test/          # 安全测试模块
+│   │   ├── router.py           # 安全扫描 + 用例任务列表 API
+│   │   ├── service.py          # 扫描调度服务（异步执行四种扫描类型）
+│   │   ├── task_manager.py     # 任务管理（启动/停止/进度/超时控制）
+│   │   ├── zap_client.py       # OWASP ZAP 客户端（Spider + Active Scan）
+│   │   ├── sqlmap_runner.py    # sqlmap SQL 注入验证
+│   │   ├── api_attack_generator.py  # LLM 驱动的 API 攻击生成
+│   │   ├── dependency_scan.py  # 依赖扫描（Safety/Bandit/npm/Trivy）
+│   │   ├── baseline_scan.py    # 安全基线检测
+│   │   ├── vuln_parser.py      # 漏洞统一格式解析
+│   │   ├── risk_scoring.py     # 风险评分系统
+│   │   └── report_builder.py   # 安全报告生成
 │   ├── Bug_Analysis/           # Bug 分析服务
 │   ├── Build_Report/           # 报告生成服务
 │   ├── Build_Use_case/         # 用例生成服务
@@ -356,20 +387,28 @@ npm run dev
 - 安装后的 Skills 会在一键测试执行时自动注入到 AI Agent 的提示词中，增强测试能力
 - 支持启用/禁用/删除/查看详情
 
-### 6. 查看结果
+### 6. 安全测试
+- 在"安全测试"页面选择扫描类型（Web 扫描 / API 攻击 / 依赖扫描 / 基线检测）
+- 输入目标 URL 或项目路径，配置扫描参数后点击"开始扫描"
+- 扫描过程中实时显示进度、当前阶段和已发现漏洞数
+- 扫描完成后展示风险评分（A/B/C/D）、漏洞严重程度分布和详细漏洞列表
+- 安全测试用例任务列表展示所有 `case_type='安全测试'` 的用例，支持内联切换状态（待测试/通过/Bug）
+- 扫描历史记录支持查看结果和删除
+
+### 7. 查看结果
 - **运行测试报告**：查看详细的执行日志、AI 思维链和步骤详情，状态根据通过/失败数量自动判定。
 - **Bug 报告**：测试失败时自动生成 Bug 单，包含关联用例、复现步骤、预期/实际结果和修复建议。
 - **综合评估报告**：选择多份运行报告，AI 自动聚合分析生成质量评级和改进建议。
 
-### 7. 邮件通知
+### 8. 邮件通知
 - 在"邮件配置"中配置阿里云 DirectMail 或 Resend 服务
 - 综合评估报告可一键发送给指定联系人
 - 一键测试完成后自动将测试报告 + Bug 报告整合发送给 `auto_receive_bug=1` 的联系人
 - 接口测试失败时自动发送 Bug 通知邮件给自动接收联系人
 - 支持测试模式（发送到测试邮箱而非真实收件人）
 
-### 8. 数据看板
-仪表盘提供全局视角的测试数据可视化，包括测试趋势、Bug 分布、用例覆盖等多维度图表。
+### 9. 数据看板
+仪表盘提供全局视角的测试数据可视化，包括测试趋势、Bug 分布、用例覆盖、安全扫描统计、漏洞严重程度分布、安全用例状态等多维度图表，采用三列自适应布局。
 
 ## 许可证
 

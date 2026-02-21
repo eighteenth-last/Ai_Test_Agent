@@ -60,6 +60,7 @@ class ExecutionCase(Base):
     stage = Column(String(50), comment='适用阶段')
     test_data = Column(JSON, comment='测试数据（JSON格式）')
     csv_file_path = Column(String(500), comment='CSV文件路径')
+    security_status = Column(String(20), default='待测试', comment='安全测试状态: 待测试/通过/bug')
     created_at = Column(DateTime, default=datetime.now, comment='创建时间')
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
 
@@ -330,6 +331,29 @@ class TestEnvironment(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
 
 
+class SecurityScanTask(Base):
+    """安全扫描任务表"""
+    __tablename__ = 'security_scan_tasks'
+
+    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    scan_type = Column(String(30), nullable=False, comment='扫描类型: web_scan/api_attack/dependency_scan/baseline_check')
+    target = Column(String(500), nullable=False, comment='扫描目标URL或路径')
+    status = Column(String(20), default='pending', comment='状态: pending/running/finished/failed/stopped')
+    progress = Column(Integer, default=0, comment='进度百分比 0-100')
+    config = Column(JSON, comment='扫描配置')
+    risk_score = Column(Integer, comment='风险评分 0-100')
+    risk_level = Column(String(10), comment='风险等级: A/B/C/D')
+    vuln_summary = Column(JSON, comment='漏洞统计摘要')
+    vulnerabilities = Column(LONGTEXT, comment='漏洞详情列表(JSON)')
+    report_content = Column(LONGTEXT, comment='报告内容(Markdown/HTML)')
+    error_message = Column(Text, comment='错误信息')
+    start_time = Column(DateTime, comment='开始时间')
+    end_time = Column(DateTime, comment='结束时间')
+    duration = Column(Integer, comment='耗时(秒)')
+    created_at = Column(DateTime, default=datetime.now, comment='创建时间')
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
+
+
 class Skill(Base):
     """Skills管理表"""
     __tablename__ = 'skills'
@@ -378,7 +402,8 @@ def init_db():
             'api_endpoints': ApiEndpoint,
             'oneclick_sessions': OneclickSession,
             'test_environments': TestEnvironment,
-            'skills': Skill
+            'skills': Skill,
+            'security_scan_tasks': SecurityScanTask
         }
         
         for table_name in tables_to_create:
@@ -415,6 +440,7 @@ def _upgrade_existing_tables(inspector):
         ('llm_models', 'last_failure_reason', 'VARCHAR(50) DEFAULT NULL', None),
         ('llm_models', 'last_used_at', 'DATETIME DEFAULT NULL', None),
         ('llm_models', 'auto_switch_enabled', 'INT DEFAULT 1', None),
+        ('execution_cases', 'security_status', "VARCHAR(20) DEFAULT '待测试'", None),
     ]
 
     with engine.connect() as conn:

@@ -17,7 +17,8 @@ from database.connection import (
     BugReport,
     TestReport,
     EmailRecord,
-    LLMModel
+    LLMModel,
+    SecurityScanTask
 )
 
 router = APIRouter(
@@ -403,6 +404,95 @@ async def get_bug_distribution(db: Session = Depends(get_db)):
             "by_type": type_stats
         }
     }
+
+
+@router.get("/security-stats")
+async def get_security_stats(db: Session = Depends(get_db)):
+    """获取安全测试统计数据"""
+    try:
+        # 扫描任务统计
+        total_scans = db.query(func.count(SecurityScanTask.id)).scalar() or 0
+        finished_scans = db.query(func.count(SecurityScanTask.id)).filter(
+            SecurityScanTask.status == 'finished'
+        ).scalar() or 0
+        failed_scans = db.query(func.count(SecurityScanTask.id)).filter(
+            SecurityScanTask.status == 'failed'
+        ).scalar() or 0
+        running_scans = db.query(func.count(SecurityScanTask.id)).filter(
+            SecurityScanTask.status == 'running'
+        ).scalar() or 0
+
+        # 按扫描类型统计
+        type_stats = {}
+        for scan_type in ['web_scan', 'api_attack', 'dependency_scan', 'baseline_check']:
+            count = db.query(func.count(SecurityScanTask.id)).filter(
+                SecurityScanTask.scan_type == scan_type
+            ).scalar() or 0
+            type_stats[scan_type] = count
+
+        # 风险等级分布（已完成的任务）
+        risk_stats = {}
+        for level in ['A', 'B', 'C', 'D']:
+            count = db.query(func.count(SecurityScanTask.id)).filter(
+                SecurityScanTask.status == 'finished',
+                SecurityScanTask.risk_level == level
+            ).scalar() or 0
+            risk_stats[level] = count
+
+        # 漏洞严重程度汇总（从已完成任务的 vuln_summary 聚合）
+        import json
+        vuln_totals = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'info': 0}
+        finished_tasks = db.query(SecurityScanTask).filter(
+            SecurityScanTask.status == 'finished',
+            SecurityScanTask.vuln_summary.isnot(None)
+        ).all()
+        for task in finished_tasks:
+            summary = task.vuln_summary
+            if isinstance(summary, str):
+                try:
+                    summary = json.loads(summary)
+                except Exception:
+                    continue
+            if isinstance(summary, dict):
+                for key in vuln_totals:
+                    vuln_totals[key] += summary.get(key, 0)
+
+        # 安全测试用例状态统计
+        case_total = db.query(func.count(ExecutionCase.id)).filter(
+            ExecutionCase.case_type == '安全测试'
+        ).scalar() or 0
+        case_pass = db.query(func.count(ExecutionCase.id)).filter(
+            ExecutionCase.case_type == '安全测试',
+            ExecutionCase.security_status == '通过'
+        ).scalar() or 0
+        case_bug = db.query(func.count(ExecutionCase.id)).filter(
+            ExecutionCase.case_type == '安全测试',
+            ExecutionCase.security_status == 'bug'
+        ).scalar() or 0
+        case_pending = case_total - case_pass - case_bug
+
+        return {
+            "success": True,
+            "data": {
+                "scan_summary": {
+                    "total": total_scans,
+                    "finished": finished_scans,
+                    "failed": failed_scans,
+                    "running": running_scans
+                },
+                "by_type": type_stats,
+                "by_risk_level": risk_stats,
+                "vuln_severity": vuln_totals,
+                "case_status": {
+                    "total": case_total,
+                    "pass": case_pass,
+                    "bug": case_bug,
+                    "pending": case_pending
+                }
+            }
+        }
+    except Exception as e:
+        return {"success": False, "message": str(e)}
 
 
 @router.get("/recent-executions")

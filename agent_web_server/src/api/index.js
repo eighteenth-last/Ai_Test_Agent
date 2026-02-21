@@ -303,6 +303,9 @@ export const dashboardAPI = {
   },
   getSystemLogs(limit = 50) {
     return api.get('/dashboard/system-logs', { params: { limit } })
+  },
+  getSecurityStats() {
+    return api.get('/dashboard/security-stats')
   }
 }
 
@@ -388,6 +391,35 @@ export const testEnvAPI = {
   },
   setDefault(envId) {
     return api.put(`/test-env/${envId}/set-default`)
+  }
+}
+
+// Security Test - 安全测试
+export const securityAPI = {
+  run(type, target, config = {}) {
+    return api.post('/security/run', { type, target, config })
+  },
+  stop(task_id) {
+    return api.post('/security/stop', { task_id })
+  },
+  getStatus(task_id) {
+    return api.get(`/security/status/${task_id}`)
+  },
+  getResult(task_id) {
+    return api.get(`/security/result/${task_id}`)
+  },
+  getHistory(params) {
+    return api.get('/security/history', { params })
+  },
+  delete(task_id) {
+    return api.delete(`/security/${task_id}`)
+  },
+  // 安全测试用例任务列表
+  getCases(params) {
+    return api.get('/security/cases', { params })
+  },
+  updateCaseStatus(caseId, status) {
+    return api.put(`/security/cases/${caseId}/status`, { status })
   }
 }
 
