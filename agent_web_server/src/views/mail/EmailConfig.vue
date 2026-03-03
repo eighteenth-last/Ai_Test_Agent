@@ -22,8 +22,8 @@
           </div>
           <div class="detail-item">
             <span class="label">服务商：</span>
-            <n-tag :type="activeConfig.provider === 'aliyun' ? 'info' : 'primary'">
-              {{ activeConfig.provider === 'aliyun' ? '阿里云' : 'Resend' }}
+            <n-tag :type="{ resend: 'primary', aliyun: 'info', smtp: 'warning', cybermail: 'success' }[activeConfig.provider] || 'default'">
+              {{ { resend: 'Resend', aliyun: '阿里云', smtp: 'SMTP 自定义', cybermail: 'CyberMail' }[activeConfig.provider] || activeConfig.provider }}
             </n-tag>
           </div>
           <div class="detail-item">
@@ -39,6 +39,10 @@
           <div v-if="activeConfig.test_mode" class="detail-item">
             <span class="label">测试邮箱：</span>
             <span class="value">{{ activeConfig.test_email }}</span>
+          </div>
+          <div v-if="activeConfig.provider === 'smtp'" class="detail-item">
+            <span class="label">SMTP服务器：</span>
+            <span class="value">{{ activeConfig.smtp_host }}:{{ activeConfig.smtp_port }}</span>
           </div>
         </div>
       </div>
@@ -82,6 +86,7 @@
           </n-form-item>
           
           <n-form-item 
+            v-if="createForm.provider !== 'smtp' && createForm.provider !== 'cybermail'"
             :label="createForm.provider === 'aliyun' ? 'Access Key ID' : 'API Key'" 
             path="api_key"
           >
@@ -92,6 +97,45 @@
               :placeholder="createForm.provider === 'aliyun' ? '阿里云 Access Key ID' : 'Resend API Key'"
             />
           </n-form-item>
+
+          <!-- SMTP 自定义专属字段 -->
+          <template v-if="createForm.provider === 'smtp'">
+            <n-form-item label="SMTP服务器" path="smtp_host">
+              <n-input v-model:value="createForm.smtp_host" placeholder="例如：mail.example.com" />
+            </n-form-item>
+            <n-form-item label="SMTP端口" path="smtp_port">
+              <n-input-number v-model:value="createForm.smtp_port" :min="1" :max="65535" style="width:100%" />
+            </n-form-item>
+            <n-form-item label="SMTP用户名" path="smtp_username">
+              <n-input v-model:value="createForm.smtp_username" placeholder="登录用户名，如未填则与发件人邮箱相同" />
+            </n-form-item>
+            <n-form-item label="SMTP密码" path="api_key">
+              <n-input
+                v-model:value="createForm.api_key"
+                type="password"
+                show-password-on="click"
+                placeholder="SMTP登录密码"
+              />
+            </n-form-item>
+          </template>
+
+          <!-- CyberMail 专属字段（主机固定为 mail.cyberpersons.com:587） -->
+          <template v-if="createForm.provider === 'cybermail'">
+            <n-form-item label="SMTP用户名" path="smtp_username">
+              <n-input v-model:value="createForm.smtp_username" placeholder="SMTP 登录用户名，如 smtp_xxxxxxxx" />
+            </n-form-item>
+            <n-form-item label="SMTP密码" path="api_key">
+              <n-input
+                v-model:value="createForm.api_key"
+                type="password"
+                show-password-on="click"
+                placeholder="SMTP 登录密码"
+              />
+            </n-form-item>
+            <div style="margin: -8px 0 12px 120px; font-size: 12px; color: #94a3b8;">
+              服务器固定：mail.cyberpersons.com:587（STARTTLS）
+            </div>
+          </template>
           
           <n-form-item 
             v-if="createForm.provider === 'aliyun'" 
@@ -161,13 +205,22 @@
           label-placement="left"
           label-width="120"
         >
-          <n-form-item label="API Key">
+          <n-form-item label="API Key / SMTP密码">
             <n-input
               v-model:value="editForm.api_key"
               type="password"
               show-password-on="click"
               placeholder="留空则不修改"
             />
+          </n-form-item>
+          <n-form-item label="SMTP服务器">
+            <n-input v-model:value="editForm.smtp_host" placeholder="留空则不修改" />
+          </n-form-item>
+          <n-form-item label="SMTP端口">
+            <n-input-number v-model:value="editForm.smtp_port" :min="1" :max="65535" style="width:100%" placeholder="留空则不修改" />
+          </n-form-item>
+          <n-form-item label="SMTP用户名">
+            <n-input v-model:value="editForm.smtp_username" placeholder="留空则不修改" />
           </n-form-item>
           
           <n-form-item label="发件人邮箱">
@@ -215,8 +268,10 @@ import {
   NForm,
   NFormItem,
   NInput,
+  NInputNumber,
   NSwitch,
   NSpace,
+  NSelect,
   useMessage,
   useDialog
 } from 'naive-ui'
@@ -245,7 +300,10 @@ const createForm = ref({
   sender_email: '',
   test_email: '',
   test_mode: 1,
-  description: ''
+  description: '',
+  smtp_host: '',
+  smtp_port: 587,
+  smtp_username: ''
 })
 
 const editForm = ref({
@@ -255,12 +313,17 @@ const editForm = ref({
   sender_email: '',
   test_email: '',
   test_mode: 1,
-  description: ''
+  description: '',
+  smtp_host: '',
+  smtp_port: null,
+  smtp_username: ''
 })
 
 const providerOptions = [
   { label: 'Resend', value: 'resend' },
-  { label: '阿里云邮件推送', value: 'aliyun' }
+  { label: '阿里云邮件推送', value: 'aliyun' },
+  { label: 'SMTP 自定义', value: 'smtp' },
+  { label: 'CyberMail', value: 'cybermail' }
 ]
 
 const testModeSwitch = computed({
@@ -299,8 +362,8 @@ const columns = [
     render(row) {
       return h(
         NTag,
-        { type: row.provider === 'aliyun' ? 'info' : 'primary', size: 'small' },
-        { default: () => row.provider === 'aliyun' ? '阿里云' : 'Resend' }
+        { type: { resend: 'primary', aliyun: 'info', smtp: 'warning', cybermail: 'success' }[row.provider] || 'default', size: 'small' },
+        { default: () => ({ resend: 'Resend', aliyun: '阿里云', smtp: 'SMTP', cybermail: 'CyberMail' }[row.provider] || row.provider) }
       )
     }
   },
@@ -426,6 +489,18 @@ const handleCreate = async () => {
     if (payload.provider !== 'aliyun' && !payload.secret_key) {
       delete payload.secret_key
     }
+    if (payload.provider !== 'smtp') {
+      delete payload.smtp_host
+      delete payload.smtp_port
+    }
+    if (payload.provider !== 'smtp' && payload.provider !== 'cybermail') {
+      delete payload.smtp_username
+    } else {
+      if (!payload.smtp_username) delete payload.smtp_username
+      if (payload.provider === 'smtp') {
+        if (!payload.smtp_host) delete payload.smtp_host
+      }
+    }
     const res = await emailAPI.createConfig(payload)
     if (res.success) {
       message.success('配置创建成功')
@@ -438,7 +513,10 @@ const handleCreate = async () => {
         sender_email: '',
         test_email: '',
         test_mode: 1,
-        description: ''
+        description: '',
+        smtp_host: '',
+        smtp_port: 587,
+        smtp_username: ''
       }
       loadConfigs()
     }
@@ -457,7 +535,10 @@ const openEditModal = (row) => {
     sender_email: row.sender_email,
     test_email: row.test_email,
     test_mode: row.test_mode,
-    description: row.description
+    description: row.description,
+    smtp_host: row.smtp_host || '',
+    smtp_port: row.smtp_port || null,
+    smtp_username: row.smtp_username || ''
   }
   showEditModal.value = true
 }
@@ -473,6 +554,9 @@ const handleEdit = async () => {
     if (editForm.value.test_email) updateData.test_email = editForm.value.test_email
     updateData.test_mode = editForm.value.test_mode
     if (editForm.value.description) updateData.description = editForm.value.description
+    if (editForm.value.smtp_host) updateData.smtp_host = editForm.value.smtp_host
+    if (editForm.value.smtp_port) updateData.smtp_port = editForm.value.smtp_port
+    if (editForm.value.smtp_username) updateData.smtp_username = editForm.value.smtp_username
     
     const res = await emailAPI.updateConfig(currentEditId.value, updateData)
     if (res.success) {

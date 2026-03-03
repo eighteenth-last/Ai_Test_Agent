@@ -126,7 +126,7 @@ AI Test Agent 是一个基于人工智能的自动化测试平台，利用大语
 ### 9. 报告与通知
 - **运行测试报告**：详细执行日志、思维链（Thinking）、步骤截图
 - **综合评估报告**：AI 驱动的多报告聚合分析，包含质量评级（A/B/C/D）、通过率、改进建议，Markdown 渲染展示
-- **邮件推送**：集成阿里云 DirectMail 和 Resend，支持自动发送格式化 HTML 邮件给联系人
+- **邮件推送**：集成阿里云 DirectMail、Resend、SMTP 自定义、CyberMail，支持自动发送格式化 HTML 邮件给联系人；采用工厂模式统一调度（`Email_manage/sender.py`），新增服务商只需注册一行，无需修改任何调用方
 - **一键测试自动通知**：一键测试完成后自动将测试报告 + Bug 报告整合为一封 HTML 邮件，发送给 `auto_receive_bug=1` 的联系人
 - **Bug 报告**：按严重程度、状态、错误类型多维度管理
 
@@ -168,7 +168,7 @@ AI Test Agent 是一个基于人工智能的自动化测试平台，利用大语
 - **LLM 集成**: 支持 OpenAI, Anthropic, Google GenAI, DeepSeek, Alibaba, MiniMax, Ollama 等多协议
 - **LLM 容错**: json-repair 库 + 多层 JSON 修复管线 + LLMWrapper 统一包装
 - **对象存储**: MinIO（接口文件存储与版本管理）
-- **邮件服务**: 阿里云 DirectMail (HMAC-SHA1 签名) + Resend
+- **邮件服务**: 工厂模式统一调度（`Email_manage/sender.py`），内置 Resend / 阿里云 DirectMail (HMAC-SHA1) / SMTP 自定义 (STARTTLS) / CyberMail，扩展新服务商无需修改调用方
 - **其他**: PyPDF2, Pandas, python-docx, Markdown, requests
 - **安全扫描**: OWASP ZAP (Docker)、sqlmap、Safety、Bandit、npm audit、Trivy
 
@@ -241,6 +241,8 @@ Ai_Test_Agent/
 │   ├── Dashboard/              # 仪表盘数据
 │   ├── Contact_manage/         # 联系人管理
 │   ├── Email_manage/           # 邮件管理
+│   │   ├── router.py           # 邮件配置 CRUD + 发送记录 API
+│   │   └── sender.py           # 邮件发送工厂（dispatch_send + _PROVIDER_MAP，新增服务商只改此文件）
 │   ├── Model_manage/           # 模型配置管理 + 供应商管理
 │   ├── Browser_Control/        # 浏览器控制
 │   ├── Test_Tools/             # 任务管理器
@@ -272,7 +274,7 @@ Ai_Test_Agent/
 │   │   │   │   └── ProviderManage.vue # 供应商管理
 │   │   │   ├── mail/           # 邮件发送与配置
 │   │   │   │   ├── SendMail.vue      # 邮件发送
-│   │   │   │   ├── EmailConfig.vue   # 邮件配置
+│   │   │   │   ├── EmailConfig.vue   # 邮件配置（Resend / 阿里云 / SMTP 自定义 / CyberMail）
 │   │   │   │   ├── ContactManage.vue # 联系人管理
 │   │   │   │   └── Contacts.vue      # 联系人列表
 │   │   │   └── prompt/         # 提示词管理
@@ -401,11 +403,16 @@ npm run dev
 - **综合评估报告**：选择多份运行报告，AI 自动聚合分析生成质量评级和改进建议。
 
 ### 8. 邮件通知
-- 在"邮件配置"中配置阿里云 DirectMail 或 Resend 服务
+- 在"邮件配置"中选择服务商并填写对应凭据：
+  - **Resend**：填写 API Key
+  - **阿里云**：填写 Access Key ID + Secret
+  - **SMTP 自定义**：填写 SMTP 服务器地址、端口、用户名、密码（STARTTLS）
+  - **CyberMail**：填写 SMTP 用户名和密码，服务器固定为 `mail.cyberpersons.com:587`
+- 可设置"测试模式"，开启后所有邮件强制发送到测试邮箱而非真实收件人
 - 综合评估报告可一键发送给指定联系人
 - 一键测试完成后自动将测试报告 + Bug 报告整合发送给 `auto_receive_bug=1` 的联系人
 - 接口测试失败时自动发送 Bug 通知邮件给自动接收联系人
-- 支持测试模式（发送到测试邮箱而非真实收件人）
+- **扩展新服务商**：在 `Email_manage/sender.py` 中实现 `_send_via_xxx(config, to_email, subject, html_body)` 函数，并在 `_PROVIDER_MAP` 注册一行，所有发送入口自动支持，无需改动其他代码
 
 ### 9. 数据看板
 仪表盘提供全局视角的测试数据可视化，包括测试趋势、Bug 分布、用例覆盖、安全扫描统计、漏洞严重程度分布、安全用例状态等多维度图表，采用三列自适应布局。

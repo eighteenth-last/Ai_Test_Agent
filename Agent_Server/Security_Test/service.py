@@ -150,12 +150,20 @@ class SecurityTestService:
 
 async def _run_web_scan(task_id: int, target: str, config: dict, db: Session) -> List[dict]:
     """Web 扫描: ZAP Spider + Active Scan + 可选 sqlmap 验证"""
-    from Security_Test.zap_client import check_zap_running, new_session, run_spider, run_active_scan, get_alerts
+    from Security_Test.zap_client import (
+        check_zap_running, check_zap_running_detail, get_zap_config,
+        new_session, run_spider, run_active_scan, get_alerts
+    )
     from Security_Test.vuln_parser import parse_zap_alerts
     from Security_Test.sqlmap_runner import verify_sql_injection
 
     if not check_zap_running():
-        raise RuntimeError("ZAP 未运行，请先启动 ZAP (推荐 Docker 方式)")
+        cfg = get_zap_config()
+        _, reason = check_zap_running_detail()
+        raise RuntimeError(
+            f"ZAP unreachable. url={cfg['base_url']}. "
+            f"Please check ZAP_API_URL/ZAP_API_KEY. detail={reason}"
+        )
 
     new_session()
     update_task_progress(db, task_id, 5, "running")

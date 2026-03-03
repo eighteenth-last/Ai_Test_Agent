@@ -15,10 +15,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # 数据库连接配置
-DB_HOST = os.getenv('DB_HOST', 'localhost')
+DB_HOST = os.getenv('DB_HOST', '127.0.0.1')
 DB_PORT = os.getenv('DB_PORT', '3306')
 DB_USER = os.getenv('DB_USER', 'root')
-DB_PASSWORD = os.getenv('DB_PASSWORD', '')
+DB_PASSWORD = os.getenv('DB_PASSWORD', 'qwer4321')
 DB_NAME = os.getenv('DB_NAME', 'ai_test_agent')
 
 DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}?charset=utf8mb4"
@@ -244,6 +244,9 @@ class EmailConfig(Base):
     test_mode = Column(Integer, default=1, comment='测试模式')
     is_active = Column(Integer, default=0, comment='是否激活')
     description = Column(Text, comment='备注说明')
+    smtp_host = Column(String(200), comment='SMTP服务器地址')
+    smtp_port = Column(Integer, default=587, comment='SMTP端口')
+    smtp_username = Column(String(200), comment='SMTP用户名')
     created_at = Column(DateTime, default=datetime.now, comment='创建时间')
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
 
@@ -441,6 +444,9 @@ def _upgrade_existing_tables(inspector):
         ('llm_models', 'last_used_at', 'DATETIME DEFAULT NULL', None),
         ('llm_models', 'auto_switch_enabled', 'INT DEFAULT 1', None),
         ('execution_cases', 'security_status', "VARCHAR(20) DEFAULT '待测试'", None),
+        ('email_config', 'smtp_host', 'VARCHAR(200) DEFAULT NULL', None),
+        ('email_config', 'smtp_port', 'INT DEFAULT 587', None),
+        ('email_config', 'smtp_username', 'VARCHAR(200) DEFAULT NULL', None),
     ]
 
     with engine.connect() as conn:

@@ -1755,8 +1755,7 @@ class OneClickService:
 </body></html>"""
 
         # 发送邮件
-        sender = email_config.sender_email
-        provider = email_config.provider or 'resend'
+        from Email_manage.sender import dispatch_send
         recipients_result = []
         success_count = 0
         failed_count_email = 0
@@ -1768,25 +1767,7 @@ class OneClickService:
                 else contact.email
             )
             try:
-                if provider == 'aliyun':
-                    from Build_Report.router import _send_via_aliyun
-                    _send_via_aliyun(
-                        access_key_id=email_config.api_key,
-                        access_key_secret=email_config.secret_key,
-                        sender=sender,
-                        to_email=to_email,
-                        subject=subject,
-                        html_body=html,
-                    )
-                else:
-                    import resend
-                    resend.api_key = email_config.api_key
-                    resend.Emails.send({
-                        "from": sender,
-                        "to": [to_email],
-                        "subject": subject,
-                        "html": html,
-                    })
+                dispatch_send(email_config, to_email, subject, html)
                 success_count += 1
                 recipients_result.append({
                     "name": contact.name, "email": contact.email, "status": "success"

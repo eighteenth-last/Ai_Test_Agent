@@ -1,128 +1,146 @@
 <template>
   <div class="dashboard-container">
     <!-- 顶部统计卡片 -->
-    <div class="stats-cards">
-      <div class="stat-card test-cases">
-        <div class="stat-icon"><i class="fas fa-list-check"></i></div>
-        <div class="stat-content">
-          <div class="stat-value">{{ stats.testCases }}</div>
-          <div class="stat-label">测试用例总数</div>
+    <n-grid x-gap="12" cols="2 s:3 m:4 l:5" responsive="screen" style="margin-bottom: 12px">
+      <n-gi>
+        <div class="stat-card test-cases">
+          <div class="stat-icon"><i class="fas fa-list-check"></i></div>
+          <div class="stat-content">
+            <div class="stat-value">{{ stats.testCases }}</div>
+            <div class="stat-label">测试用例总数</div>
+          </div>
         </div>
-      </div>
-      <div class="stat-card test-reports">
-        <div class="stat-icon"><i class="fas fa-file-lines"></i></div>
-        <div class="stat-content">
-          <div class="stat-value">{{ stats.testReports }}</div>
-          <div class="stat-label">测试报告数</div>
+      </n-gi>
+      <n-gi>
+        <div class="stat-card test-reports">
+          <div class="stat-icon"><i class="fas fa-file-lines"></i></div>
+          <div class="stat-content">
+            <div class="stat-value">{{ stats.testReports }}</div>
+            <div class="stat-label">测试报告数</div>
+          </div>
         </div>
-      </div>
-      <div class="stat-card bugs">
-        <div class="stat-icon"><i class="fas fa-bug"></i></div>
-        <div class="stat-content">
-          <div class="stat-value">{{ stats.bugReports }}</div>
-          <div class="stat-label">Bug报告数</div>
+      </n-gi>
+      <n-gi>
+        <div class="stat-card bugs">
+          <div class="stat-icon"><i class="fas fa-bug"></i></div>
+          <div class="stat-content">
+            <div class="stat-value">{{ stats.bugReports }}</div>
+            <div class="stat-label">Bug报告数</div>
+          </div>
         </div>
-      </div>
-      <div class="stat-card emails">
-        <div class="stat-icon"><i class="fas fa-envelope"></i></div>
-        <div class="stat-content">
-          <div class="stat-value">{{ stats.emailsSent }}</div>
-          <div class="stat-label">邮件发送数</div>
+      </n-gi>
+      <n-gi>
+        <div class="stat-card emails">
+          <div class="stat-icon"><i class="fas fa-envelope"></i></div>
+          <div class="stat-content">
+            <div class="stat-value">{{ stats.emailsSent }}</div>
+            <div class="stat-label">邮件发送数</div>
+          </div>
         </div>
-      </div>
-      <div class="stat-card security">
-        <div class="stat-icon"><i class="fas fa-shield-halved"></i></div>
-        <div class="stat-content">
-          <div class="stat-value">{{ securityStats.scan_summary?.total || 0 }}</div>
-          <div class="stat-label">安全扫描数</div>
+      </n-gi>
+      <n-gi>
+        <div class="stat-card security">
+          <div class="stat-icon"><i class="fas fa-shield-halved"></i></div>
+          <div class="stat-content">
+            <div class="stat-value">{{ securityStats.scan_summary?.total || 0 }}</div>
+            <div class="stat-label">安全扫描数</div>
+          </div>
         </div>
-      </div>
-    </div>
+      </n-gi>
+    </n-grid>
 
     <!-- 第一行：测试结果 + 优先级 + 用例类型 -->
-    <div class="charts-row three-col">
-      <n-card class="chart-card" title="测试结果分布">
-        <div ref="testResultChartRef" class="chart-container"></div>
-      </n-card>
-      <n-card class="chart-card" title="用例优先级分布">
-        <div ref="priorityChartRef" class="chart-container"></div>
-      </n-card>
-      <n-card class="chart-card" title="测试用例类型分布">
-        <div ref="moduleChartRef" class="chart-container"></div>
-      </n-card>
-    </div>
+    <n-grid x-gap="12" y-gap="12" cols="1 m:2 l:3" responsive="screen" style="margin-bottom: 12px">
+      <n-gi>
+        <n-card class="chart-card" title="测试结果分布" hoverable>
+          <div ref="testResultChartRef" class="chart-container"></div>
+        </n-card>
+      </n-gi>
+      <n-gi>
+        <n-card class="chart-card" title="用例优先级分布" hoverable>
+          <div ref="priorityChartRef" class="chart-container"></div>
+        </n-card>
+      </n-gi>
+      <n-gi>
+        <n-card class="chart-card" title="测试用例类型分布" hoverable>
+          <div ref="moduleChartRef" class="chart-container"></div>
+        </n-card>
+      </n-gi>
+    </n-grid>
 
     <!-- 第二行：测试趋势（全宽） -->
-    <div class="charts-row">
-      <n-card class="chart-card wide" title="测试趋势">
-        <template #header-extra>
-          <n-radio-group v-model:value="trendRange" size="small" @update:value="loadTrendChart">
-            <n-radio-button value="30">近一月</n-radio-button>
-            <n-radio-button value="90">近一季</n-radio-button>
-            <n-radio-button value="365">近一年</n-radio-button>
-          </n-radio-group>
-        </template>
-        <div ref="trendChartRef" class="chart-container"></div>
-      </n-card>
-    </div>
+    <n-grid x-gap="12" y-gap="12" cols="1" style="margin-bottom: 12px">
+      <n-gi>
+        <n-card class="chart-card wide" title="测试趋势" hoverable>
+          <template #header-extra>
+            <n-radio-group v-model:value="trendRange" size="small" @update:value="loadTrendChart">
+              <n-radio-button value="30">近一月</n-radio-button>
+              <n-radio-button value="90">近一季</n-radio-button>
+              <n-radio-button value="365">近一年</n-radio-button>
+            </n-radio-group>
+          </template>
+          <div ref="trendChartRef" class="chart-container"></div>
+        </n-card>
+      </n-gi>
+    </n-grid>
 
     <!-- 第三行：Bug 严重程度 + Bug 状态 + Bug 错误类型 -->
-    <div class="charts-row three-col">
-      <n-card class="chart-card" title="Bug 严重程度分布">
-        <div ref="bugSeverityChartRef" class="chart-container"></div>
-      </n-card>
-      <n-card class="chart-card" title="Bug 状态分布">
-        <div ref="bugStatusChartRef" class="chart-container"></div>
-      </n-card>
-      <n-card class="chart-card" title="Bug 错误类型分布">
-        <div ref="bugTypeChartRef" class="chart-container"></div>
-      </n-card>
-    </div>
+    <n-grid x-gap="12" y-gap="12" cols="1 m:2 l:3" responsive="screen" style="margin-bottom: 12px">
+      <n-gi>
+        <n-card class="chart-card" title="Bug 严重程度分布" hoverable>
+          <div ref="bugSeverityChartRef" class="chart-container"></div>
+        </n-card>
+      </n-gi>
+      <n-gi>
+        <n-card class="chart-card" title="Bug 状态分布" hoverable>
+          <div ref="bugStatusChartRef" class="chart-container"></div>
+        </n-card>
+      </n-gi>
+      <n-gi>
+        <n-card class="chart-card" title="Bug 错误类型分布" hoverable>
+          <div ref="bugTypeChartRef" class="chart-container"></div>
+        </n-card>
+      </n-gi>
+    </n-grid>
 
     <!-- 第四行：安全测试图表 -->
-    <div class="charts-row three-col">
-      <n-card class="chart-card" title="安全扫描类型分布">
-        <div ref="secScanTypeChartRef" class="chart-container"></div>
-      </n-card>
-      <n-card class="chart-card" title="安全风险等级分布">
-        <div ref="secRiskLevelChartRef" class="chart-container"></div>
-      </n-card>
-      <n-card class="chart-card" title="漏洞严重程度汇总">
-        <div ref="secVulnSeverityChartRef" class="chart-container"></div>
-      </n-card>
-    </div>
+    <n-grid x-gap="12" y-gap="12" cols="1 m:2 l:3" responsive="screen" style="margin-bottom: 16px">
+      <n-gi>
+        <n-card class="chart-card" title="安全扫描类型分布" hoverable>
+          <div ref="secScanTypeChartRef" class="chart-container"></div>
+        </n-card>
+      </n-gi>
+      <n-gi>
+        <n-card class="chart-card" title="安全风险等级分布" hoverable>
+          <div ref="secRiskLevelChartRef" class="chart-container"></div>
+        </n-card>
+      </n-gi>
+      <n-gi>
+        <n-card class="chart-card" title="漏洞严重程度汇总" hoverable>
+          <div ref="secVulnSeverityChartRef" class="chart-container"></div>
+        </n-card>
+      </n-gi>
+    </n-grid>
 
     <!-- 第五行：安全用例状态 + 邮件统计 -->
-    <div class="charts-row">
-      <n-card class="chart-card" title="安全测试用例状态">
-        <div ref="secCaseStatusChartRef" class="chart-container"></div>
-      </n-card>
-      <n-card class="chart-card" title="邮件发送统计">
-        <div ref="emailChartRef" class="chart-container"></div>
-      </n-card>
-    </div>
-
-    <!-- 最近活动 -->
-    <div class="charts-row">
-      <n-card class="chart-card wide" title="最近活动">
-        <n-timeline v-if="recentActivities.length">
-          <n-timeline-item
-            v-for="(item, idx) in recentActivities" :key="idx"
-            :type="item.type"
-            :title="item.title"
-            :content="item.content"
-            :time="item.time"
-          />
-        </n-timeline>
-        <n-empty v-else description="暂无活动记录" />
-      </n-card>
-    </div>
+    <n-grid x-gap="12" y-gap="12" cols="1 m:2" responsive="screen" style="margin-bottom: 16px">
+      <n-gi>
+        <n-card class="chart-card" title="安全测试用例状态" hoverable>
+          <div ref="secCaseStatusChartRef" class="chart-container"></div>
+        </n-card>
+      </n-gi>
+      <n-gi>
+        <n-card class="chart-card" title="邮件发送统计" hoverable>
+          <div ref="emailChartRef" class="chart-container"></div>
+        </n-card>
+      </n-gi>
+    </n-grid>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
-import { NCard, NTimeline, NTimelineItem, NEmpty, NRadioGroup, NRadioButton, useMessage } from 'naive-ui'
+import { NCard, NTimeline, NTimelineItem, NEmpty, NRadioGroup, NRadioButton, useMessage, NGrid, NGi } from 'naive-ui'
 import * as echarts from 'echarts'
 import { dashboardAPI } from '@/api'
 
@@ -549,14 +567,7 @@ onUnmounted(() => {
 
 <style scoped>
 .dashboard-container {
-  padding: 20px;
-}
-
-.stats-cards {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 16px;
-  margin-bottom: 20px;
+  padding: 0 8px 8px 8px;
 }
 
 .stat-card {
@@ -567,6 +578,7 @@ onUnmounted(() => {
   background: white;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
   transition: transform 0.3s, box-shadow 0.3s;
+  height: 100%;
 }
 
 .stat-card:hover {
@@ -611,54 +623,14 @@ onUnmounted(() => {
 .stat-value { font-size: 26px; font-weight: 700; color: #333; }
 .stat-label { font-size: 13px; color: #666; margin-top: 2px; }
 
-.charts-row {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-.charts-row.three-col {
-  grid-template-columns: repeat(3, 1fr);
-}
-
 .chart-card {
   border-radius: 12px;
-}
-
-.chart-card.wide {
-  grid-column: span 2;
-}
-
-.charts-row.three-col .chart-card.wide {
-  grid-column: span 3;
+  height: 100%;
 }
 
 .chart-container {
   height: 300px;
   min-height: 300px;
   width: 100%;
-}
-
-@media (max-width: 1400px) {
-  .stats-cards {
-    grid-template-columns: repeat(3, 1fr);
-  }
-  .charts-row.three-col {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (max-width: 1000px) {
-  .stats-cards {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .charts-row,
-  .charts-row.three-col {
-    grid-template-columns: 1fr;
-  }
-  .chart-card.wide {
-    grid-column: span 1;
-  }
 }
 </style>

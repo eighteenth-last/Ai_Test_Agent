@@ -267,36 +267,18 @@ async def send_report_to_contacts(
 </div>
 </body></html>"""
 
+    from Email_manage.sender import dispatch_send
+
     recipients = [{"id": c.id, "name": c.name, "email": c.email} for c in contacts]
     success_count = 0
     failed_count = 0
     failed_details = []
     recipients_result = []
 
-    provider = email_config.provider or 'resend'
-    sender = email_config.sender_email
-
     for contact in contacts:
         to_email = email_config.test_email if email_config.test_mode == 1 and email_config.test_email else contact.email
         try:
-            if provider == 'aliyun':
-                _send_via_aliyun(
-                    access_key_id=email_config.api_key,
-                    access_key_secret=email_config.secret_key,
-                    sender=sender,
-                    to_email=to_email,
-                    subject=subject,
-                    html_body=html_content
-                )
-            else:
-                import resend
-                resend.api_key = email_config.api_key
-                resend.Emails.send({
-                    "from": sender,
-                    "to": [to_email],
-                    "subject": subject,
-                    "html": html_content
-                })
+            dispatch_send(email_config, to_email, subject, html_content)
             success_count += 1
             recipients_result.append({"name": contact.name, "email": contact.email, "status": "success"})
         except Exception as e:
@@ -330,54 +312,8 @@ async def send_report_to_contacts(
     }
 
 
-def _send_via_aliyun(access_key_id, access_key_secret, sender, to_email, subject, html_body):
-    """通过阿里云 DirectMail HTTP API 发送邮件"""
-    import hashlib
-    import hmac
-    import base64
-    import urllib.parse
-    import uuid
-    import requests
-    from datetime import datetime, timezone
-
-    params = {
-        "Action": "SingleSendMail",
-        "AccountName": sender,
-        "ReplyToAddress": "false",
-        "AddressType": "1",
-        "ToAddress": to_email,
-        "Subject": subject,
-        "HtmlBody": html_body,
-        "Format": "JSON",
-        "Version": "2015-11-23",
-        "AccessKeyId": access_key_id,
-        "SignatureMethod": "HMAC-SHA1",
-        "SignatureVersion": "1.0",
-        "SignatureNonce": str(uuid.uuid4()),
-        "Timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-    }
-
-    # 构造签名字符串
-    sorted_params = sorted(params.items())
-    query_string = urllib.parse.urlencode(sorted_params, quote_via=urllib.parse.quote)
-    string_to_sign = "POST&%2F&" + urllib.parse.quote(query_string, safe='')
-
-    # HMAC-SHA1 签名
-    sign_key = (access_key_secret + "&").encode("utf-8")
-    signature = base64.b64encode(
-        hmac.new(sign_key, string_to_sign.encode("utf-8"), hashlib.sha1).digest()
-    ).decode("utf-8")
-
-    params["Signature"] = signature
-
-    resp = requests.post("https://dm.aliyuncs.com/", data=params, timeout=10)
-    result = resp.json()
-
-    if resp.status_code != 200 or "Code" in result:
-        error_msg = result.get("Message", result.get("Code", "未知错误"))
-        raise Exception(f"阿里云邮件发送失败: {error_msg}")
-
-    return result
+# 各服务商发送实现已统一迁移至 Email_manage/sender.py
+# 新增服务商请在 Email_manage/sender.py 的 _PROVIDER_MAP 中注册
 
 
 @router.get("/list")

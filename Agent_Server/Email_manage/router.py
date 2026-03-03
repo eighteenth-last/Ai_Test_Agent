@@ -32,12 +32,15 @@ class SendEmailRequest(BaseModel):
 class EmailConfigCreate(BaseModel):
     config_name: str
     provider: str = 'resend'
-    api_key: str
+    api_key: Optional[str] = None
     secret_key: Optional[str] = None
     sender_email: EmailStr
     test_email: Optional[EmailStr] = None
     test_mode: int = 1
     description: Optional[str] = None
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = 587
+    smtp_username: Optional[str] = None
 
 
 class EmailConfigUpdate(BaseModel):
@@ -48,19 +51,25 @@ class EmailConfigUpdate(BaseModel):
     test_email: Optional[EmailStr] = None
     test_mode: Optional[int] = None
     description: Optional[str] = None
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = None
+    smtp_username: Optional[str] = None
 
 
 class EmailConfigResponse(BaseModel):
     id: int
     config_name: str
     provider: str
-    api_key: str
+    api_key: Optional[str] = None
     secret_key: Optional[str] = None
     sender_email: str
     test_email: Optional[str] = None
     test_mode: int
     is_active: int
     description: Optional[str] = None
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = None
+    smtp_username: Optional[str] = None
     created_at: datetime
     updated_at: datetime = None
 
@@ -231,6 +240,9 @@ async def create_email_config(
             test_email=config_data.test_email,
             test_mode=config_data.test_mode,
             description=config_data.description,
+            smtp_host=config_data.smtp_host,
+            smtp_port=config_data.smtp_port,
+            smtp_username=config_data.smtp_username,
             is_active=0
         )
         
