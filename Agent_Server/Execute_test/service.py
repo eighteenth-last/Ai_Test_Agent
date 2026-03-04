@@ -167,7 +167,7 @@ async def start_chrome_with_debugging(chrome_path: str, headless: bool = False) 
     raise TimeoutError(f"Chrome 启动超时，CDP 端口 {port} 未响应")
 
 # 截图保存目录
-BUG_IMG_SAVE_PATH = Path(os.getenv('BUG_IMG_PATH', './save_floder/bug_img'))
+BUG_IMG_SAVE_PATH = Path(os.getenv('BUG_IMG_PATH', '../save_floder/bug_img'))
 BUG_IMG_SAVE_PATH.mkdir(parents=True, exist_ok=True)
 
 
