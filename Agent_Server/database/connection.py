@@ -305,6 +305,8 @@ class OneclickSession(Base):
     target_url = Column(String(500), comment='目标测试地址')
     login_info = Column(JSON, comment='登录信息')
     page_analysis = Column(JSON, comment='页面分析结果')
+    page_capabilities = Column(JSON, comment='页面能力抽象（forms/buttons/tables/auth_required等）')
+    task_tree = Column(JSON, comment='分层任务树（L1→L2→L3 结构）')
     generated_cases = Column(JSON, comment='LLM生成的测试用例')
     confirmed_cases = Column(JSON, comment='用户确认后的测试用例')
     execution_result = Column(JSON, comment='执行结果')
@@ -353,6 +355,42 @@ class SecurityScanTask(Base):
     start_time = Column(DateTime, comment='开始时间')
     end_time = Column(DateTime, comment='结束时间')
     duration = Column(Integer, comment='耗时(秒)')
+    created_at = Column(DateTime, default=datetime.now, comment='创建时间')
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
+
+
+class PageKnowledgeRecord(Base):
+    """页面知识库元数据表（MySQL 侧，与 Qdrant 向量库配合使用）"""
+    __tablename__ = 'page_knowledge'
+
+    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    url = Column(String(500), nullable=False, unique=True, comment='页面URL')
+    domain = Column(String(200), comment='站点域名')
+    page_type = Column(String(50), comment='页面类型: login/list/detail/form/dashboard/mixed')
+    summary = Column(Text, comment='一句话能力摘要')
+    module_name = Column(String(100), comment='所属功能模块')
+    hash_signature = Column(String(32), comment='页面结构签名（变更检测）')
+    version = Column(Integer, default=1, comment='知识版本号')
+    knowledge_json = Column(JSON, comment='完整页面知识 JSON')
+    vector_point_id = Column(String(100), comment='Qdrant 向量记录 ID')
+    created_at = Column(DateTime, default=datetime.now, comment='创建时间')
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
+
+
+class QdrantCollectionConfig(Base):
+    """Qdrant Collection 配置表（页面知识库向量存储配置）"""
+    __tablename__ = 'qdrant_collection_config'
+
+    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    collection_name = Column(String(100), nullable=False, default='page_knowledge', comment='Collection名称')
+    vector_size = Column(Integer, default=1024, comment='向量维度')
+    distance = Column(String(20), default='Cosine', comment='距离度量: Cosine/Dot/Euclid/Manhattan')
+    qdrant_host = Column(String(200), default='localhost', comment='Qdrant主机')
+    qdrant_port = Column(Integer, default=6333, comment='Qdrant端口')
+    embedding_model = Column(String(200), default='Qwen/Qwen3-Embedding-4B', comment='Embedding模型名')
+    embedding_api_url = Column(String(500), default='https://api.siliconflow.cn/v1/embeddings', comment='Embedding API地址')
+    embedding_api_key = Column(String(500), default='', comment='Embedding API Key')
+    is_active = Column(Integer, default=1, comment='是否启用')
     created_at = Column(DateTime, default=datetime.now, comment='创建时间')
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
 
@@ -406,7 +444,9 @@ def init_db():
             'oneclick_sessions': OneclickSession,
             'test_environments': TestEnvironment,
             'skills': Skill,
-            'security_scan_tasks': SecurityScanTask
+            'security_scan_tasks': SecurityScanTask,
+            'page_knowledge': PageKnowledgeRecord,
+            'qdrant_collection_config': QdrantCollectionConfig
         }
         
         for table_name in tables_to_create:

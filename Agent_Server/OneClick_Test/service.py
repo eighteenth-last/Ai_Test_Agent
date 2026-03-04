@@ -42,10 +42,19 @@ from Api_request.prompts import (
     ONECLICK_EXPLORE_TASK_TEMPLATE,
     ONECLICK_SUBTASK_GENERATION_SYSTEM,
     ONECLICK_SUBTASK_GENERATION_USER_TEMPLATE,
+    PAGE_CAPABILITY_ABSTRACTION_SYSTEM,
+    PAGE_CAPABILITY_ABSTRACTION_USER_TEMPLATE,
+    TASK_TREE_FEATURE_PLANNING_SYSTEM,
+    TASK_TREE_FEATURE_PLANNING_USER_TEMPLATE,
+    TASK_TREE_ATOMIC_PLANNING_SYSTEM,
+    TASK_TREE_ATOMIC_PLANNING_USER_TEMPLATE,
 )
 from OneClick_Test.session import SessionManager
 from OneClick_Test.skill_manager import SkillManager
 from OneClick_Test.loop_detection import LoopDetector, LoopDetectionConfig
+from OneClick_Test.task_tree import TaskTree, TaskNode, NodeStatus
+from Page_Knowledge.service import PageKnowledgeService
+from Page_Knowledge.schema import PageKnowledge
 
 logger = logging.getLogger(__name__)
 
@@ -184,80 +193,221 @@ class OneClickService:
                 logger.error(f"[OneClick] 后台任务：会话 {session_id} 不存在")
                 return
 
-            # 1. 浏览器探索
+            # 1. 浏览器探索（先查知识库，命中则跳过）
             SessionManager.update_status(db, session, 'exploring')
 
-            explore_result = await OneClickService._explore_page(
-                db, session, intent, env_info
-            )
-
-            # 检查是否已被取消
-            if _is_cancelled():
-                logger.info(f"[OneClick] ⏹️ 后台任务已取消（探索后）: session_id={session_id}")
-                return
+            target_url = env_info.get('base_url', session.target_url or '')
+            query_text = f"{user_input} {intent.get('test_scope', '')} {intent.get('target_module', '')}"
+            kb_hit = None
+            try:
+                kb_hit = await PageKnowledgeService.lookup(
+                    url=target_url,
+                    query_text=query_text,
+                )
+            except Exception as kb_err:
+                logger.warning(f"[OneClick] 知识库查询失败（不影响流程）: {kb_err}")
 
             page_data = {}
-            subtasks = {}
+            page_capabilities = None
 
-            if explore_result.get("success"):
-                page_data = explore_result.get("page_data", {})
+            if kb_hit and kb_hit.get('hit') and not kb_hit.get('stale'):
+                # ━━ 知识库命中：跳过浏览器探索 ━━
+                knowledge = kb_hit['knowledge']
+                src = kb_hit['source']
+                score = kb_hit.get('score', 0)
+                SessionManager.add_message(
+                    db, session, 'assistant',
+                    f'⚡ 知识库命中（{src}, 相似度 {score:.2f}），跳过浏览器探索'
+                )
+                page_capabilities = knowledge.to_dict() if isinstance(knowledge, PageKnowledge) else knowledge
+                page_data = page_capabilities
                 session.page_analysis = json.dumps(page_data, ensure_ascii=False)
+                session.page_capabilities = json.dumps(page_capabilities, ensure_ascii=False)
                 if not SessionManager.update_status(db, session, 'page_scanned'):
-                    logger.info(f"[OneClick] ⏹️ 状态更新被拒绝，任务中止: session_id={session_id}")
                     return
                 db.commit()
-
-                sections = page_data.get("page_sections", [])
-                actions = page_data.get("available_actions", [])
-                SessionManager.add_message(
-                    db, session, 'assistant',
-                    f'✅ 页面探索完成！发现 {len(sections)} 个功能区域，'
-                    f'{len(actions)} 种可执行操作'
-                )
-
-                # 检查是否已被取消
-                if _is_cancelled():
-                    logger.info(f"[OneClick] ⏹️ 后台任务已取消（子任务生成前）: session_id={session_id}")
-                    return
-
-                # 2. 生成子任务
-                SessionManager.add_message(db, session, 'assistant',
-                    '📋 正在规划测试子任务...')
-                subtasks = await OneClickService._generate_subtasks(
-                    user_input, page_data
-                )
-                subtask_list = subtasks.get("subtasks", [])
-                total_est = subtasks.get("total_estimated_cases", 0)
-                SessionManager.add_message(
-                    db, session, 'assistant',
-                    f'✅ 已规划 {len(subtask_list)} 个子任务，'
-                    f'预计生成 {total_est} 条测试用例'
-                )
+                logger.info(f"[OneClick] 知识库命中，跳过探索: {target_url}")
             else:
-                SessionManager.add_message(
-                    db, session, 'assistant',
-                    f'⚠️ 页面探索未完成: {explore_result.get("message", "未知原因")}，'
-                    f'将使用传统模式生成用例'
-                )
-                # 更新状态并立即提交，让前端轮询尽快感知到探索阶段已结束
-                if not SessionManager.update_status(db, session, 'page_scanned'):
-                    logger.info(f"[OneClick] ⏹️ 状态更新被拒绝，任务中止: session_id={session_id}")
-                    return
-                db.commit()
+                # ━━ 未命中 / 已老化：执行浏览器探索 ━━
+                if kb_hit and kb_hit.get('stale'):
+                    SessionManager.add_message(
+                        db, session, 'assistant',
+                        '⏰ 知识库记录已老化，重新探索页面...'
+                    )
 
-            # 检查是否已被取消
+                explore_result = await OneClickService._explore_page(
+                    db, session, intent, env_info
+                )
+
+                if _is_cancelled():
+                    logger.info(f"[OneClick] ⏹️ 后台任务已取消（探索后）: session_id={session_id}")
+                    return
+
+                if explore_result.get("success"):
+                    page_data = explore_result.get("page_data", {})
+                    session.page_analysis = json.dumps(page_data, ensure_ascii=False)
+                    if not SessionManager.update_status(db, session, 'page_scanned'):
+                        return
+                    db.commit()
+
+                    sections = page_data.get("page_sections", [])
+                    actions = page_data.get("available_actions", [])
+                    SessionManager.add_message(
+                        db, session, 'assistant',
+                        f'✅ 页面探索完成！发现 {len(sections)} 个功能区域，'
+                        f'{len(actions)} 种可执行操作'
+                    )
+
+                    if _is_cancelled():
+                        return
+
+                    # 页面能力抽象
+                    SessionManager.add_message(db, session, 'assistant', '🧠 正在抽象页面能力特征...')
+                    page_capabilities = await OneClickService._abstract_page_capabilities(
+                        user_input, intent, page_data
+                    )
+                    if page_capabilities:
+                        session.page_capabilities = json.dumps(page_capabilities, ensure_ascii=False)
+                        db.commit()
+                        cap_summary = page_capabilities.get("summary", "")
+                        page_type = page_capabilities.get("page_type", "")
+                        SessionManager.add_message(
+                            db, session, 'assistant',
+                            f'✅ 页面能力识别完成：{cap_summary}（类型：{page_type}）'
+                        )
+
+                    # ━━ 存入知识库（版本检查 + 自动更新） ━━
+                    try:
+                        caps_to_store = page_capabilities or page_data
+                        kb_result = await PageKnowledgeService.check_and_update(
+                            url=target_url,
+                            new_capabilities=caps_to_store,
+                            db=db,
+                        )
+                        action = kb_result.get('action', 'created')
+                        ver = kb_result.get('knowledge', PageKnowledge(url='')).version
+                        diff = kb_result.get('diff')
+                        if action == 'created':
+                            SessionManager.add_message(
+                                db, session, 'assistant',
+                                f'📚 页面知识已存入知识库（v{ver}），下次可跳过探索'
+                            )
+                        elif action == 'updated':
+                            diff_summary = diff.summary if diff else ''
+                            SessionManager.add_message(
+                                db, session, 'assistant',
+                                f'🔄 知识库已更新至 v{ver}：{diff_summary}'
+                            )
+                            if diff and diff.regression_hints:
+                                hints_text = '\n'.join(f'  • {h}' for h in diff.regression_hints[:5])
+                                SessionManager.add_message(
+                                    db, session, 'assistant',
+                                    f'💡 回归测试建议：\n{hints_text}'
+                                )
+                    except Exception as kb_store_err:
+                        logger.warning(f"[OneClick] 知识库存储失败（不影响流程）: {kb_store_err}")
+
+                else:
+                    # 探索失败 → 降级旧流程
+                    SessionManager.add_message(
+                        db, session, 'assistant',
+                        f'⚠️ 页面探索未完成: {explore_result.get("message", "未知原因")}，'
+                        f'将使用传统模式生成用例'
+                    )
+                    if not SessionManager.update_status(db, session, 'page_scanned'):
+                        return
+                    db.commit()
+
+                    if _is_cancelled():
+                        return
+
+                    SessionManager.add_message(db, session, 'assistant', '📋 正在规划测试子任务...')
+                    subtasks = await OneClickService._generate_subtasks(user_input, page_data)
+                    subtask_list = subtasks.get("subtasks", [])
+                    total_est = subtasks.get("total_estimated_cases", 0)
+                    SessionManager.add_message(
+                        db, session, 'assistant',
+                        f'✅ 已规划 {len(subtask_list)} 个子任务，预计生成 {total_est} 条测试用例'
+                    )
+                    existing_cases = OneClickService._query_related_cases(db, intent)
+                    await OneClickService._generate_test_cases(
+                        db, session, user_input, intent, existing_cases, env_info,
+                        skill_ids, page_data=page_data, subtasks=subtasks
+                    )
+                    return
+
+                if not page_capabilities:
+                    page_capabilities = page_data
+
             if _is_cancelled():
-                logger.info(f"[OneClick] ⏹️ 后台任务已取消（用例生成前）: session_id={session_id}")
                 return
 
-            # 3. 查询相关用例
-            existing_cases = OneClickService._query_related_cases(db, intent)
+            # ── L2 功能规划（注入 RAG 上下文）─────────────────
+            if not SessionManager.update_status(db, session, 'feature_planning'):
+                logger.info(f"[OneClick] ⏹️ 状态跳转失败，任务中止: session_id={session_id}")
+                return
+            SessionManager.add_message(db, session, 'assistant', '📐 正在规划功能测试模块（L2任务树）...')
 
-            # 4. 生成测试用例
-            await OneClickService._generate_test_cases(
-                db, session, user_input, intent, existing_cases, env_info,
-                skill_ids, page_data=page_data, subtasks=subtasks
+            # 检索 RAG 上下文
+            rag_context_text = ""
+            try:
+                rag_domain = intent.get('target_module', '')
+                rag_query = f"{user_input} {rag_domain}"
+                rag_contexts = await PageKnowledgeService.retrieve_context(
+                    query=rag_query, domain=rag_domain, limit=3
+                )
+                if rag_contexts:
+                    rag_context_text = PageKnowledgeService.build_rag_prompt_context(rag_contexts)
+                    SessionManager.add_message(
+                        db, session, 'assistant',
+                        f'📖 已检索到 {len(rag_contexts)} 条相关知识库上下文'
+                    )
+            except Exception as rag_err:
+                logger.warning(f"[OneClick] RAG 上下文检索失败（不影响流程）: {rag_err}")
+
+            feature_plan = await OneClickService._plan_feature_tasks(
+                user_input, page_capabilities or page_data, rag_context=rag_context_text
             )
+            l2_list = feature_plan.get("l2_nodes", [])
+            l1_name = feature_plan.get("l1_name", intent.get("test_scope", user_input))
+            total_est = feature_plan.get("total_estimated_cases", 0)
+            SessionManager.add_message(
+                db, session, 'assistant',
+                f'✅ 规划出 {len(l2_list)} 个功能测试模块，预计 {total_est} 条用例'
+            )
+            db.commit()
+
+            if _is_cancelled():
+                logger.info(f"[OneClick] ⏹️ 后台任务已取消（L3规划前）: session_id={session_id}")
+                return
+
+            # ── L3 原子任务规划 ─────────────────────
+            if not SessionManager.update_status(db, session, 'atomic_planning'):
+                logger.info(f"[OneClick] ⏹️ 状态跳转失败，任务中止: session_id={session_id}")
+                return
+            SessionManager.add_message(db, session, 'assistant', '⚙️ 正在为每个模块设计原子测试用例（L3任务树）...')
+            task_tree = await OneClickService._build_task_tree(
+                user_input, l1_name, feature_plan, page_capabilities or page_data
+            )
+            # 保存任务树
+            session.task_tree = json.dumps(task_tree.to_dict(), ensure_ascii=False)
+            db.commit()
+
+            # 同时保存扁平化用例（向下兼容确认/执行逻辑）
+            all_cases = [n.test_case for n in task_tree.get_all_l3() if n.test_case]
+            session.generated_cases = json.dumps(all_cases, ensure_ascii=False)
+            l3_count = len(all_cases)
+            SessionManager.add_message(
+                db, session, 'assistant',
+                f'✅ 任务树构建完成！共 {len(l2_list)} 个模块 × {l3_count} 条原子用例',
+                extra={"type": "task_tree_ready", "l2_count": len(l2_list), "l3_count": l3_count}
+            )
+
+            # 进入 task_tree_ready 状态，等待用户确认
+            if not SessionManager.update_status(db, session, 'task_tree_ready'):
+                # 降级兼容：直接进入 cases_generated
+                session.status = 'cases_generated'
+            db.commit()
 
             logger.info(f"[OneClick] ✅ 后台任务完成: session_id={session_id}")
 
@@ -276,6 +426,354 @@ class OneClickService:
             _running_sessions.pop(session_id, None)
             db.close()
 
+    # ========== 任务树确认接口 ==========
+
+    @staticmethod
+    async def confirm_task_tree(
+        db: Session,
+        session_id: int,
+        selections: Dict[str, bool],  # { node_id: checked }
+    ) -> Dict:
+        """
+        接受用户对任务树的勾选操作并触发执行
+
+        selections 支持：
+        - L2 节点 ID → 控制整个模块是否执行
+        - L3 节点 ID → 控制单条用例是否执行
+        - 传入 None/空字典 → 全部确认执行
+
+        返回更新后的任务树统计信息
+        """
+        session = SessionManager.get_session(db, session_id)
+        if not session:
+            return {"success": False, "message": "会话不存在"}
+
+        if session.status not in ('task_tree_ready', 'cases_generated', 'confirmed'):
+            return {"success": False, "message": f"状态 '{session.status}' 不支持任务树确认"}
+
+        if not session.task_tree:
+            return {"success": False, "message": "该会话没有任务树，请使用传统确认接口"}
+
+        try:
+            tree = TaskTree.from_dict(
+                json.loads(session.task_tree) if isinstance(session.task_tree, str)
+                else session.task_tree
+            )
+
+            if selections:
+                tree.apply_user_selection(selections)
+            else:
+                tree.confirm_all()
+
+            # 更新任务树状态
+            session.task_tree = json.dumps(tree.to_dict(), ensure_ascii=False)
+
+            # 同步扁平化用例（兼容旧执行逻辑）
+            confirmed_cases = tree.get_confirmed_cases()
+            session.confirmed_cases = json.dumps(confirmed_cases, ensure_ascii=False)
+            session.status = 'confirmed'
+            db.commit()
+
+            stats = tree.stats()
+            SessionManager.add_message(
+                db, session, 'user',
+                f'确认执行任务树：{stats["confirmed"]} 条用例（共 {stats["total"]} 条）'
+            )
+            SessionManager.update_status(db, session, 'executing')
+            SessionManager.add_message(db, session, 'assistant', '🚀 开始按任务树执行测试...')
+            db.commit()
+
+            # 后台异步执行
+            asyncio.create_task(
+                OneClickService._background_execute_tree(session_id, tree, confirmed_cases)
+            )
+
+            return {
+                "success": True,
+                "session_id": session_id,
+                "status": "executing",
+                "stats": stats,
+                "data": {"messages": SessionManager.get_messages(session)},
+            }
+
+        except Exception as e:
+            logger.error(f"[OneClick] 任务树确认失败: {e}\n{traceback.format_exc()}")
+            return {"success": False, "message": str(e)}
+
+    @staticmethod
+    async def _background_execute_tree(
+        session_id: int, tree: TaskTree, cases: List[Dict]
+    ):
+        """
+        后台树驱动执行（Tree-Driven Execution）
+
+        按 L2 → L3 顺序执行：
+        - 支持 L2 模块级暂停/跳过
+        - 实时更新树节点状态
+        - 执行完成后更新任务树持久化
+        """
+        from database.connection import SessionLocal
+        db = SessionLocal()
+
+        try:
+            session = SessionManager.get_session(db, session_id)
+            if not session:
+                return
+
+            result = await OneClickService._execute_tests_by_tree(db, session, tree)
+
+            session = SessionManager.get_session(db, session_id)
+            if not session:
+                return
+
+            # 回写更新后的任务树
+            session.task_tree = json.dumps(tree.to_dict(), ensure_ascii=False)
+            session.execution_result = json.dumps(result, ensure_ascii=False)
+
+            if result.get("success"):
+                session.status = 'completed'
+                summary = result.get("summary", {})
+                msg = f"✅ 测试完成！通过 {summary.get('passed', 0)}/{summary.get('total', 0)} 条"
+                if result.get("stopped"):
+                    msg += "（已手动停止）"
+                try:
+                    report_info = await OneClickService._save_reports(
+                        db, session, cases, result
+                    )
+                    if report_info.get("report_id"):
+                        msg += f"\n📄 测试报告已生成 (ID: {report_info['report_id']})"
+                    if report_info.get("bug_count", 0) > 0:
+                        msg += f"\n🐛 已生成 Bug 报告 ({report_info['bug_count']} 项)"
+                except Exception as rpt_err:
+                    logger.warning(f"[OneClick] 生成报告失败: {rpt_err}")
+            else:
+                session.status = 'failed'
+                msg = f"❌ 执行失败: {result.get('message', '未知错误')}"
+
+            SessionManager.add_message(db, session, 'assistant', msg)
+            db.commit()
+
+        except Exception as e:
+            logger.error(f"[OneClick] 树执行失败: {e}\n{traceback.format_exc()}")
+            try:
+                session = SessionManager.get_session(db, session_id)
+                if session and session.status not in ('completed', 'failed'):
+                    session.status = 'failed'
+                    SessionManager.add_message(db, session, 'assistant', f'❌ 执行异常: {str(e)}')
+                    db.commit()
+            except Exception:
+                pass
+        finally:
+            _running_sessions.pop(session_id, None)
+            db.close()
+
+    @staticmethod
+    async def _execute_tests_by_tree(
+        db: Session, session: OneclickSession, tree: TaskTree
+    ) -> Dict:
+        """
+        树驱动执行引擎
+
+        遍历 L2 → L3，在每条 L3 用例执行前/后更新节点状态
+        """
+        results = []
+        passed = 0
+        failed = 0
+        stopped = False
+        rate_limited = False
+        start_time = time.time()
+        session_id = session.id
+
+        env_info = json.loads(session.login_info) if session.login_info else {}
+        target_url = session.target_url or env_info.get("base_url", "")
+
+        cancel_event = asyncio.Event()
+        loop_detector = LoopDetector(LoopDetectionConfig(
+            enabled=True, warning_threshold=3, critical_threshold=5, global_circuit_breaker=8
+        ))
+        _running_sessions[session_id] = {
+            "cancel_event": cancel_event,
+            "browser_session": None,
+            "loop_detector": loop_detector,
+        }
+
+        switcher = get_auto_switcher()
+        try:
+            switcher.load_profiles_from_db()
+        except Exception:
+            pass
+
+        # 只取已确认的 L3 节点，按 L2 分组
+        all_l2 = tree.get_all_l2()
+        confirmed_l3_all = tree.get_confirmed_l3()
+        total = len(confirmed_l3_all)
+
+        shared_browser = None
+        try:
+            shared_browser = await OneClickService._create_shared_browser(env_info)
+            _running_sessions[session_id]["browser_session"] = shared_browser
+            logger.info(f"[OneClick Tree] ✅ 共享浏览器已创建，执行 {total} 条用例")
+        except Exception as e:
+            logger.error(f"[OneClick Tree] ❌ 创建共享浏览器失败: {e}")
+            return {"success": False, "message": f"浏览器启动失败: {str(e)}"}
+
+        global_idx = 0
+
+        try:
+            for l2 in all_l2:
+                if l2.status == NodeStatus.SKIPPED:
+                    continue
+
+                # 更新 L2 状态为执行中
+                l2.status = NodeStatus.RUNNING
+
+                confirmed_l3 = [n for n in l2.children if n.status == NodeStatus.CONFIRMED]
+                if not confirmed_l3:
+                    l2.status = NodeStatus.SKIPPED
+                    continue
+
+                for l3 in confirmed_l3:
+                    if cancel_event.is_set():
+                        stopped = True
+                        l3.status = NodeStatus.FAILED
+                        remaining = total - global_idx
+                        SessionManager.add_message(
+                            db, session, 'assistant', f'⏹️ 已停止，跳过剩余 {remaining} 条用例'
+                        )
+                        break
+
+                    case = l3.test_case or {}
+                    case_title = case.get("title", l3.name)
+                    global_idx += 1
+
+                    l3.status = NodeStatus.RUNNING
+                    SessionManager.add_message(
+                        db, session, 'assistant',
+                        f'⏳ [{global_idx}/{total}] [{l2.name}] 正在执行: {case_title}',
+                        extra={"type": "executing", "index": global_idx - 1, "l2_id": l2.id, "l3_id": l3.id}
+                    )
+
+                    try:
+                        need_browser = case.get("need_browser", True)
+                        if need_browser:
+                            loop_detector.reset()
+                            if shared_browser and global_idx > 1:
+                                try:
+                                    await OneClickService._reset_browser_state(shared_browser, target_url)
+                                except Exception:
+                                    pass
+
+                            result = await OneClickService._execute_browser_test(
+                                case, target_url, env_info, db,
+                                browser_session=shared_browser,
+                                cancel_event=cancel_event,
+                                loop_detector=loop_detector,
+                                session_id=session_id,
+                            )
+                        else:
+                            result = {"status": "skip", "message": "非浏览器测试，跳过"}
+
+                        status = result.get("status", "error")
+
+                        if status == "rate_limited":
+                            rate_limited = True
+                            failed += 1
+                            l3.status = NodeStatus.FAILED
+                            l3.result = result
+                            results.append({
+                                "index": global_idx, "title": case_title,
+                                "l2_name": l2.name, "l3_id": l3.id,
+                                "status": "rate_limited",
+                                "message": result.get("message", "API 配额耗尽"),
+                                "duration": result.get("duration", 0),
+                            })
+                            SessionManager.add_message(
+                                db, session, 'assistant',
+                                f'🚫 [{global_idx}/{total}] {case_title}: API 配额耗尽，停止执行'
+                            )
+                            stopped = True
+                            break
+
+                        if status == "pass":
+                            passed += 1
+                            l3.status = NodeStatus.DONE
+                            emoji = "✅"
+                        else:
+                            failed += 1
+                            l3.status = NodeStatus.FAILED
+                            emoji = "❌" if status == "fail" else "⚠️"
+
+                        l3.result = {
+                            "status": status,
+                            "message": (result.get("message", "") or "")[:500],
+                            "duration": result.get("duration", 0),
+                            "steps": result.get("steps", 0),
+                        }
+                        results.append({
+                            "index": global_idx, "title": case_title,
+                            "l2_name": l2.name, "l3_id": l3.id,
+                            "status": status,
+                            "message": result.get("message", ""),
+                            "duration": result.get("duration", 0),
+                            "steps": result.get("steps", 0),
+                        })
+                        SessionManager.add_message(
+                            db, session, 'assistant',
+                            f'{emoji} [{global_idx}/{total}] [{l2.name}] {case_title}: {status}',
+                            extra={"type": "case_result", "index": global_idx - 1,
+                                   "status": status, "l2_id": l2.id, "l3_id": l3.id}
+                        )
+
+                    except Exception as e:
+                        failed += 1
+                        l3.status = NodeStatus.FAILED
+                        error_msg = str(e)
+                        l3.result = {"status": "error", "message": error_msg[:500]}
+                        if _is_rate_limit_error(error_msg):
+                            rate_limited = True
+                            stopped = True
+                            results.append({"index": global_idx, "title": case_title,
+                                            "l2_name": l2.name, "status": "rate_limited",
+                                            "message": error_msg})
+                            break
+                        results.append({"index": global_idx, "title": case_title,
+                                        "l2_name": l2.name, "status": "error",
+                                        "message": error_msg})
+                        SessionManager.add_message(
+                            db, session, 'assistant',
+                            f'❌ [{global_idx}/{total}] [{l2.name}] {case_title}: 执行异常 - {error_msg}'
+                        )
+
+                if stopped:
+                    break
+
+                # 更新 L2 完成状态
+                l2_done = all(n.status in (NodeStatus.DONE, NodeStatus.SKIPPED) for n in l2.children)
+                l2_failed = any(n.status == NodeStatus.FAILED for n in l2.children)
+                l2.status = NodeStatus.FAILED if l2_failed else (NodeStatus.DONE if l2_done else NodeStatus.RUNNING)
+
+        finally:
+            if shared_browser:
+                try:
+                    await shared_browser.kill()
+                except Exception:
+                    pass
+            _running_sessions.pop(session_id, None)
+
+        return {
+            "success": True,
+            "stopped": stopped,
+            "rate_limited": rate_limited,
+            "summary": {
+                "total": total,
+                "passed": passed,
+                "failed": failed,
+                "executed": len(results),
+                "duration": int(time.time() - start_time),
+            },
+            "results": results,
+        }
+
     # ========== Phase 2: 用户确认 & 执行测试 ==========
 
     @staticmethod
@@ -285,14 +783,15 @@ class OneClickService:
         """
         用户确认测试用例后执行（异步模式）
 
-        改进：不再阻塞等待全部执行完成，而是立即返回，
-        后台异步执行测试，前端通过轮询 session 获取实时进度。
+        支持两种模式：
+        - 任务树模式（task_tree_ready）：confirmed_cases 中包含 _tree_node_id 字段
+        - 传统模式（cases_generated）：flat list of cases
         """
         session = SessionManager.get_session(db, session_id)
         if not session:
             return {"success": False, "message": "会话不存在"}
 
-        if session.status not in ('cases_generated', 'confirmed'):
+        if session.status not in ('cases_generated', 'confirmed', 'task_tree_ready'):
             return {"success": False, "message": f"当前状态 '{session.status}' 不允许执行"}
 
         try:
@@ -725,6 +1224,198 @@ class OneClickService:
         except Exception as e:
             logger.warning(f"[OneClick] 子任务生成失败: {e}")
             return {"subtasks": [], "total_estimated_cases": 0, "test_strategy": ""}
+
+    # ─────────────────────────────────────────────────────
+    # 任务树引擎：三层规划方法
+    # ─────────────────────────────────────────────────────
+
+    @staticmethod
+    async def _abstract_page_capabilities(
+        user_input: str, intent: Dict, page_data: Dict
+    ) -> Dict:
+        """
+        页面能力抽象层（Page Capability Abstraction）
+
+        把浏览器探索到的原始 DOM 数据提炼为「语义化页面能力描述」：
+        forms / buttons / tables / auth_required / security_surface 等
+
+        这会显著提高 L2 任务规划的质量——LLM 不再「看到元素」而是「理解能力」
+        """
+        llm = get_llm_client()
+
+        page_exploration_text = json.dumps(page_data, ensure_ascii=False, indent=2)
+        if len(page_exploration_text) > 6000:
+            page_exploration_text = page_exploration_text[:6000] + "\n... (已截断)"
+
+        target_module = intent.get("target_module", intent.get("test_scope", user_input))
+        user_prompt = PAGE_CAPABILITY_ABSTRACTION_USER_TEMPLATE.format(
+            target_module=target_module,
+            page_exploration=page_exploration_text,
+        )
+
+        try:
+            response = llm.chat(
+                messages=[
+                    {"role": "system", "content": PAGE_CAPABILITY_ABSTRACTION_SYSTEM},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.3,
+                max_tokens=3000,
+                response_format={"type": "json_object"},
+            )
+            result = llm.parse_json_response(response)
+            result.setdefault("summary", "页面能力抽象完成")
+            result.setdefault("page_type", "mixed")
+            return result
+        except Exception as e:
+            logger.warning(f"[OneClick] 页面能力抽象失败: {e}")
+            # 降级：返回从原始探索中提取的基本信息
+            return {
+                "forms": [],
+                "buttons": [],
+                "tables": [],
+                "auth_required": True,
+                "page_type": "mixed",
+                "summary": "页面能力抽象降级",
+                "raw_fallback": True,
+            }
+
+    @staticmethod
+    async def _plan_feature_tasks(user_input: str, page_capabilities: Dict, rag_context: str = "") -> Dict:
+        """
+        L2 功能规划层（Feature Planning Layer）
+
+        根据页面能力摘要，规划出测试维度（L2 节点）：
+        - 正常流程测试
+        - 异常场景测试
+        - 边界值测试
+        - 安全测试
+        - 权限测试
+        等
+
+        rag_context: 从知识库检索到的 RAG 上下文（可选），用于补充页面信息
+        """
+        llm = get_llm_client()
+
+        caps_text = json.dumps(page_capabilities, ensure_ascii=False, indent=2)
+        if len(caps_text) > 5000:
+            caps_text = caps_text[:5000] + "\n... (已截断)"
+
+        # 注入 RAG 上下文到 caps_text 末尾
+        if rag_context:
+            caps_text += f"\n\n--- 知识库参考上下文 ---\n{rag_context}"
+
+        user_prompt = TASK_TREE_FEATURE_PLANNING_USER_TEMPLATE.format(
+            user_input=user_input,
+            page_capabilities=caps_text,
+        )
+
+        try:
+            response = llm.chat(
+                messages=[
+                    {"role": "system", "content": TASK_TREE_FEATURE_PLANNING_SYSTEM},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.4,
+                max_tokens=4000,
+                response_format={"type": "json_object"},
+            )
+            result = llm.parse_json_response(response)
+            result.setdefault("l2_nodes", [])
+            result.setdefault("l1_name", user_input)
+            result.setdefault("total_estimated_cases", 0)
+            return result
+        except Exception as e:
+            logger.warning(f"[OneClick] L2 功能规划失败: {e}")
+            return {
+                "l1_name": user_input,
+                "l1_description": "",
+                "l2_nodes": [],
+                "total_estimated_cases": 0,
+            }
+
+    @staticmethod
+    async def _plan_atomic_tasks_for_l2(
+        user_input: str, l2_node: Dict, page_capabilities: Dict
+    ) -> List[Dict]:
+        """
+        L3 原子任务规划（Atomic Task Planning）
+
+        为单个 L2 节点规划 L3 原子测试用例
+        """
+        llm = get_llm_client()
+
+        caps_text = json.dumps(page_capabilities, ensure_ascii=False, indent=2)
+        if len(caps_text) > 3000:
+            caps_text = caps_text[:3000] + "\n... (已截断)"
+
+        estimated_count = l2_node.get("estimated_l3_count", 4)
+        user_prompt = TASK_TREE_ATOMIC_PLANNING_USER_TEMPLATE.format(
+            user_input=user_input,
+            l2_name=l2_node.get("name", ""),
+            l2_description=l2_node.get("description", ""),
+            feature_type=l2_node.get("feature_type", "form"),
+            test_focus=json.dumps(l2_node.get("test_focus", []), ensure_ascii=False),
+            page_capabilities=caps_text,
+            estimated_count=estimated_count,
+        )
+
+        try:
+            response = llm.chat(
+                messages=[
+                    {"role": "system", "content": TASK_TREE_ATOMIC_PLANNING_SYSTEM},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.5,
+                max_tokens=4000,
+                response_format={"type": "json_object"},
+            )
+            result = llm.parse_json_response(response)
+            return result.get("l3_nodes", [])
+        except Exception as e:
+            logger.warning(f"[OneClick] L3 原子规划失败 ({l2_node.get('name', '')}): {e}")
+            return []
+
+    @staticmethod
+    async def _build_task_tree(
+        user_input: str, l1_name: str, feature_plan: Dict, page_capabilities: Dict
+    ) -> TaskTree:
+        """
+        构建完整三层任务树
+
+        为每个 L2 节点并发（或串行）规划 L3 原子任务
+        """
+        l2_nodes = feature_plan.get("l2_nodes", [])
+        l1_desc = feature_plan.get("l1_description", "")
+
+        # 构建 LLM 输出格式（传给 TaskTree.build_from_llm_output）
+        tree_json = {
+            "name": l1_name,
+            "description": l1_desc,
+            "children": [],
+        }
+
+        for l2_data in l2_nodes:
+            l3_nodes_raw = await OneClickService._plan_atomic_tasks_for_l2(
+                user_input, l2_data, page_capabilities
+            )
+            l2_entry = {
+                "name": l2_data.get("name", ""),
+                "description": l2_data.get("description", ""),
+                "feature_type": l2_data.get("feature_type", ""),
+                "priority": str(l2_data.get("priority", "3")),
+                "children": l3_nodes_raw,
+            }
+            tree_json["children"].append(l2_entry)
+            logger.info(
+                f"[OneClick] 🌲 L2 规划完成: {l2_data.get('name', '')} → {len(l3_nodes_raw)} 条用例"
+            )
+
+        tree = TaskTree.build_from_llm_output(tree_json)
+        logger.info(
+            f"[OneClick] 🌳 任务树构建完成: {len(tree.get_all_l2())} 个 L2, {len(tree.get_all_l3())} 个 L3"
+        )
+        return tree
 
     @staticmethod
     def _query_related_cases(db: Session, intent: Dict) -> List[Dict]:
@@ -1817,10 +2508,22 @@ class OneClickService:
 
     @staticmethod
     def get_session_detail(db: Session, session_id: int) -> Optional[Dict]:
-        """获取会话详情"""
+        """获取会话详情（含任务树）"""
         session = SessionManager.get_session(db, session_id)
         if not session:
             return None
+
+        # 解析任务树
+        task_tree_data = None
+        task_tree_stats = None
+        if session.task_tree:
+            try:
+                raw = json.loads(session.task_tree) if isinstance(session.task_tree, str) else session.task_tree
+                task_tree_data = raw
+                tree = TaskTree.from_dict(raw)
+                task_tree_stats = tree.stats()
+            except Exception as e:
+                logger.warning(f"[OneClick] 解析任务树失败: {e}")
 
         return {
             "id": session.id,
@@ -1829,6 +2532,9 @@ class OneClickService:
             "target_url": session.target_url,
             "login_info": json.loads(session.login_info) if session.login_info else None,
             "page_analysis": json.loads(session.page_analysis) if session.page_analysis else None,
+            "page_capabilities": json.loads(session.page_capabilities) if getattr(session, 'page_capabilities', None) else None,
+            "task_tree": task_tree_data,
+            "task_tree_stats": task_tree_stats,
             "generated_cases": json.loads(session.generated_cases) if session.generated_cases else [],
             "confirmed_cases": json.loads(session.confirmed_cases) if session.confirmed_cases else [],
             "execution_result": json.loads(session.execution_result) if session.execution_result else None,
@@ -1837,6 +2543,19 @@ class OneClickService:
             "created_at": session.created_at.isoformat() if session.created_at else None,
             "updated_at": session.updated_at.isoformat() if session.updated_at else None,
         }
+
+    @staticmethod
+    async def _kill_browser_with_timeout(browser, session_id: int, timeout_sec: float = 5.0) -> None:
+        """异步安全关闭浏览器，避免 stop 接口被长时间阻塞。"""
+        if not browser:
+            return
+        try:
+            await asyncio.wait_for(browser.kill(), timeout=timeout_sec)
+            logger.info(f"[OneClick] ✅ 浏览器已强制关闭: session_id={session_id}")
+        except asyncio.TimeoutError:
+            logger.warning(f"[OneClick] ⚠️ 关闭浏览器超时({timeout_sec}s): session_id={session_id}")
+        except Exception as e:
+            logger.warning(f"[OneClick] ⚠️ 关闭浏览器异常: {e}")
 
     @staticmethod
     async def stop_session(db: Session, session_id: int) -> Dict:
@@ -1866,11 +2585,10 @@ class OneClickService:
             # 2. 关闭浏览器
             browser = running.get("browser_session")
             if browser:
-                try:
-                    await browser.kill()
-                    logger.info(f"[OneClick] ✅ 浏览器已强制关闭: session_id={session_id}")
-                except Exception as e:
-                    logger.warning(f"[OneClick] ⚠️ 关闭浏览器异常: {e}")
+                # 不阻塞 stop 接口，后台异步关闭浏览器
+                asyncio.create_task(
+                    OneClickService._kill_browser_with_timeout(browser, session_id)
+                )
         else:
             logger.info(f"[OneClick] ℹ️ 会话 {session_id} 没有正在运行的任务")
 

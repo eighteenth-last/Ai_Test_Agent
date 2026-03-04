@@ -1,7 +1,7 @@
 """
 一键测试 + Skills 管理 - API 路由
 """
-from typing import List, Optional
+from typing import List, Optional, Dict
 from fastapi import APIRouter, Depends, Body, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -23,6 +23,13 @@ class StartSessionRequest(BaseModel):
 class ConfirmRequest(BaseModel):
     session_id: int
     confirmed_cases: Optional[List[dict]] = None
+
+class ConfirmTreeRequest(BaseModel):
+    """任务树确认请求 - 支持节点级勾选"""
+    session_id: int
+    # { node_id: True/False }  L2/L3 节点均支持
+    # 传 null 或 {} 表示全选
+    selections: Optional[Dict[str, bool]] = None
 
 class InstallSkillRequest(BaseModel):
     slug: str
@@ -61,9 +68,23 @@ def get_session(session_id: int, db: Session = Depends(get_db)):
 
 @router.post("/oneclick/confirm")
 async def confirm_execute(req: ConfirmRequest, db: Session = Depends(get_db)):
-    """确认并执行测试"""
+    """确认并执行测试（传统扁平模式）"""
     result = await OneClickService.confirm_and_execute(
         db, req.session_id, req.confirmed_cases
+    )
+    return result
+
+
+@router.post("/oneclick/confirm-tree")
+async def confirm_tree_execute(req: ConfirmTreeRequest, db: Session = Depends(get_db)):
+    """
+    任务树确认并执行
+
+    支持 L2 模块级勾选和 L3 用例级勾选。
+    selections 为空时全部确认执行。
+    """
+    result = await OneClickService.confirm_task_tree(
+        db, req.session_id, req.selections or {}
     )
     return result
 

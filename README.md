@@ -9,11 +9,14 @@
   ![FastAPI](https://img.shields.io/badge/FastAPI-0.115.0-009688.svg)
   ![Vue](https://img.shields.io/badge/Vue-3.4.0-4FC08D.svg)
   ![Browser--Use](https://img.shields.io/badge/Browser--Use-0.11.1-FF6B35.svg)
+  ![Qdrant](https://img.shields.io/badge/Qdrant-1.x-DC244C.svg)
 </div>
 
 ## 项目简介
 
 AI Test Agent 是一个基于人工智能的自动化测试平台，利用大语言模型（LLM）和浏览器自动化技术，实现测试用例的智能生成、自动执行、Bug 分析和报告生成。平台采用 **适配器模式（Adapter Pattern）** 重构了底层模型架构，支持 15+ 主流大模型供应商，并内置了智能止损、模糊匹配、Agent 判定优先、瞬态 UI 感知、用例间状态隔离等策略，大幅提升了测试的稳定性和效率。
+
+平台还内置了 **页面知识库（RAG 记忆层）**，使用 Qdrant 向量数据库存储页面结构知识，在一键测试时优先命中已有知识跳过浏览器探索，并通过 Diff Engine 自动检测页面变更、推荐回归测试范围。
 
 ## 核心特性
 
@@ -86,6 +89,7 @@ AI Test Agent 是一个基于人工智能的自动化测试平台，利用大语
 - **429 限流智能熔断**：检测到 API 配额耗尽时立即停止后续用例
 - **自动邮件通知**：测试完成后自动将测试报告 + Bug 报告整合为 HTML 邮件，发送给 `auto_receive_bug=1` 的联系人
 - **Skills 知识注入**：执行时自动加载相关 Skills 作为"便签"注入 LLM 提示词
+- **RAG 加速**：执行前优先查询页面知识库，命中缓存则跳过浏览器探索，节省 Token 消耗与等待时间
 
 ### 6. Skills 管理
 - **知识增强系统**：Skills 是 Markdown 格式的程序化知识文件，为 AI Agent 提供测试领域的专业指导
@@ -143,7 +147,21 @@ AI Test Agent 是一个基于人工智能的自动化测试平台，利用大语
 - **报告生成**：自动生成 Markdown 安全报告，严重漏洞自动创建 Bug 单并邮件通知
 - **安全隔离**：扫描目标白名单、禁止公网 IP、限速、最大扫描时长、Docker 隔离运行 ZAP
 
-### 11. 数据可视化仪表盘
+### 11. 页面知识库（RAG 记忆层）
+- **向量存储**：使用 Qdrant 向量数据库（Docker 部署）存储页面结构的 Embedding，MySQL 同步保存索引记录
+- **语义检索**：一键测试前先对目标 URL 做精确匹配，命中则跳过浏览器探索直接复用缓存知识，大幅节省 Token 消耗
+- **相似度兜底**：精确匹配未命中时，使用 Embedding 做余弦相似度语义检索（阈值 0.82），再次尝试匹配同域名页面的历史知识
+- **新鲜度管理**：4 小时内访问的知识直接复用；超过 30 天未更新的知识标记为"老化"并按需触发重新探索
+- **Diff Engine（页面差异引擎）**：对比新旧页面结构，按变更类型分类（字段新增/删除/修改、按钮/表单/表格的增减），自动推荐需要补充的回归测试子任务
+- **Collection 配置 UI**：
+  - 可视化配置 Qdrant 连接参数（host、port、collection_name、向量维度、距离度量 Cosine/Dot/Euclid/Manhattan）
+  - 可视化配置 Embedding 服务（model、API URL、API Key）
+  - 配置持久化到 MySQL `qdrant_collection_config` 表，支持"初始化 Collection"和"强制重建"两种操作模式
+- **统计面板**：展示总记录数（MySQL）、向量数（Qdrant）、老化记录数、Qdrant 健康状态，一键刷新
+- **手动管理**：支持浏览知识列表、查看单条知识详情、手动录入、按 URL 删除
+- **系统代理隔离**：在模块初始化时自动将 `localhost/127.0.0.1` 加入 `NO_PROXY`，防止 Windows 系统代理拦截 Python httpx 到本地 Qdrant 的请求
+
+### 12. 数据可视化仪表盘
 - 五维统计卡片（测试用例、测试报告、Bug 报告、邮件发送、安全扫描）
 - 测试结果分布（通过/失败/待执行）
 - 用例优先级与类型分布
@@ -167,6 +185,7 @@ AI Test Agent 是一个基于人工智能的自动化测试平台，利用大语
 - **核心引擎**: Browser-Use 0.11.1 (CDP 架构) + Playwright
 - **LLM 集成**: 支持 OpenAI, Anthropic, Google GenAI, DeepSeek, Alibaba, MiniMax, Ollama 等多协议
 - **LLM 容错**: json-repair 库 + 多层 JSON 修复管线 + LLMWrapper 统一包装
+- **向量数据库**: Qdrant（页面知识库 RAG 记忆层，Docker 部署）
 - **对象存储**: MinIO（接口文件存储与版本管理）
 - **邮件服务**: 工厂模式统一调度（`Email_manage/sender.py`），内置 Resend / 阿里云 DirectMail (HMAC-SHA1) / SMTP 自定义 (STARTTLS) / CyberMail，扩展新服务商无需修改调用方
 - **其他**: PyPDF2, Pandas, python-docx, Markdown, requests
@@ -221,7 +240,14 @@ Ai_Test_Agent/
 │   │   ├── session.py          # 会话状态机管理
 │   │   ├── loop_detection.py   # 循环检测器（防止 Agent 无限循环）
 │   │   └── skill_manager.py    # Skills 管理（MinIO存储/GitHub下载/手动上传/便签注入）
-│   ├── Api_request/            # 提示词模板（集中管理所有 LLM 提示词，含瞬态UI处理规则）
+│   ├── Page_Knowledge/         # 页面知识库（RAG 记忆层）
+   │   ├── router.py           # 知识库 CRUD + 统计 + Collection 配置 API
+   │   ├── service.py          # 核心服务（精确匹配/语义检索/存储/版本检查/老化管理）
+   │   ├── vector_store.py     # Qdrant 向量存储封装（连接/ensure_collection/upsert/search/reload_config）
+   │   ├── embedding.py        # Embedding 客户端（支持多模型，含 reload_embedding_client）
+   │   ├── diff_engine.py      # 页面差异引擎（字段/按钮/表单/表格变更分类 + 回归推荐）
+   │   └── schema.py           # PageKnowledge 数据结构定义
+   ├── Api_request/            # 提示词模板（集中管理所有 LLM 提示词，含瞬态UI处理规则）
 │   ├── Security_Test/          # 安全测试模块
 │   │   ├── router.py           # 安全扫描 + 用例任务列表 API
 │   │   ├── service.py          # 扫描调度服务（异步执行四种扫描类型）
@@ -258,7 +284,8 @@ Ai_Test_Agent/
 │   │   │   │   ├── ApiTest.vue       # 接口测试（三步式：选用例→匹配→执行）
 │   │   │   │   ├── OneClickTest.vue  # 一键测试（对话式 AI 全自动测试）
 │   │   │   │   ├── PressTest.vue     # 性能测试
-│   │   │   │   └── SecurityTest.vue  # 安全测试
+│   │   │   │   ├── SecurityTest.vue  # 安全测试
+│   │   │   │   └── KnowledgeBase.vue # 页面知识库管理（RAG 记忆层 + Collection 配置）
 │   │   │   ├── skills/         # Skills 管理
 │   │   │   │   └── SkillManage.vue   # Skills 管理（卡片式 + 上传安装）
 │   │   │   ├── case/           # 用例管理与生成
@@ -295,6 +322,7 @@ Ai_Test_Agent/
 - Node.js 18+
 - MySQL 8.0+
 - MinIO（接口文件存储）
+- Qdrant（向量数据库，Docker 部署）
 - Chrome / Edge 浏览器
 
 ### 后端部署
@@ -331,14 +359,32 @@ MINIO_SECURE=false
 
 # GitHub 代理（一键测试 Skills 下载，可选）
 GITHUB_PROXY=https://ghproxy.com/
+
+# Qdrant 向量数据库（页面知识库 RAG）
+QDRANT_HOST=localhost
+QDRANT_PORT=6333
+QDRANT_COLLECTION=page_knowledge
+
+# Embedding 服务（页面知识库向量化，可选，也可在页面知识库 Collection 配置界面配置）
+EMBEDDING_MODEL=text-embedding-ada-002
+EMBEDDING_API_URL=https://api.openai.com/v1
+EMBEDDING_API_KEY=your_embedding_key
 ```
 
-3. **初始化数据库**
+3. **启动 Qdrant**（页面知识库依赖，可选）
+```bash
+docker run -d --name Qdrant_Ai_Test_Agent \
+  -p 6333:6333 -p 6334:6334 \
+  -v qdrant_storage:/qdrant/storage \
+  qdrant/qdrant
+```
+
+4. **初始化数据库**
 ```bash
 python -c "from database.connection import init_db; init_db()"
 ```
 
-4. **启动服务**
+5. **启动服务**
 ```bash
 python app.py
 ```
@@ -414,7 +460,14 @@ npm run dev
 - 接口测试失败时自动发送 Bug 通知邮件给自动接收联系人
 - **扩展新服务商**：在 `Email_manage/sender.py` 中实现 `_send_via_xxx(config, to_email, subject, html_body)` 函数，并在 `_PROVIDER_MAP` 注册一行，所有发送入口自动支持，无需改动其他代码
 
-### 9. 数据看板
+### 9. 页面知识库（RAG 记忆层）
+- 在侧边栏进入"页面知识库"页面，查看统计面板（总记录数 / 向量数 / 老化数 / Qdrant 健康状态）
+- 点击"Collection 配置"按钮，配置 Qdrant 连接和 Embedding 服务参数，点击"保存配置"持久化到数据库
+- 点击"初始化 Collection"使配置生效；如需从零重建则点击"强制重建"（会删除旧 Collection 后重新创建）
+- 知识库列表支持按 URL / 域名搜索、查看知识详情、手动录入新知识、按 URL 删除
+- **注意**（Windows 用户）：若使用系统代理，需确保 `localhost` / `127.0.0.1` 在代理排除列表中；框架已在模块初始化时自动注入 `NO_PROXY=localhost,127.0.0.1,::1`
+
+### 10. 数据看板
 仪表盘提供全局视角的测试数据可视化，包括测试趋势、Bug 分布、用例覆盖、安全扫描统计、漏洞严重程度分布、安全用例状态等多维度图表，采用三列自适应布局。
 
 ## 许可证

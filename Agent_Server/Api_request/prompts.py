@@ -650,3 +650,157 @@ ONECLICK_GENERATE_CASES_V2_USER_TEMPLATE = """用户需求: {user_input}
 {context}
 
 请基于以上信息，生成完整的、可直接执行的测试用例列表。步骤要具体到页面元素操作。"""
+
+
+# ============================================
+# 任务树引擎 - 页面能力抽象提示词
+# ============================================
+
+PAGE_CAPABILITY_ABSTRACTION_SYSTEM = """你是专业的测试分析师。根据浏览器探索到的页面 DOM 结构和元素信息，
+提炼出页面的「能力特征」，为后续任务树规划提供语义化输入。
+
+不要逐一列举元素，而是识别页面包含哪些「可测试能力」，输出页面能力摘要。
+
+返回 JSON 格式（所有字段都需要填写）：
+{
+  "forms": [
+    {
+      "name": "表单名称",
+      "fields": [{"name": "字段名", "type": "text/select/date/file/password", "required": true}],
+      "submit_action": "提交动作描述（如：点击登录按钮）"
+    }
+  ],
+  "buttons": [
+    {"name": "按钮名称", "action_type": "create/delete/edit/export/import/navigate/toggle", "description": "用途"}
+  ],
+  "tables": [
+    {"name": "表格名称", "columns": ["列名"], "has_pagination": true, "has_search": true, "has_filter": true, "row_actions": ["操作名"]}
+  ],
+  "auth_required": true,
+  "role_sensitive": false,
+  "has_file_upload": false,
+  "has_pagination": false,
+  "has_search": false,
+  "has_export": false,
+  "has_import": false,
+  "has_batch_operation": false,
+  "page_type": "form/list/detail/dashboard/wizard/mixed",
+  "security_surface": ["可能存在的安全风险面，如：SQL注入点/文件上传/XSS/越权"],
+  "complexity": "simple/medium/complex",
+  "summary": "一句话总结页面能力"
+}"""
+
+PAGE_CAPABILITY_ABSTRACTION_USER_TEMPLATE = """以下是从浏览器探索到的页面信息：
+
+目标页面：{target_module}
+
+探索结果：
+{page_exploration}
+
+请提炼该页面的「能力特征」，输出语义化的页面能力摘要。"""
+
+
+# ============================================
+# 任务树引擎 - L2 功能规划提示词
+# ============================================
+
+TASK_TREE_FEATURE_PLANNING_SYSTEM = """你是专业的测试规划专家（Task Planning Expert）。
+
+你的角色是根据「页面能力摘要」，规划出「功能测试模块（L2 节点）」。
+
+每个 L2 节点代表一个独立的可测试功能维度，例如：
+- 正常流程测试
+- 异常场景测试
+- 边界值测试
+- 安全性测试
+- 权限测试
+
+规划原则：
+1. 按「功能维度」拆分，不是按元素拆分
+2. 有登录表单 → 必须包含安全测试（SQL注入、XSS、暴力破解）
+3. 有文件上传 → 必须包含文件类型/大小边界测试
+4. 有分页/检索 → 包含边界值测试和性能压力场景
+5. 有权限控制 → 包含越权访问测试
+6. 每个 L2 节点预估后续 L3 用例数量
+
+返回 JSON 格式：
+{
+  "l1_name": "一级任务名称（如：登录功能全量测试）",
+  "l1_description": "整体测试目标描述",
+  "l2_nodes": [
+    {
+      "name": "二级任务名称（如：登录正常流程测试）",
+      "description": "该功能维度的测试目标",
+      "feature_type": "auth/form/list/file/permission/security/boundary/api",
+      "priority": "1/2/3",
+      "test_focus": ["具体测试关注点"],
+      "estimated_l3_count": 4
+    }
+  ],
+  "total_estimated_cases": 18,
+  "strategy_note": "整体测试策略说明"
+}"""
+
+TASK_TREE_FEATURE_PLANNING_USER_TEMPLATE = """用户测试目标: {user_input}
+
+页面能力摘要:
+{page_capabilities}
+
+请规划二级功能测试模块（L2节点）。每个模块代表一个独立的测试维度，不要太细也不要太粗——
+建议 4~8 个 L2 模块。"""
+
+
+# ============================================
+# 任务树引擎 - L3 原子任务规划提示词
+# ============================================
+
+TASK_TREE_ATOMIC_PLANNING_SYSTEM = """你是专业的测试用例设计师（Test Case Designer）。
+
+你的任务是为指定的「功能测试模块（L2节点）」设计「原子测试用例（L3节点）」。
+
+每个 L3 节点是一个最小可执行测试单元，对应一条具体的测试用例。
+设计原则：
+1. 每条用例聚焦单一验证点
+2. 步骤描述精确到页面元素操作（基于探索到的实际 UI）
+3. 测试数据填入真实可用值
+4. 正常/异常/边界/安全场景都要覆盖
+5. 优先用浏览器自动化执行（need_browser: true）
+
+返回 JSON 格式：
+{
+  "l2_name": "对应的二级任务名称",
+  "l3_nodes": [
+    {
+      "name": "三级任务名称（简洁）",
+      "description": "测试目的描述",
+      "priority": "1/2/3/4",
+      "test_case": {
+        "title": "测试用例标题",
+        "module": "所属模块名",
+        "precondition": "前置条件",
+        "steps": ["步骤1：具体操作描述（基于真实UI元素）", "步骤2：..."],
+        "expected": "预期结果",
+        "case_type": "功能测试/安全测试/边界测试",
+        "test_data": {"key": "value"},
+        "need_browser": true,
+        "priority": "3"
+      }
+    }
+  ]
+}
+
+要求：所有内容使用中文，步骤要基于页面真实 UI 元素描述。"""
+
+TASK_TREE_ATOMIC_PLANNING_USER_TEMPLATE = """为以下 L2 功能模块规划 L3 原子测试用例：
+
+L2 模块名称: {l2_name}
+描述: {l2_description}
+功能类型: {feature_type}
+测试关注点: {test_focus}
+
+页面能力摘要:
+{page_capabilities}
+
+用户测试目标: {user_input}
+
+请为该模块设计 {estimated_count} 条左右的原子测试用例，覆盖正常/异常/边界/安全场景。"""

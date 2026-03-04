@@ -43,6 +43,12 @@ const routes = [
     component: () => import('@/views/test/OneClickTest.vue'),
     meta: { title: '一键测试', menu: 'test' }
   },
+  {
+    path: '/test/knowledge',
+    name: 'TestKnowledge',
+    component: () => import('@/views/test/KnowledgeBase.vue'),
+    meta: { title: '页面知识库', menu: 'test' }
+  },
   // 邮件通知模块
   {
     path: '/mail/contacts',

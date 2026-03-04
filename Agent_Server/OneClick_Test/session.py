@@ -13,11 +13,18 @@ from database.connection import OneclickSession
 
 
 # 状态机定义
+# 新增状态：
+#   feature_planning  → L2 功能规划中
+#   atomic_planning   → L3 原子任务规划中
+#   task_tree_ready   → 任务树已就绪（等待用户确认）
 VALID_TRANSITIONS = {
     'init': ['analyzing'],
-    'analyzing': ['exploring', 'page_scanned', 'cases_generated', 'failed'],
-    'exploring': ['page_scanned', 'cases_generated', 'failed'],
-    'page_scanned': ['cases_generated', 'failed'],
+    'analyzing': ['exploring', 'page_scanned', 'feature_planning', 'cases_generated', 'failed'],
+    'exploring': ['page_scanned', 'feature_planning', 'cases_generated', 'failed'],
+    'page_scanned': ['feature_planning', 'cases_generated', 'failed'],
+    'feature_planning': ['atomic_planning', 'cases_generated', 'failed'],
+    'atomic_planning': ['task_tree_ready', 'cases_generated', 'failed'],
+    'task_tree_ready': ['confirmed', 'cases_generated', 'failed'],
     'cases_generated': ['confirmed', 'failed'],
     'confirmed': ['executing', 'failed'],
     'executing': ['completed', 'failed'],

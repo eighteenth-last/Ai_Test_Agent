@@ -41,6 +41,7 @@ from Api_Spec.router import router as spec_router
 from Api_Test.router import router as api_test_router
 from OneClick_Test.router import router as oneclick_router
 from Security_Test.router import router as security_router
+from Page_Knowledge.router import router as knowledge_router
 
 
 @asynccontextmanager
@@ -143,6 +144,7 @@ app.include_router(spec_router)
 app.include_router(api_test_router)
 app.include_router(oneclick_router)
 app.include_router(security_router)
+app.include_router(knowledge_router)
 
 
 # 自定义 ReDoc 端点

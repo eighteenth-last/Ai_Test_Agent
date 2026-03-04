@@ -367,8 +367,12 @@ export const oneclickAPI = {
     if (confirmed_cases) data.confirmed_cases = confirmed_cases
     return api.post('/oneclick/confirm', data)
   },
-  stop(session_id) {
-    return api.post('/oneclick/stop', { session_id })
+  // 任务树确认：selections = { nodeId: true/false }，传 null 表示全选
+  confirmTree(session_id, selections = null) {
+    return api.post('/oneclick/confirm-tree', { session_id, selections })
+  },
+  stop(session_id, timeout = 10000) {
+    return api.post('/oneclick/stop', { session_id }, { timeout })
   },
   getHistory(params) {
     return api.get('/oneclick/history', { params })
@@ -421,6 +425,43 @@ export const securityAPI = {
   updateCaseStatus(caseId, status) {
     return api.put(`/security/cases/${caseId}/status`, { status })
   }
+}
+
+// Page Knowledge - 页面知识库
+export const knowledgeAPI = {
+  getStats() {
+    return api.get('/knowledge/stats')
+  },
+  health() {
+    return api.get('/knowledge/health')
+  },
+  lookup(url, query_text = '') {
+    return api.post('/knowledge/lookup', { url, query_text })
+  },
+  getList(params = {}) {
+    return api.get('/knowledge/list', { params })
+  },
+  getDetail(url) {
+    return api.post('/knowledge/detail', { url })
+  },
+  delete(url) {
+    return api.post('/knowledge/delete', { url })
+  },
+  retrieveContext(query, domain = '', limit = 5) {
+    return api.post('/knowledge/retrieve-context', { query, domain, limit })
+  },
+  getStale(days = 30) {
+    return api.get('/knowledge/stale', { params: { days } })
+  },
+  getCollectionConfig() {
+    return api.get('/knowledge/collection-config')
+  },
+  saveCollectionConfig(data) {
+    return api.post('/knowledge/collection-config', data)
+  },
+  createCollection(force = false) {
+    return api.post('/knowledge/collection-create', { force })
+  },
 }
 
 // Skills - 技能管理

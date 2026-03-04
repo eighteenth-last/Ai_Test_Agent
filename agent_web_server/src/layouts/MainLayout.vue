@@ -78,7 +78,8 @@ const menuList = [
       { label: '性能测试', path: '/test/press' },
       { label: '安全测试', path: '/test/security' },
       { label: '接口测试', path: '/test/api' },
-      { label: '一键测试', path: '/test/oneclick' }
+      { label: '一键测试', path: '/test/oneclick' },
+      { label: '页面知识库', path: '/test/knowledge' }
     ]
   },
   {
