@@ -86,7 +86,7 @@
             <div class="flex items-center gap-3 text-xs text-slate-400 mt-1">
               <span>v{{ item.version ?? 1 }}</span>
               <span>哈希: {{ (item.hash_signature || '').substring(0, 12) }}...</span>
-              <span v-if="item.updated_at">更新: {{ item.updated_at }}</span>
+              <span v-if="item.last_updated">更新: {{ item.last_updated }}</span>
             </div>
           </div>
           <!-- 右侧操作 -->
@@ -146,8 +146,8 @@
             <p class="font-semibold mb-1">{{ form.form_name || `表单 ${fi + 1}` }}</p>
             <div v-for="(field, ffi) in (form.fields || [])" :key="ffi"
               class="flex gap-2 text-slate-500 ml-2">
-              <span class="text-slate-700">{{ field.field_name }}</span>
-              <n-tag size="tiny" :bordered="false">{{ field.field_type }}</n-tag>
+              <span class="text-slate-700">{{ field.field_name || field.name || '-' }}</span>
+              <n-tag size="tiny" :bordered="false">{{ field.field_type || field.type || '-' }}</n-tag>
               <span v-if="field.required" class="text-red-400">*必填</span>
             </div>
           </div>
@@ -169,13 +169,17 @@
           <div v-if="detailData.buttons && detailData.buttons.length > 0">
             <p class="text-xs font-semibold text-slate-500 mb-1"><i class="fas fa-mouse-pointer mr-1"></i>按钮</p>
             <div class="flex flex-wrap gap-1">
-              <n-tag v-for="(btn, bi) in detailData.buttons" :key="bi" size="tiny" round>{{ btn }}</n-tag>
+              <n-tag v-for="(btn, bi) in detailData.buttons" :key="bi" size="tiny" round>
+                {{ typeof btn === 'string' ? btn : (btn?.name || btn?.action_type || '-') }}
+              </n-tag>
             </div>
           </div>
           <div v-if="detailData.links && detailData.links.length > 0">
             <p class="text-xs font-semibold text-slate-500 mb-1"><i class="fas fa-external-link-alt mr-1"></i>链接</p>
             <div class="flex flex-wrap gap-1">
-              <n-tag v-for="(lnk, li) in detailData.links" :key="li" size="tiny" round type="info">{{ lnk }}</n-tag>
+              <n-tag v-for="(lnk, li) in detailData.links" :key="li" size="tiny" round type="info">
+                {{ typeof lnk === 'string' ? lnk : (lnk?.name || lnk?.url || '-') }}
+              </n-tag>
             </div>
           </div>
         </div>
@@ -216,7 +220,7 @@
           class="bg-amber-50 rounded-xl p-3 flex items-center justify-between text-sm">
           <div>
             <p class="font-semibold text-slate-700">{{ item.summary || item.url }}</p>
-            <p class="text-xs text-slate-400">{{ item.url }} · v{{ item.version }} · {{ item.updated_at }}</p>
+            <p class="text-xs text-slate-400">{{ item.url }} · v{{ item.version }} · {{ item.last_updated }}</p>
           </div>
           <n-popconfirm @positive-click="deleteKnowledge(item)">
             <template #trigger>
@@ -368,7 +372,7 @@ async function loadList() {
       domain: filterDomain.value || undefined,
       page_type: filterPageType.value || undefined,
     })
-    const list = res.data || res.records || res
+    const list = res?.data?.items || res?.items || res?.data || res?.records || res
     knowledgeList.value = Array.isArray(list) ? list : []
     // 构建域名筛选项
     const domains = new Set()
@@ -384,7 +388,30 @@ async function loadList() {
 async function viewDetail(item) {
   try {
     const res = await knowledgeAPI.getDetail(item.url || item.id)
-    detailData.value = res.data || res
+    const raw = res?.data || res
+    const base = raw?.data || raw
+    const knowledge = base?.knowledge || {}
+    detailData.value = {
+      ...knowledge,
+      ...base,
+      // 保底字段（后端有时放在顶层，有时放在 knowledge 内）
+      url: knowledge.url || base.url || item.url || '',
+      page_type: knowledge.page_type || base.page_type || '',
+      domain: knowledge.domain || base.domain || '',
+      module_name: knowledge.module_name || base.module_name || '',
+      summary: knowledge.summary || base.summary || '',
+      description: knowledge.description || base.description || '',
+      forms: knowledge.forms || base.forms || [],
+      tables: knowledge.tables || base.tables || [],
+      buttons: knowledge.buttons || base.buttons || [],
+      links: knowledge.links || base.links || [],
+      tags: knowledge.tags || base.tags || [],
+      auth_required: knowledge.auth_required ?? base.auth_required,
+      has_file_upload: knowledge.has_file_upload ?? base.has_file_upload,
+      has_export: knowledge.has_export ?? base.has_export,
+      hash_signature: base.hash_signature || knowledge.hash_signature || '',
+      version: base.version || knowledge.version || 1,
+    }
     showDetail.value = true
   } catch (e) {
     message.error('获取详情失败')
@@ -394,7 +421,7 @@ async function viewDetail(item) {
 async function lookupSimilar(item) {
   try {
     const res = await knowledgeAPI.retrieveContext(item.summary || item.url)
-    similarResults.value = res.data || res.contexts || res
+    similarResults.value = res?.data?.items || res?.items || res?.data || res?.contexts || res
     if (!Array.isArray(similarResults.value)) similarResults.value = []
     showSimilar.value = true
   } catch (e) {
@@ -416,7 +443,7 @@ async function deleteKnowledge(item) {
 async function loadStaleList() {
   try {
     const res = await knowledgeAPI.getStale()
-    staleList.value = res.data || res.records || res
+    staleList.value = res?.data?.items || res?.items || res?.data || res?.records || res
     if (!Array.isArray(staleList.value)) staleList.value = []
     showStale.value = true
   } catch (e) {

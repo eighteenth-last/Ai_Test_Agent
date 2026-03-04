@@ -3,6 +3,7 @@
 
 作者: Ai_Test_Agent Team
 """
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -144,7 +145,7 @@ Bug 报告数据:
     ]
 
     try:
-        response = llm_client.chat(messages=messages, temperature=0.3)
+        response = await llm_client.achat(messages=messages, temperature=0.3)
         return {
             "success": True,
             "data": {
@@ -278,7 +279,8 @@ async def send_report_to_contacts(
     for contact in contacts:
         to_email = email_config.test_email if email_config.test_mode == 1 and email_config.test_email else contact.email
         try:
-            dispatch_send(email_config, to_email, subject, html_content)
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, dispatch_send, email_config, to_email, subject, html_content)
             success_count += 1
             recipients_result.append({"name": contact.name, "email": contact.email, "status": "success"})
         except Exception as e:
@@ -317,7 +319,7 @@ async def send_report_to_contacts(
 
 
 @router.get("/list")
-async def get_reports(
+def get_reports(
     limit: int = 20,
     offset: int = 0,
     db: Session = Depends(get_db)
@@ -332,7 +334,7 @@ async def get_reports(
 
 
 @router.get("/{report_id}")
-async def get_report(
+def get_report(
     report_id: int,
     db: Session = Depends(get_db)
 ):

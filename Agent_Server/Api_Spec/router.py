@@ -127,7 +127,7 @@ async def import_md_file(
 
 
 @router.get("/list")
-async def list_spec_versions(
+def list_spec_versions(
     service_name: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
@@ -169,7 +169,7 @@ async def list_spec_versions(
 
 
 @router.get("/{version_id}")
-async def get_spec_version_detail(
+def get_spec_version_detail(
     version_id: int,
     db: Session = Depends(get_db)
 ):
@@ -215,7 +215,7 @@ async def get_spec_version_detail(
 
 
 @router.delete("/{version_id}")
-async def delete_spec_version(
+def delete_spec_version(
     version_id: int,
     db: Session = Depends(get_db)
 ):
@@ -248,7 +248,7 @@ async def delete_spec_version(
 
 
 @router.get("/{version_id}/content")
-async def get_spec_content(
+def get_spec_content(
     version_id: int,
     db: Session = Depends(get_db)
 ):

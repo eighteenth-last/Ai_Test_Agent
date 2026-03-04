@@ -148,7 +148,7 @@ async def execute_batch_tests(
 
 @router.post("/stop-task/{task_id}")
 @router.post("/stop/{task_id}")
-async def stop_test(task_id: int):
+def stop_test(task_id: int):
     """停止测试执行"""
     try:
         from Test_Tools.task_manager import get_task_manager
@@ -166,7 +166,7 @@ async def stop_test(task_id: int):
 
 @router.post("/pause-task/{task_id}")
 @router.post("/pause/{task_id}")
-async def pause_test(task_id: int):
+def pause_test(task_id: int):
     """暂停测试执行"""
     try:
         from Test_Tools.task_manager import get_task_manager
@@ -184,7 +184,7 @@ async def pause_test(task_id: int):
 
 @router.post("/resume-task/{task_id}")
 @router.post("/resume/{task_id}")
-async def resume_test(task_id: int):
+def resume_test(task_id: int):
     """恢复测试执行"""
     try:
         from Test_Tools.task_manager import get_task_manager
@@ -202,7 +202,7 @@ async def resume_test(task_id: int):
 
 @router.get("/task-status/{task_id}")
 @router.get("/status/{task_id}")
-async def get_task_status(task_id: int):
+def get_task_status(task_id: int):
     """获取任务状态"""
     try:
         from Test_Tools.task_manager import get_task_manager

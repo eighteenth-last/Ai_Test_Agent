@@ -5,6 +5,7 @@ import os
 import logging
 import time
 import uuid
+import threading
 from typing import List, Dict, Optional, Any
 
 # 跳过系统代理对 localhost 的拦截（防止系统全局代理导致 qdrant-client 请求返回 503）
@@ -42,6 +43,7 @@ class VectorStore:
         self._retry_seconds = max(QDRANT_RETRY_SECONDS, 1)
         self._unavailable_until = 0.0
         self._last_error = ""
+        self._lock = threading.RLock()
 
     def reload_config(self, config: dict) -> None:
         """热更新 Qdrant 连接与 Collection 配置，重置内部状态"""
@@ -104,16 +106,16 @@ class VectorStore:
                 raise
         return self._client
 
-    def ensure_collection(self):
-        if self._initialized:
-            return True
+    def ensure_collection(self, recreate_on_mismatch: bool = False):
         if self._is_temporarily_unavailable():
             return False
-        try:
-            from qdrant_client.models import Distance, VectorParams
-            client = self._get_client()
-            collections = [c.name for c in client.get_collections().collections]
-            if self.collection_name not in collections:
+        with self._lock:
+            if self._initialized:
+                return True
+            try:
+                from qdrant_client.models import Distance, VectorParams
+                client = self._get_client()
+                collections = [c.name for c in client.get_collections().collections]
                 dist_map = {
                     "cosine": Distance.COSINE,
                     "dot": Distance.DOT,
@@ -121,33 +123,91 @@ class VectorStore:
                     "manhattan": Distance.MANHATTAN,
                 }
                 dist_obj = dist_map.get(self._distance.lower(), Distance.COSINE)
-                client.create_collection(
-                    collection_name=self.collection_name,
-                    vectors_config=VectorParams(size=self.vector_size, distance=dist_obj),
-                )
-                logger.info(f"[VectorStore] Created collection: {self.collection_name} (dim={self.vector_size})")
-            else:
-                logger.info(f"[VectorStore] Collection already exists: {self.collection_name}")
-            self._initialized = True
-            self._mark_available()
-            return True
-        except Exception as e:
-            self._mark_unavailable(str(e), "ensure_collection")
-            return False
+
+                if self.collection_name not in collections:
+                    try:
+                        client.create_collection(
+                            collection_name=self.collection_name,
+                            vectors_config=VectorParams(size=self.vector_size, distance=dist_obj),
+                        )
+                        logger.info(f"[VectorStore] Created collection: {self.collection_name} (dim={self.vector_size})")
+                    except Exception as create_err:
+                        # 并发初始化时，另一请求可能已创建成功（409）
+                        if "already exists" not in str(create_err):
+                            raise
+                else:
+                    # 检查已有 Collection 的向量维度
+                    try:
+                        coll_info = client.get_collection(self.collection_name)
+                        vectors_cfg = coll_info.config.params.vectors
+                        existing_dim = vectors_cfg.size if hasattr(vectors_cfg, "size") else None
+                        if existing_dim and existing_dim != self.vector_size:
+                            if recreate_on_mismatch:
+                                logger.warning(
+                                    f"[VectorStore] Collection dim mismatch (existing={existing_dim}, "
+                                    f"configured={self.vector_size}). Recreating collection."
+                                )
+                                client.delete_collection(self.collection_name)
+                                try:
+                                    client.create_collection(
+                                        collection_name=self.collection_name,
+                                        vectors_config=VectorParams(size=self.vector_size, distance=dist_obj),
+                                    )
+                                except Exception as recreate_err:
+                                    if "already exists" not in str(recreate_err):
+                                        raise
+                                logger.info(
+                                    f"[VectorStore] Recreated collection: {self.collection_name} (dim={self.vector_size})"
+                                )
+                            else:
+                                logger.warning(
+                                    f"[VectorStore] Collection dim mismatch (existing={existing_dim}, "
+                                    f"configured={self.vector_size}), skip recreate in read path."
+                                )
+                        else:
+                            logger.info(f"[VectorStore] Collection already exists: {self.collection_name}")
+                    except Exception as dim_err:
+                        logger.warning(f"[VectorStore] 维度检查失败（忽略）: {dim_err}")
+                self._initialized = True
+                self._mark_available()
+                return True
+            except Exception as e:
+                self._mark_unavailable(str(e), "ensure_collection")
+                return False
 
     def upsert(self, point_id: str, vector: List[float], payload: Dict[str, Any]) -> bool:
         try:
             from qdrant_client.models import PointStruct
-            if not self.ensure_collection():
-                return False
-            if len(vector) != self.vector_size and len(vector) > 0:
-                self.vector_size = len(vector)
-            client = self._get_client()
-            client.upsert(
-                collection_name=self.collection_name,
-                points=[PointStruct(id=point_id, vector=vector, payload=payload)],
-            )
-            return True
+            with self._lock:
+                # 空向量仅更新 payload，避免误触发向量维度重建
+                if len(vector) == 0:
+                    if not self.ensure_collection(recreate_on_mismatch=False):
+                        return False
+                    client = self._get_client()
+                    client.set_payload(
+                        collection_name=self.collection_name,
+                        payload=payload,
+                        points=[point_id],
+                    )
+                    return True
+
+                # 若 embedding 实际维度与配置不符，更新 vector_size 并在写入路径重建
+                if len(vector) != self.vector_size:
+                    logger.warning(
+                        f"[VectorStore] Vector dim mismatch: configured={self.vector_size}, "
+                        f"actual={len(vector)}. Updating dim and recreating collection."
+                    )
+                    self.vector_size = len(vector)
+                    self._initialized = False
+
+                if not self.ensure_collection(recreate_on_mismatch=True):
+                    return False
+                client = self._get_client()
+                client.upsert(
+                    collection_name=self.collection_name,
+                    points=[PointStruct(id=point_id, vector=vector, payload=payload)],
+                )
+                return True
         except Exception as e:
             self._mark_unavailable(str(e), "upsert")
             return False
@@ -168,13 +228,25 @@ class VectorStore:
             if filter_conditions:
                 must = [FieldCondition(key=k, match=MatchValue(value=v)) for k, v in filter_conditions.items()]
                 qdrant_filter = Filter(must=must)
-            results = client.search(
-                collection_name=self.collection_name,
-                query_vector=query_vector,
-                limit=limit,
-                score_threshold=score_threshold,
-                query_filter=qdrant_filter,
-            )
+            # qdrant-client >= 1.10 removed client.search(); use query_points() instead
+            try:
+                response = client.query_points(
+                    collection_name=self.collection_name,
+                    query=query_vector,
+                    limit=limit,
+                    score_threshold=score_threshold,
+                    query_filter=qdrant_filter,
+                )
+                results = response.points
+            except AttributeError:
+                # Fallback for older qdrant-client versions
+                results = client.search(  # type: ignore[attr-defined]
+                    collection_name=self.collection_name,
+                    query_vector=query_vector,
+                    limit=limit,
+                    score_threshold=score_threshold,
+                    query_filter=qdrant_filter,
+                )
             return [{"id": str(r.id), "score": r.score, "payload": r.payload or {}} for r in results]
         except Exception as e:
             self._mark_unavailable(str(e), "search")

@@ -929,7 +929,7 @@ class OneClickService:
         )
 
         try:
-            response = llm.chat(
+            response = await llm.achat(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -975,7 +975,7 @@ class OneClickService:
         )
 
         try:
-            response = llm.chat(
+            response = await llm.achat(
                 messages=[
                     {"role": "system", "content": ONECLICK_INTENT_ANALYSIS_V2_SYSTEM},
                     {"role": "user", "content": user_prompt}
@@ -1208,7 +1208,7 @@ class OneClickService:
         )
 
         try:
-            response = llm.chat(
+            response = await llm.achat(
                 messages=[
                     {"role": "system", "content": ONECLICK_SUBTASK_GENERATION_SYSTEM},
                     {"role": "user", "content": user_prompt}
@@ -1254,7 +1254,7 @@ class OneClickService:
         )
 
         try:
-            response = llm.chat(
+            response = await llm.achat(
                 messages=[
                     {"role": "system", "content": PAGE_CAPABILITY_ABSTRACTION_SYSTEM},
                     {"role": "user", "content": user_prompt},
@@ -1311,7 +1311,7 @@ class OneClickService:
         )
 
         try:
-            response = llm.chat(
+            response = await llm.achat(
                 messages=[
                     {"role": "system", "content": TASK_TREE_FEATURE_PLANNING_SYSTEM},
                     {"role": "user", "content": user_prompt},
@@ -1361,7 +1361,7 @@ class OneClickService:
         )
 
         try:
-            response = llm.chat(
+            response = await llm.achat(
                 messages=[
                     {"role": "system", "content": TASK_TREE_ATOMIC_PLANNING_SYSTEM},
                     {"role": "user", "content": user_prompt},
@@ -1487,72 +1487,39 @@ class OneClickService:
         page_data: Dict = None,
         subtasks: Dict = None,
     ) -> Dict:
-        """LLM 生成测试用例（支持基于页面探索结果增强）"""
+        """LLM 生成测试用例（最小上下文：L1任务+环境+页面探索）"""
         llm = get_llm_client()
 
-        # 构建上下文
-        context_parts = []
-
-        # 已有用例
-        if existing_cases:
-            context_parts.append("## 数据库中已有的相关用例：")
-            for c in existing_cases[:20]:
-                context_parts.append(f"- [{c['id']}] {c['title']} (模块: {c.get('module', 'N/A')})")
-                if c.get('steps'):
-                    context_parts.append(f"  步骤: {c['steps'][:200]}")
-
-        # 环境信息
-        context_parts.append(f"\n## 测试环境：")
-        context_parts.append(f"- 目标地址: {env_info.get('base_url', 'N/A')}")
-        if env_info.get('username'):
-            context_parts.append(f"- 登录账号: {env_info['username']}")
-            context_parts.append(f"- 登录密码: {env_info.get('password', '')}")
-
-        # Skills 知识
-        skills_notes = SkillManager.load_skills_as_notes(
-            db, skill_ids=skill_ids, task=user_input
+        # 严格最小上下文：仅 L1 任务 + 测试环境 + 页面探索
+        l1_task = (
+            intent.get("test_scope")
+            or intent.get("target_module")
+            or intent.get("task")
+            or user_input
         )
-        if skills_notes:
-            context_parts.append(f"\n{skills_notes}")
 
-        context = "\n".join(context_parts)
+        test_env = {
+            "base_url": env_info.get("base_url", ""),
+            "username": env_info.get("username", ""),
+            "password": env_info.get("password", ""),
+        }
+        test_env_text = json.dumps(test_env, ensure_ascii=False, indent=2)
 
-        # 根据是否有页面探索结果，选择不同的 prompt
-        has_exploration = page_data and page_data.get("page_sections")
+        page_exploration_text = json.dumps(page_data or {}, ensure_ascii=False, indent=2)
+        if len(page_exploration_text) > 7000:
+            page_exploration_text = page_exploration_text[:7000] + "\n... (已截断)"
 
-        if has_exploration:
-            # 使用 V2 prompt（基于探索结果）
-            page_exploration_text = json.dumps(page_data, ensure_ascii=False, indent=2)
-            if len(page_exploration_text) > 6000:
-                page_exploration_text = page_exploration_text[:6000] + "\n... (已截断)"
-
-            subtasks_text = ""
-            if subtasks and subtasks.get("subtasks"):
-                subtasks_text = json.dumps(subtasks, ensure_ascii=False, indent=2)
-                if len(subtasks_text) > 4000:
-                    subtasks_text = subtasks_text[:4000] + "\n... (已截断)"
-
-            system_prompt = ONECLICK_GENERATE_CASES_V2_SYSTEM
-            user_prompt = ONECLICK_GENERATE_CASES_V2_USER_TEMPLATE.format(
-                user_input=user_input,
-                intent_json=json.dumps(intent, ensure_ascii=False),
-                page_exploration=page_exploration_text,
-                subtasks=subtasks_text or "无子任务规划",
-                context=context,
-            )
-        else:
-            # 降级到传统模式
-            system_prompt = ONECLICK_GENERATE_CASES_SYSTEM
-            user_prompt = ONECLICK_GENERATE_CASES_USER_TEMPLATE.format(
-                user_input=user_input,
-                intent_json=json.dumps(intent, ensure_ascii=False),
-                context=context,
-            )
+        system_prompt = ONECLICK_GENERATE_CASES_V2_SYSTEM
+        user_prompt = ONECLICK_GENERATE_CASES_V2_USER_TEMPLATE.format(
+            l1_task=l1_task,
+            test_env=test_env_text,
+            page_exploration=page_exploration_text,
+        )
 
         try:
             SessionManager.add_message(db, session, 'assistant', '正在生成测试用例...')
 
-            response = llm.chat(
+            response = await llm.achat(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -1573,7 +1540,7 @@ class OneClickService:
                     last_error = parse_err
                     if attempt == 0:
                         logger.warning(f"[OneClick] 用例 JSON 解析失败（第1次），重新请求 LLM: {parse_err}")
-                        response = llm.chat(
+                        response = await llm.achat(
                             messages=[
                                 {"role": "system", "content": system_prompt},
                                 {"role": "user", "content": user_prompt + "\n\n⚠️ 请确保输出是合法的 JSON 格式，不要在 JSON 外添加任何文字。"}
@@ -1593,7 +1560,7 @@ class OneClickService:
             session.generated_cases = json.dumps(cases, ensure_ascii=False)
             SessionManager.update_status(db, session, 'cases_generated')
 
-            mode_tag = "🔍 基于页面探索" if has_exploration else "📝 基于文本分析"
+            mode_tag = "🔍 基于页面探索"
             SessionManager.add_message(
                 db, session, 'assistant',
                 f'✅ 已生成 {len(cases)} 条测试用例（{mode_tag}）\n{summary}',
@@ -1948,6 +1915,7 @@ class OneClickService:
             if test_data:
                 data_text = f"\n测试数据: {json.dumps(test_data, ensure_ascii=False)}"
 
+            # 执行阶段严格最小上下文：仅测试用例 + 目标地址
             task = f"""【一键测试任务】
 目标地址: {target_url}
 测试用例: {case.get('title', '')}
@@ -1962,19 +1930,27 @@ class OneClickService:
 - 点击按钮后，先用 wait 等待 2 秒，再观察浏览器页面状态来判断结果
 - 不要使用 extract 或 run_javascript 去搜索 Toast/消息提示（它们只显示1-3秒就消失了）
 - 通过 URL 变化、页面内容变化、表单是否仍在等间接证据来判断操作结果
+- 每一步都要先判断当前页面状态（URL、关键元素是否存在、是否已登录），再决定下一步操作
+- 如果页面状态与预期不一致，优先执行纠偏步骤（回到目标页、重新定位元素、等待加载）
 
 🔴 【关键】done 的 success 字段判定规则：
 - success 表示"实际结果是否符合预期结果"，而不是"操作本身是否成功"
 - 如果预期结果是"登录失败/提示错误/停留在登录页"，而实际确实登录失败了 → success: true（符合预期）
 - 如果预期结果是"登录成功/跳转到首页"，而实际确实登录成功了 → success: true（符合预期）
 - 如果预期结果是"登录失败"，但实际登录成功了 → success: false（不符合预期）
-- 简单来说：实际结果 == 预期结果 → success: true，实际结果 != 预期结果 → success: false"""
+- 简单来说：实际结果 == 预期结果 → success: true，实际结果 != 预期结果 → success: false
 
-            # Skills 便签注入（从 MinIO 加载）
-            skills_notes = SkillManager.load_skills_as_notes(db, task=task)
+🚫 动作约束（必须遵守）：
+- 只允许使用以下动作：click、input、navigate、search、wait、done
+- 严禁输出 evaluate、run_javascript、extract 或任何未定义动作
+- 若无法继续，请使用 done 且 success=false，并在 text 中写明阻塞原因"""
+
             extend_prompt = BROWSER_USE_CHINESE_SYSTEM
-            if skills_notes:
-                extend_prompt += f"\n\n{skills_notes}"
+
+            extend_prompt += (
+                "\n\n🔒 执行动作白名单（严格）：仅可输出 click/input/navigate/search/wait/done。"
+                "若输出 evaluate/run_javascript/extract 或其他动作，视为无效响应。"
+            )
 
             # 如果有循环检测器，在 system prompt 中注入提示
             if loop_detector:
@@ -1994,7 +1970,28 @@ class OneClickService:
             )
 
             # 执行测试（带取消检测）
-            history = await agent.run(max_steps=max_steps)
+            try:
+                history = await agent.run(max_steps=max_steps)
+            except Exception as run_err:
+                run_err_text = str(run_err)
+                # 常见 schema 错误：重试一次，并进一步收紧动作提示
+                if "AgentOutput" in run_err_text or "validation error" in run_err_text.lower():
+                    logger.warning(f"[OneClick] Agent 输出 schema 校验失败，开始一次收敛重试: {run_err_text}")
+                    strict_prompt = extend_prompt + (
+                        "\n\n二次重试规则：每次只输出一个动作；不要使用任何白名单外动作；"
+                        "若元素不可定位，先 wait 或 navigate，再 done(success=false)。"
+                    )
+                    retry_agent = Agent(
+                        task=task,
+                        llm=llm,
+                        browser_session=browser_session,
+                        use_vision=use_vision,
+                        max_actions_per_step=1,
+                        extend_system_message=strict_prompt,
+                    )
+                    history = await retry_agent.run(max_steps=max_steps)
+                else:
+                    raise
 
             # 检查执行后是否被取消
             if cancel_event and cancel_event.is_set():
@@ -2276,10 +2273,13 @@ class OneClickService:
             logger.error(f"[OneClick] 提交报告到数据库失败: {e}")
             db.rollback()
 
-        # ---- 3. 自动发送邮件给 auto_receive_bug 联系人 ----
+        # ---- 3. 自动发送邮件给 auto_receive_bug 联系人（放入线程池避免阻塞） ----
         email_result = {"success": False, "message": "未发送"}
         try:
-            email_result = OneClickService._send_oneclick_report_email(
+            loop = asyncio.get_event_loop()
+            email_result = await loop.run_in_executor(
+                None,
+                OneClickService._send_oneclick_report_email,
                 db, session, summary, results_list, cases,
                 report_id, bug_count
             )

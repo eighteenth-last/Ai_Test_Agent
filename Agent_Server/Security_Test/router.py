@@ -107,7 +107,7 @@ async def run_security_scan(
 
 
 @router.post("/stop")
-async def stop_security_scan(
+def stop_security_scan(
     request: StopScanRequest,
     db: Session = Depends(get_db)
 ):
@@ -129,7 +129,7 @@ async def stop_security_scan(
 
 
 @router.get("/status/{task_id}")
-async def get_scan_status(task_id: int, db: Session = Depends(get_db)):
+def get_scan_status(task_id: int, db: Session = Depends(get_db)):
     """获取扫描任务状态"""
     task = db.query(SecurityScanTask).filter(SecurityScanTask.id == task_id).first()
     if not task:
@@ -155,7 +155,7 @@ async def get_scan_status(task_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/result/{task_id}")
-async def get_scan_result(task_id: int, db: Session = Depends(get_db)):
+def get_scan_result(task_id: int, db: Session = Depends(get_db)):
     """获取扫描结果详情（含漏洞列表和报告）"""
     task = db.query(SecurityScanTask).filter(SecurityScanTask.id == task_id).first()
     if not task:
@@ -186,7 +186,7 @@ async def get_scan_result(task_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/history")
-async def get_scan_history(
+def get_scan_history(
     page: int = 1,
     page_size: int = 20,
     scan_type: Optional[str] = None,
@@ -228,7 +228,7 @@ async def get_scan_history(
 
 
 @router.delete("/{task_id}")
-async def delete_scan_task(task_id: int, db: Session = Depends(get_db)):
+def delete_scan_task(task_id: int, db: Session = Depends(get_db)):
     """删除扫描任务记录"""
     task = db.query(SecurityScanTask).filter(SecurityScanTask.id == task_id).first()
     if not task:
@@ -247,7 +247,7 @@ async def delete_scan_task(task_id: int, db: Session = Depends(get_db)):
 # ============================================
 
 @router.get("/cases")
-async def get_security_cases(
+def get_security_cases(
     page: int = 1,
     page_size: int = 20,
     status: Optional[str] = None,
@@ -334,7 +334,7 @@ class UpdateSecurityStatusRequest(BaseModel):
 
 
 @router.put("/cases/{case_id}/status")
-async def update_security_case_status(
+def update_security_case_status(
     case_id: int,
     request: UpdateSecurityStatusRequest,
     db: Session = Depends(get_db)

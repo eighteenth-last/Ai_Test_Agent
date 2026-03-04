@@ -75,7 +75,7 @@ async def generate_test_cases(
 
 
 @router.get("/list")
-async def get_test_cases(
+def get_test_cases(
     limit: int = 20,
     offset: int = 0,
     module: str = None,
@@ -102,7 +102,7 @@ async def get_test_cases(
 
 
 @router.get("/{case_id}")
-async def get_test_case(
+def get_test_case(
     case_id: int,
     db: Session = Depends(get_db)
 ):
@@ -119,7 +119,7 @@ async def get_test_case(
 
 
 @router.put("/{case_id}")
-async def update_test_case(
+def update_test_case(
     case_id: int,
     request: UpdateTestCaseRequest,
     db: Session = Depends(get_db)

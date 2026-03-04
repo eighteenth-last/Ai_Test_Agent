@@ -58,6 +58,12 @@ def _zap_get(path: str, params: dict = None) -> dict:
     return resp.json()
 
 
+async def _zap_get_async(path: str, params: dict = None) -> dict:
+    """Async wrapper for _zap_get, runs in thread pool."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _zap_get, path, params)
+
+
 def check_zap_running_detail() -> tuple[bool, str]:
     """Return detailed connectivity status for ZAP."""
     config = get_zap_config()
@@ -102,7 +108,7 @@ async def run_spider(target: str, task_id: int, on_progress=None) -> bool:
     from Security_Test.task_manager import should_stop
 
     try:
-        result = _zap_get("/JSON/spider/action/scan/", {"url": target, "recurse": "true"})
+        result = await _zap_get_async("/JSON/spider/action/scan/", {"url": target, "recurse": "true"})
         scan_id = result.get("scan")
         if not scan_id:
             logger.error(f"Spider start failed: {result}")
@@ -113,14 +119,14 @@ async def run_spider(target: str, task_id: int, on_progress=None) -> bool:
         deadline = time.time() + get_zap_config()["max_scan_minutes"] * 60
         while True:
             if should_stop(task_id):
-                _zap_get("/JSON/spider/action/stop/", {"scanId": scan_id})
+                await _zap_get_async("/JSON/spider/action/stop/", {"scanId": scan_id})
                 return False
             if time.time() > deadline:
-                _zap_get("/JSON/spider/action/stop/", {"scanId": scan_id})
+                await _zap_get_async("/JSON/spider/action/stop/", {"scanId": scan_id})
                 logger.warning("[ZAP] Spider timeout, stopped")
                 break
 
-            status = _zap_get("/JSON/spider/view/status/", {"scanId": scan_id})
+            status = await _zap_get_async("/JSON/spider/view/status/", {"scanId": scan_id})
             progress = int(status.get("status", "0"))
             if on_progress:
                 on_progress(progress)
@@ -139,7 +145,7 @@ async def run_active_scan(target: str, task_id: int, on_progress=None) -> bool:
     from Security_Test.task_manager import should_stop
 
     try:
-        result = _zap_get("/JSON/ascan/action/scan/", {"url": target, "recurse": "true"})
+        result = await _zap_get_async("/JSON/ascan/action/scan/", {"url": target, "recurse": "true"})
         scan_id = result.get("scan")
         if not scan_id:
             logger.error(f"Active scan start failed: {result}")
@@ -150,14 +156,14 @@ async def run_active_scan(target: str, task_id: int, on_progress=None) -> bool:
         deadline = time.time() + get_zap_config()["max_scan_minutes"] * 60
         while True:
             if should_stop(task_id):
-                _zap_get("/JSON/ascan/action/stop/", {"scanId": scan_id})
+                await _zap_get_async("/JSON/ascan/action/stop/", {"scanId": scan_id})
                 return False
             if time.time() > deadline:
-                _zap_get("/JSON/ascan/action/stop/", {"scanId": scan_id})
+                await _zap_get_async("/JSON/ascan/action/stop/", {"scanId": scan_id})
                 logger.warning("[ZAP] Active scan timeout, stopped")
                 break
 
-            status = _zap_get("/JSON/ascan/view/status/", {"scanId": scan_id})
+            status = await _zap_get_async("/JSON/ascan/view/status/", {"scanId": scan_id})
             progress = int(status.get("status", "0"))
             if on_progress:
                 on_progress(progress)

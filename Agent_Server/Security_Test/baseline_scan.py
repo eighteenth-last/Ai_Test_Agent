@@ -10,6 +10,7 @@
 
 作者: Ai_Test_Agent Team
 """
+import asyncio
 import logging
 from typing import List, Dict
 
@@ -56,21 +57,23 @@ async def run_baseline_check(target_url: str) -> List[dict]:
     """
     vulns = []
     target = target_url.rstrip("/")
+    loop = asyncio.get_event_loop()
 
+    # 将同步检查函数放入线程池，避免阻塞事件循环
     # 1. 检查安全响应头
-    vulns.extend(_check_security_headers(target))
+    vulns.extend(await loop.run_in_executor(None, _check_security_headers, target))
 
     # 2. 检查 Cookie 安全属性
-    vulns.extend(_check_cookie_security(target))
+    vulns.extend(await loop.run_in_executor(None, _check_cookie_security, target))
 
     # 3. 检查 HTTPS
     vulns.extend(_check_https(target))
 
     # 4. 检查信息泄露
-    vulns.extend(_check_info_disclosure(target))
+    vulns.extend(await loop.run_in_executor(None, _check_info_disclosure, target))
 
     # 5. 敏感路径探测
-    vulns.extend(_check_sensitive_paths(target))
+    vulns.extend(await loop.run_in_executor(None, _check_sensitive_paths, target))
 
     return vulns
 

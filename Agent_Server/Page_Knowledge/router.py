@@ -83,7 +83,7 @@ async def knowledge_stats(db: Session = Depends(get_db)):
 
 
 @router.get("/knowledge/health")
-async def knowledge_health():
+def knowledge_health():
     """向量数据库健康检查"""
     try:
         store = get_vector_store()
@@ -278,7 +278,7 @@ def _config_to_dict(cfg: QdrantCollectionConfig) -> dict:
 
 
 @router.get("/knowledge/collection-config")
-async def get_collection_config(db: Session = Depends(get_db)):
+def get_collection_config(db: Session = Depends(get_db)):
     """获取当前 Qdrant Collection 配置（若未配置则返回默认值）"""
     try:
         cfg = db.query(QdrantCollectionConfig).filter_by(is_active=1).order_by(
@@ -293,7 +293,7 @@ async def get_collection_config(db: Session = Depends(get_db)):
 
 
 @router.post("/knowledge/collection-config")
-async def save_collection_config(req: CollectionConfigRequest, db: Session = Depends(get_db)):
+def save_collection_config(req: CollectionConfigRequest, db: Session = Depends(get_db)):
     """保存 Collection 配置到数据库（覆盖当前活跃配置）"""
     try:
         cfg = db.query(QdrantCollectionConfig).filter_by(is_active=1).order_by(

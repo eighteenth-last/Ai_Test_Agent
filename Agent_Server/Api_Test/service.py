@@ -7,6 +7,7 @@
 """
 import json
 import time
+import asyncio
 import traceback
 import logging
 import re
@@ -403,8 +404,11 @@ class ApiTestService:
                 else:
                     dsl = await _match_endpoint_and_generate_dsl(case, ep_list, mode)
 
-                # 执行 HTTP 请求
-                exec_result = _execute_http_request(dsl, base_url, headers, variables)
+                # 执行 HTTP 请求（放入线程池避免阻塞事件循环）
+                loop = asyncio.get_event_loop()
+                exec_result = await loop.run_in_executor(
+                    None, _execute_http_request, dsl, base_url, headers, variables
+                )
 
                 duration = int(time.time() - start_time)
                 total_duration += duration
@@ -520,7 +524,7 @@ class ApiTestService:
         # 生成测试报告
         report_id = None
         try:
-            report_id = _generate_api_test_report(
+            report_id = await _generate_api_test_report(
                 results, test_record_ids, total_duration, db
             )
         except Exception as e:
@@ -536,7 +540,10 @@ class ApiTestService:
                 logger.error(f"生成 Bug 报告失败: {e}")
 
             try:
-                _send_bug_email_notification(failed_records, bug_report_ids, db)
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None, _send_bug_email_notification, failed_records, bug_report_ids, db
+                )
             except Exception as e:
                 logger.error(f"发送 Bug 邮件通知失败: {e}")
 
@@ -793,7 +800,7 @@ async def _match_endpoint_and_generate_dsl(
 
 请严格按照接口文档中定义的字段名（不要替换为其他名称）和说明要求，为该测试用例生成可执行的测试 DSL。"""
 
-    response = llm.chat(
+    response = await llm.achat(
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
@@ -1353,7 +1360,7 @@ def _extract_json_path(data: Any, path: str) -> Any:
     return current
 
 
-def _generate_api_test_report(
+async def _generate_api_test_report(
     results: List[Dict],
     test_record_ids: List[int],
     total_duration: int,
@@ -1379,7 +1386,7 @@ def _generate_api_test_report(
 请生成 Markdown 格式的接口测试报告。"""
 
     try:
-        content = llm.chat(
+        content = await llm.achat(
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}

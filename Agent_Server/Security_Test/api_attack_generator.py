@@ -20,7 +20,7 @@ import re
 import logging
 from typing import List, Dict, Any, Optional
 
-import requests as http_requests
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +99,7 @@ async def generate_attack_cases(endpoints: List[Dict], auth_info: Dict = None) -
 请为以上接口生成全面的安全攻击测试用例。"""
 
     llm = get_llm_client()
-    response = llm.chat(
+    response = await llm.achat(
         messages=[
             {"role": "system", "content": ATTACK_GENERATION_SYSTEM},
             {"role": "user", "content": user_prompt},
@@ -134,48 +134,47 @@ async def execute_attack_cases(attacks: List[Dict], base_url: str,
     results = []
     default_headers = default_headers or {}
 
-    for attack in attacks:
-        dsl = attack.get("dsl", {})
-        method = dsl.get("method", "GET").upper()
-        path = dsl.get("path", "/")
-        url = f"{base_url.rstrip('/')}{path}"
-        headers = {**default_headers, **dsl.get("headers", {})}
-        params = dsl.get("query_params", {})
-        body = dsl.get("body")
+    async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
+        for attack in attacks:
+            dsl = attack.get("dsl", {})
+            method = dsl.get("method", "GET").upper()
+            path = dsl.get("path", "/")
+            url = f"{base_url.rstrip('/')}{path}"
+            headers = {**default_headers, **dsl.get("headers", {})}
+            params = dsl.get("query_params", {})
+            body = dsl.get("body")
 
-        try:
-            resp = http_requests.request(
-                method=method,
-                url=url,
-                headers=headers,
-                params=params,
-                json=body if body else None,
-                timeout=15,
-                allow_redirects=False,
-            )
+            try:
+                resp = await client.request(
+                    method=method,
+                    url=url,
+                    headers=headers,
+                    params=params,
+                    json=body if body else None,
+                )
 
-            # 分析响应判断是否存在漏洞
-            is_vulnerable = _analyze_response(attack, resp)
+                # 分析响应判断是否存在漏洞
+                is_vulnerable = _analyze_response(attack, resp)
 
-            results.append({
-                **attack,
-                "is_vulnerable": is_vulnerable,
-                "response_status": resp.status_code,
-                "response_body_trunc": resp.text[:1000],
-                "evidence": _extract_evidence(attack, resp) if is_vulnerable else "",
-                "url": url,
-            })
+                results.append({
+                    **attack,
+                    "is_vulnerable": is_vulnerable,
+                    "response_status": resp.status_code,
+                    "response_body_trunc": resp.text[:1000],
+                    "evidence": _extract_evidence(attack, resp) if is_vulnerable else "",
+                    "url": url,
+                })
 
-        except Exception as e:
-            results.append({
-                **attack,
-                "is_vulnerable": False,
-                "response_status": None,
-                "response_body_trunc": str(e),
-                "evidence": "",
-                "url": url,
-                "error": str(e),
-            })
+            except Exception as e:
+                results.append({
+                    **attack,
+                    "is_vulnerable": False,
+                    "response_status": None,
+                    "response_body_trunc": str(e),
+                    "evidence": "",
+                    "url": url,
+                    "error": str(e),
+                })
 
     return results
 

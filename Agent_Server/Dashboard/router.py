@@ -42,7 +42,7 @@ def _subtract_months(date: datetime, months: int) -> datetime:
 
 
 @router.get("/stats")
-async def get_stats(db: Session = Depends(get_db)):
+def get_stats(db: Session = Depends(get_db)):
     """获取总体统计数据"""
     try:
         test_cases = db.query(func.count(ExecutionCase.id)).scalar() or 0
@@ -64,7 +64,7 @@ async def get_stats(db: Session = Depends(get_db)):
 
 
 @router.get("/test-result-stats")
-async def get_test_result_stats(db: Session = Depends(get_db)):
+def get_test_result_stats(db: Session = Depends(get_db)):
     """获取测试结果分布统计"""
     try:
         reports = db.query(TestReport).all()
@@ -111,7 +111,7 @@ async def get_test_result_stats(db: Session = Depends(get_db)):
 
 
 @router.get("/priority-stats")
-async def get_priority_stats(db: Session = Depends(get_db)):
+def get_priority_stats(db: Session = Depends(get_db)):
     """获取用例优先级分布统计"""
     try:
         result = db.query(
@@ -134,7 +134,7 @@ async def get_priority_stats(db: Session = Depends(get_db)):
 
 
 @router.get("/test-trend")
-async def get_test_trend(days: int = 30, db: Session = Depends(get_db)):
+def get_test_trend(days: int = 30, db: Session = Depends(get_db)):
     """获取测试趋势"""
     try:
         if days not in [30, 90, 365]:
@@ -211,7 +211,7 @@ async def get_test_trend(days: int = 30, db: Session = Depends(get_db)):
 
 
 @router.get("/case-type-stats")
-async def get_case_type_stats(db: Session = Depends(get_db)):
+def get_case_type_stats(db: Session = Depends(get_db)):
     """获取测试用例类型分布统计"""
     try:
         result = db.query(
@@ -230,7 +230,7 @@ async def get_case_type_stats(db: Session = Depends(get_db)):
 
 
 @router.get("/email-stats")
-async def get_email_stats(db: Session = Depends(get_db)):
+def get_email_stats(db: Session = Depends(get_db)):
     """获取邮件发送统计"""
     try:
         success = db.query(func.count(EmailRecord.id)).filter(
@@ -258,7 +258,7 @@ async def get_email_stats(db: Session = Depends(get_db)):
 
 
 @router.get("/recent-activities")
-async def get_recent_activities(db: Session = Depends(get_db)):
+def get_recent_activities(db: Session = Depends(get_db)):
     """获取最近活动"""
     try:
         activities = []
@@ -312,7 +312,7 @@ async def get_recent_activities(db: Session = Depends(get_db)):
 # ========== 扩展接口 ==========
 
 @router.get("/overview")
-async def get_overview(db: Session = Depends(get_db)):
+def get_overview(db: Session = Depends(get_db)):
     """获取概览数据"""
     total_cases = db.query(ExecutionCase).count()
     total_records = db.query(TestRecord).count()
@@ -347,7 +347,7 @@ async def get_overview(db: Session = Depends(get_db)):
 
 
 @router.get("/trends")
-async def get_trends(days: int = 7, db: Session = Depends(get_db)):
+def get_trends(days: int = 7, db: Session = Depends(get_db)):
     """获取趋势数据"""
     end_date = datetime.now()
     start_date = end_date - timedelta(days=days)
@@ -379,7 +379,7 @@ async def get_trends(days: int = 7, db: Session = Depends(get_db)):
 
 
 @router.get("/bug-distribution")
-async def get_bug_distribution(db: Session = Depends(get_db)):
+def get_bug_distribution(db: Session = Depends(get_db)):
     """获取 Bug 分布数据"""
     severity_stats = {}
     for level in ['一级', '二级', '三级', '四级']:
@@ -407,7 +407,7 @@ async def get_bug_distribution(db: Session = Depends(get_db)):
 
 
 @router.get("/security-stats")
-async def get_security_stats(db: Session = Depends(get_db)):
+def get_security_stats(db: Session = Depends(get_db)):
     """获取安全测试统计数据"""
     try:
         # 扫描任务统计
@@ -496,7 +496,7 @@ async def get_security_stats(db: Session = Depends(get_db)):
 
 
 @router.get("/recent-executions")
-async def get_recent_executions(limit: int = 10, db: Session = Depends(get_db)):
+def get_recent_executions(limit: int = 10, db: Session = Depends(get_db)):
     """获取最近的执行记录"""
     records = db.query(TestRecord).order_by(TestRecord.id.desc()).limit(limit).all()
     
@@ -516,7 +516,7 @@ async def get_recent_executions(limit: int = 10, db: Session = Depends(get_db)):
 
 
 @router.get("/system-logs")
-async def get_system_logs(limit: int = 50, db: Session = Depends(get_db)):
+def get_system_logs(limit: int = 50, db: Session = Depends(get_db)):
     """
     获取系统日志（从现有数据聚合）
 

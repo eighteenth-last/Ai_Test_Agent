@@ -37,7 +37,7 @@ class ExecuteRequest(BaseModel):
 
 
 @router.post("/match-spec")
-async def match_spec(
+def match_spec(
     request: MatchSpecRequest,
     db: Session = Depends(get_db)
 ):

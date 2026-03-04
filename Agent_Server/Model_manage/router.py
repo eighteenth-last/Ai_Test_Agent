@@ -72,7 +72,7 @@ class ModelResponse(BaseModel):
 # ============================================
 
 @router.get("/", response_model=List[ModelResponse])
-async def get_models(db: Session = Depends(get_db)):
+def get_models(db: Session = Depends(get_db)):
     """获取所有模型列表"""
     try:
         models = db.query(LLMModel).order_by(LLMModel.priority).all()
@@ -107,7 +107,7 @@ async def get_models(db: Session = Depends(get_db)):
 
 
 @router.get("/providers", response_model=dict)
-async def get_model_providers(db: Session = Depends(get_db)):
+def get_model_providers(db: Session = Depends(get_db)):
     """获取所有模型供应商列表（仅启用的，用于下拉选择）"""
     try:
         providers = db.query(ModelProvider).filter(
@@ -162,7 +162,7 @@ class ProviderUpdate(BaseModel):
 
 
 @router.get("/providers/all", response_model=dict)
-async def get_all_providers(db: Session = Depends(get_db)):
+def get_all_providers(db: Session = Depends(get_db)):
     """获取所有供应商列表（包含禁用的，用于供应商管理页面）"""
     try:
         providers = db.query(ModelProvider).order_by(ModelProvider.sort_order).all()
@@ -197,7 +197,7 @@ async def get_all_providers(db: Session = Depends(get_db)):
 
 
 @router.post("/providers", response_model=dict)
-async def create_provider(data: ProviderCreate, db: Session = Depends(get_db)):
+def create_provider(data: ProviderCreate, db: Session = Depends(get_db)):
     """创建新供应商"""
     try:
         existing = db.query(ModelProvider).filter(
@@ -232,7 +232,7 @@ async def create_provider(data: ProviderCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/providers/{provider_id}", response_model=dict)
-async def update_provider(provider_id: int, data: ProviderUpdate, db: Session = Depends(get_db)):
+def update_provider(provider_id: int, data: ProviderUpdate, db: Session = Depends(get_db)):
     """更新供应商信息"""
     try:
         provider = db.query(ModelProvider).filter(ModelProvider.id == provider_id).first()
@@ -276,7 +276,7 @@ async def update_provider(provider_id: int, data: ProviderUpdate, db: Session = 
 
 
 @router.delete("/providers/{provider_id}", response_model=dict)
-async def delete_provider(provider_id: int, db: Session = Depends(get_db)):
+def delete_provider(provider_id: int, db: Session = Depends(get_db)):
     """删除供应商"""
     try:
         provider = db.query(ModelProvider).filter(ModelProvider.id == provider_id).first()
@@ -303,7 +303,7 @@ async def delete_provider(provider_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/providers/{provider_id}/toggle", response_model=dict)
-async def toggle_provider(provider_id: int, db: Session = Depends(get_db)):
+def toggle_provider(provider_id: int, db: Session = Depends(get_db)):
     """启用/禁用供应商"""
     try:
         provider = db.query(ModelProvider).filter(ModelProvider.id == provider_id).first()
@@ -324,7 +324,7 @@ async def toggle_provider(provider_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/active/current", response_model=dict)
-async def get_active_model(db: Session = Depends(get_db)):
+def get_active_model(db: Session = Depends(get_db)):
     """获取当前激活的模型"""
     try:
         active_model = db.query(LLMModel).filter(LLMModel.is_active == 1).first()
@@ -351,7 +351,7 @@ async def get_active_model(db: Session = Depends(get_db)):
 
 
 @router.get("/{model_id}", response_model=ModelResponse)
-async def get_model(model_id: int, db: Session = Depends(get_db)):
+def get_model(model_id: int, db: Session = Depends(get_db)):
     """获取单个模型详情"""
     model = db.query(LLMModel).filter(LLMModel.id == model_id).first()
     if not model:
@@ -360,7 +360,7 @@ async def get_model(model_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/", response_model=dict)
-async def create_model(model_data: ModelCreate, db: Session = Depends(get_db)):
+def create_model(model_data: ModelCreate, db: Session = Depends(get_db)):
     """创建新模型"""
     try:
         existing = db.query(LLMModel).filter(
@@ -402,7 +402,7 @@ async def create_model(model_data: ModelCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/{model_id}", response_model=dict)
-async def update_model(model_id: int, model_data: ModelUpdate, db: Session = Depends(get_db)):
+def update_model(model_id: int, model_data: ModelUpdate, db: Session = Depends(get_db)):
     """更新模型信息"""
     try:
         model = db.query(LLMModel).filter(LLMModel.id == model_id).first()
@@ -433,7 +433,7 @@ async def update_model(model_id: int, model_data: ModelUpdate, db: Session = Dep
 
 
 @router.delete("/{model_id}", response_model=dict)
-async def delete_model(model_id: int, db: Session = Depends(get_db)):
+def delete_model(model_id: int, db: Session = Depends(get_db)):
     """删除模型"""
     try:
         model = db.query(LLMModel).filter(LLMModel.id == model_id).first()
@@ -458,7 +458,7 @@ async def delete_model(model_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{model_id}/activate", response_model=dict)
-async def activate_model(model_id: int, db: Session = Depends(get_db)):
+def activate_model(model_id: int, db: Session = Depends(get_db)):
     """激活模型"""
     try:
         model = db.query(LLMModel).filter(LLMModel.id == model_id).first()
@@ -498,7 +498,7 @@ async def activate_model(model_id: int, db: Session = Depends(get_db)):
 # ============================================
 
 @router.get("/auto-switch/status", response_model=dict)
-async def get_auto_switch_status(db: Session = Depends(get_db)):
+def get_auto_switch_status(db: Session = Depends(get_db)):
     """获取自动切换状态"""
     try:
         from llm.auto_switch import get_auto_switcher
@@ -519,7 +519,7 @@ async def get_auto_switch_status(db: Session = Depends(get_db)):
 
 
 @router.post("/auto-switch/toggle", response_model=dict)
-async def toggle_auto_switch(enabled: bool, db: Session = Depends(get_db)):
+def toggle_auto_switch(enabled: bool, db: Session = Depends(get_db)):
     """开启/关闭自动切换"""
     try:
         from llm.auto_switch import get_auto_switcher
@@ -534,7 +534,7 @@ async def toggle_auto_switch(enabled: bool, db: Session = Depends(get_db)):
 
 
 @router.post("/auto-switch/reset", response_model=dict)
-async def reset_auto_switch(model_id: int = None, db: Session = Depends(get_db)):
+def reset_auto_switch(model_id: int = None, db: Session = Depends(get_db)):
     """重置模型的失败状态"""
     try:
         from llm.auto_switch import get_auto_switcher
@@ -556,7 +556,7 @@ async def reset_auto_switch(model_id: int = None, db: Session = Depends(get_db))
 # ============================================
 
 @router.get("/token-stats/summary", response_model=dict)
-async def get_token_stats_summary(db: Session = Depends(get_db)):
+def get_token_stats_summary(db: Session = Depends(get_db)):
     """获取 Token 使用统计摘要"""
     try:
         from sqlalchemy import func
@@ -613,7 +613,7 @@ async def get_token_stats_summary(db: Session = Depends(get_db)):
 
 
 @router.get("/token-stats/recent", response_model=dict)
-async def get_recent_token_logs(limit: int = 50, db: Session = Depends(get_db)):
+def get_recent_token_logs(limit: int = 50, db: Session = Depends(get_db)):
     """获取最近的 Token 使用日志"""
     try:
         logs = db.query(TokenUsageLog).order_by(
@@ -642,7 +642,7 @@ async def get_recent_token_logs(limit: int = 50, db: Session = Depends(get_db)):
 
 
 @router.post("/token-stats/reset-today", response_model=dict)
-async def reset_today_tokens(db: Session = Depends(get_db)):
+def reset_today_tokens(db: Session = Depends(get_db)):
     """重置今日 Token 统计"""
     try:
         db.query(LLMModel).update({

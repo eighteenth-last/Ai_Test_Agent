@@ -442,7 +442,7 @@ export const knowledgeAPI = {
     return api.get('/knowledge/list', { params })
   },
   getDetail(url) {
-    return api.post('/knowledge/detail', { url })
+    return api.get('/knowledge/detail', { params: { url } })
   },
   delete(url) {
     return api.post('/knowledge/delete', { url })

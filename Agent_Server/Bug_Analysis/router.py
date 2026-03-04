@@ -17,7 +17,7 @@ router = APIRouter(
 
 
 @router.get("/list")
-async def get_bug_reports(
+def get_bug_reports(
     limit: int = 20,
     offset: int = 0,
     status: str = None,
@@ -40,7 +40,7 @@ async def get_bug_reports(
 
 
 @router.get("/{bug_id}")
-async def get_bug_report(
+def get_bug_report(
     bug_id: int,
     db: Session = Depends(get_db)
 ):
@@ -78,7 +78,7 @@ async def get_bug_report(
 
 
 @router.put("/{bug_id}/status")
-async def update_bug_status(
+def update_bug_status(
     bug_id: int,
     status: str,
     db: Session = Depends(get_db)

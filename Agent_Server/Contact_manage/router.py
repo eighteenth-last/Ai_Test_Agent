@@ -45,7 +45,7 @@ class ContactResponse(BaseModel):
 
 
 @router.get("/list")
-async def get_contacts_list(
+def get_contacts_list(
     limit: int = 20,
     offset: int = 0,
     search: str = None,
@@ -94,7 +94,7 @@ async def get_contacts_list(
 
 
 @router.get("/", response_model=List[ContactResponse])
-async def get_contacts(db: Session = Depends(get_db)):
+def get_contacts(db: Session = Depends(get_db)):
     """获取所有联系人列表"""
     try:
         contacts = db.query(Contact).order_by(Contact.created_at.desc()).all()
@@ -104,7 +104,7 @@ async def get_contacts(db: Session = Depends(get_db)):
 
 
 @router.get("/{contact_id}", response_model=ContactResponse)
-async def get_contact(contact_id: int, db: Session = Depends(get_db)):
+def get_contact(contact_id: int, db: Session = Depends(get_db)):
     """获取单个联系人详情"""
     contact = db.query(Contact).filter(Contact.id == contact_id).first()
     if not contact:
@@ -113,7 +113,7 @@ async def get_contact(contact_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/", response_model=dict)
-async def create_contact(contact_data: ContactCreate, db: Session = Depends(get_db)):
+def create_contact(contact_data: ContactCreate, db: Session = Depends(get_db)):
     """创建新联系人"""
     try:
         existing = db.query(Contact).filter(Contact.email == contact_data.email).first()
@@ -148,7 +148,7 @@ async def create_contact(contact_data: ContactCreate, db: Session = Depends(get_
 
 
 @router.put("/{contact_id}", response_model=dict)
-async def update_contact(contact_id: int, contact_data: ContactUpdate, db: Session = Depends(get_db)):
+def update_contact(contact_id: int, contact_data: ContactUpdate, db: Session = Depends(get_db)):
     """更新联系人信息"""
     try:
         contact = db.query(Contact).filter(Contact.id == contact_id).first()
@@ -188,7 +188,7 @@ async def update_contact(contact_id: int, contact_data: ContactUpdate, db: Sessi
 
 
 @router.delete("/{contact_id}", response_model=dict)
-async def delete_contact(contact_id: int, db: Session = Depends(get_db)):
+def delete_contact(contact_id: int, db: Session = Depends(get_db)):
     """删除联系人"""
     try:
         contact = db.query(Contact).filter(Contact.id == contact_id).first()

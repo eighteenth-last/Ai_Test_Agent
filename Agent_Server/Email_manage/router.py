@@ -100,7 +100,7 @@ class EmailRecordResponse(BaseModel):
 # ============================================
 
 @router.post("/send")
-async def send_custom_email(
+def send_custom_email(
     request: SendEmailRequest,
     db: Session = Depends(get_db)
 ):
@@ -114,7 +114,7 @@ async def send_custom_email(
 # ============================================
 
 @router.get("/records", response_model=List[EmailRecordResponse])
-async def get_email_records(
+def get_email_records(
     limit: int = 20,
     offset: int = 0,
     status: str = None,
@@ -137,7 +137,7 @@ async def get_email_records(
 
 
 @router.get("/records/{record_id}", response_model=EmailRecordResponse)
-async def get_email_record_detail(
+def get_email_record_detail(
     record_id: int,
     db: Session = Depends(get_db)
 ):
@@ -149,7 +149,7 @@ async def get_email_record_detail(
 
 
 @router.get("/statistics")
-async def get_email_statistics(db: Session = Depends(get_db)):
+def get_email_statistics(db: Session = Depends(get_db)):
     """获取邮件发送统计信息"""
     try:
         total_sends = db.query(EmailRecord).count()
@@ -177,7 +177,7 @@ async def get_email_statistics(db: Session = Depends(get_db)):
 
 
 @router.delete("/records/{record_id}")
-async def delete_email_record(
+def delete_email_record(
     record_id: int,
     db: Session = Depends(get_db)
 ):
@@ -200,7 +200,7 @@ async def delete_email_record(
 # ============================================
 
 @router.get("/config", response_model=List[EmailConfigResponse])
-async def get_email_configs(db: Session = Depends(get_db)):
+def get_email_configs(db: Session = Depends(get_db)):
     """获取所有邮件配置列表"""
     try:
         configs = db.query(EmailConfig).order_by(EmailConfig.created_at.desc()).all()
@@ -210,7 +210,7 @@ async def get_email_configs(db: Session = Depends(get_db)):
 
 
 @router.get("/config/active", response_model=Optional[EmailConfigResponse])
-async def get_active_config(db: Session = Depends(get_db)):
+def get_active_config(db: Session = Depends(get_db)):
     """获取当前激活的邮件配置"""
     config = db.query(EmailConfig).filter(EmailConfig.is_active == 1).first()
     if not config:
@@ -219,7 +219,7 @@ async def get_active_config(db: Session = Depends(get_db)):
 
 
 @router.post("/config", response_model=dict)
-async def create_email_config(
+def create_email_config(
     config_data: EmailConfigCreate,
     db: Session = Depends(get_db)
 ):
@@ -263,7 +263,7 @@ async def create_email_config(
 
 
 @router.put("/config/{config_id}")
-async def update_email_config(
+def update_email_config(
     config_id: int,
     config_data: EmailConfigUpdate,
     db: Session = Depends(get_db)
@@ -286,7 +286,7 @@ async def update_email_config(
 
 
 @router.post("/config/{config_id}/activate")
-async def activate_config(
+def activate_config(
     config_id: int,
     db: Session = Depends(get_db)
 ):
@@ -306,7 +306,7 @@ async def activate_config(
 
 
 @router.delete("/config/{config_id}")
-async def delete_email_config(
+def delete_email_config(
     config_id: int,
     db: Session = Depends(get_db)
 ):
