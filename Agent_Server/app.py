@@ -92,7 +92,6 @@ async def lifespan(app: FastAPI):
     
     print("\n服务已安全关闭\n")
 
-
 # 创建 FastAPI 应用
 app = FastAPI(
     title="AI Test Agent API",
