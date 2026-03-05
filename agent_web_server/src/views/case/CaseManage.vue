@@ -90,8 +90,15 @@
         <n-descriptions-item label="用例名称">{{ currentCase.title }}</n-descriptions-item>
         <n-descriptions-item label="前置条件">{{ currentCase.precondition || '无' }}</n-descriptions-item>
         <n-descriptions-item label="测试步骤">
-          <div v-for="(step, index) in currentCase.steps" :key="index">
-            {{ index + 1 }}. {{ step }}
+          <div
+            v-for="(step, index) in parseSteps(currentCase.steps)"
+            :key="index"
+            style="margin-bottom: 8px; padding: 6px 8px; background: #f8f8f8; border-radius: 4px;"
+          >
+            <div><strong>步骤 {{ index + 1 }}：</strong>{{ step.step }}</div>
+            <div v-if="step.expected" style="color: #666; margin-top: 2px;">
+              <strong>预期：</strong>{{ step.expected }}
+            </div>
           </div>
         </n-descriptions-item>
         <n-descriptions-item label="预期结果">{{ currentCase.expected }}</n-descriptions-item>
@@ -217,6 +224,7 @@ import {
 } from 'naive-ui'
 import { testCaseAPI } from '@/api'
 import { useLazyLoad } from '@/composables/useLazyLoad'
+import { parseSteps, stepsToEditArray, editArrayToJson } from '@/utils/stepsUtils'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -341,10 +349,10 @@ const columns = [
     title: '步骤', 
     key: 'steps',
     render(row) {
-      const steps = row.steps || []
+      const steps = parseSteps(row.steps)
       if (steps.length === 0) return '-'
       return h('div', {}, steps.slice(0, 3).map((step, index) => 
-        h('div', { style: 'margin: 2px 0; font-size: 12px;' }, `${index + 1}. ${step}`)
+        h('div', { style: 'margin: 2px 0; font-size: 12px;' }, `${index + 1}. ${step.step}`)
       ).concat(steps.length > 3 ? [h('div', { style: 'font-size: 12px; color: #999;' }, `...共${steps.length}步`)] : []))
     }
   },
@@ -407,7 +415,7 @@ const editCase = (row) => {
   formData.module = row.module || ''
   formData.title = row.title || ''
   formData.precondition = row.precondition || ''
-  formData.steps = row.steps && row.steps.length > 0 ? [...row.steps] : ['']
+  formData.steps = stepsToEditArray(row.steps)
   formData.expected = row.expected || ''
   formData.keywords = row.keywords || ''
   formData.priority = String(row.priority || '2')
@@ -450,10 +458,10 @@ const submitForm = async () => {
 
   submitting.value = true
   try {
-    // 过滤空步骤
+    // 序列化步骤为 JSON 字符串写回数据库
     const data = {
       ...formData,
-      steps: formData.steps.filter(s => s.trim())
+      steps: editArrayToJson(formData.steps)
     }
 
     let result

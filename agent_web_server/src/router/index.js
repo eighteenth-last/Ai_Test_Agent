@@ -131,6 +131,25 @@ const routes = [
     name: 'ReportMixed',
     component: () => import('@/views/report/MixedReport.vue'),
     meta: { title: '综合测试报告', menu: 'report' }
+  },
+  // 禅道集成模块
+  {
+    path: '/zentao/config',
+    name: 'ZentaoConfig',
+    component: () => import('@/views/zentao/ZentaoConfig.vue'),
+    meta: { title: '禅道配置', menu: 'zentao' }
+  },
+  {
+    path: '/zentao/cases',
+    name: 'ZentaoCases',
+    component: () => import('@/views/zentao/ZentaoCases.vue'),
+    meta: { title: '用例导入', menu: 'zentao' }
+  },
+  {
+    path: '/zentao/bugs',
+    name: 'ZentaoBugs',
+    component: () => import('@/views/zentao/ZentaoBugs.vue'),
+    meta: { title: 'Bug推送与同步', menu: 'zentao' }
   }
 ]
 

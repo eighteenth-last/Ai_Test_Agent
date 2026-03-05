@@ -129,6 +129,16 @@ const menuList = [
       { label: '运行测试报告', path: '/report/run' },
       { label: '综合测试报告', path: '/report/mixed' }
     ]
+  },
+  {
+    id: 'zentao',
+    icon: 'fa-bug',
+    label: '禅道集成',
+    children: [
+      { label: '禅道配置', path: '/zentao/config' },
+      { label: '用例导入', path: '/zentao/cases' },
+      { label: 'Bug推送与同步', path: '/zentao/bugs' }
+    ]
   }
 ]
 

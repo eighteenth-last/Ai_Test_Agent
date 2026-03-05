@@ -387,7 +387,8 @@ class OneClickService:
                 return
             SessionManager.add_message(db, session, 'assistant', '⚙️ 正在为每个模块设计原子测试用例（L3任务树）...')
             task_tree = await OneClickService._build_task_tree(
-                user_input, l1_name, feature_plan, page_capabilities or page_data
+                user_input, l1_name, feature_plan, page_capabilities or page_data,
+                env_info=env_info
             )
             # 保存任务树
             session.task_tree = json.dumps(task_tree.to_dict(), ensure_ascii=False)
@@ -1336,7 +1337,8 @@ class OneClickService:
 
     @staticmethod
     async def _plan_atomic_tasks_for_l2(
-        user_input: str, l2_node: Dict, page_capabilities: Dict
+        user_input: str, l2_node: Dict, page_capabilities: Dict,
+        env_info: Dict = None
     ) -> List[Dict]:
         """
         L3 原子任务规划（Atomic Task Planning）
@@ -1349,6 +1351,16 @@ class OneClickService:
         if len(caps_text) > 3000:
             caps_text = caps_text[:3000] + "\n... (已截断)"
 
+        # 构造测试环境描述，传给 LLM 用于填充 test_data
+        env = env_info or {}
+        test_env_text = (
+            f"目标URL: {env.get('base_url') or env.get('login_url', '未配置')}\n"
+            f"登录URL: {env.get('login_url') or env.get('base_url', '未配置')}\n"
+            f"账号(username): {env.get('username', '未配置')}\n"
+            f"密码(password): {env.get('password', '未配置')}\n"
+            f"环境名称: {env.get('env_name', env.get('_source', '默认环境'))}"
+        )
+
         estimated_count = l2_node.get("estimated_l3_count", 4)
         user_prompt = TASK_TREE_ATOMIC_PLANNING_USER_TEMPLATE.format(
             user_input=user_input,
@@ -1357,6 +1369,7 @@ class OneClickService:
             feature_type=l2_node.get("feature_type", "form"),
             test_focus=json.dumps(l2_node.get("test_focus", []), ensure_ascii=False),
             page_capabilities=caps_text,
+            test_env=test_env_text,
             estimated_count=estimated_count,
         )
 
@@ -1378,7 +1391,8 @@ class OneClickService:
 
     @staticmethod
     async def _build_task_tree(
-        user_input: str, l1_name: str, feature_plan: Dict, page_capabilities: Dict
+        user_input: str, l1_name: str, feature_plan: Dict, page_capabilities: Dict,
+        env_info: Dict = None
     ) -> TaskTree:
         """
         构建完整三层任务树
@@ -1397,7 +1411,7 @@ class OneClickService:
 
         for l2_data in l2_nodes:
             l3_nodes_raw = await OneClickService._plan_atomic_tasks_for_l2(
-                user_input, l2_data, page_capabilities
+                user_input, l2_data, page_capabilities, env_info=env_info
             )
             l2_entry = {
                 "name": l2_data.get("name", ""),
@@ -1825,17 +1839,25 @@ class OneClickService:
         import asyncio
 
         try:
-            # 1. 清除所有 cookies
+            # 1. 清除所有 cookies（使用 browser-use 内置的 CDP Storage.clearCookies）
             try:
-                await browser_session.clear_cookies()
-                logger.debug("[OneClick] 🧹 已清除浏览器 cookies")
+                await browser_session._cdp_clear_cookies()
+                logger.debug("[OneClick] 🧹 已清除浏览器 cookies（_cdp_clear_cookies）")
             except Exception as e:
-                logger.warning(f"[OneClick] ⚠️ 清除 cookies 失败: {e}")
+                # 备用：通过 JS 覆盖清除 document.cookie
+                try:
+                    page = await browser_session.must_get_current_page()
+                    await page.evaluate(
+                        "document.cookie.split(';').forEach(c => { "
+                        "document.cookie = c.trim().split('=')[0] + '=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/'; });"
+                    )
+                    logger.debug("[OneClick] 🧹 已通过 JS 清除 cookies")
+                except Exception as e2:
+                    logger.warning(f"[OneClick] ⚠️ 清除 cookies 失败: {e} / {e2}")
 
-            # 2. 清除 localStorage 和 sessionStorage（通过 CDP）
+            # 2. 清除 localStorage 和 sessionStorage
             try:
                 page = await browser_session.must_get_current_page()
-                # 使用 CDP Runtime.evaluate 清除 storage
                 await page.evaluate("try { localStorage.clear(); sessionStorage.clear(); } catch(e) {}")
                 logger.debug("[OneClick] 🧹 已清除 localStorage/sessionStorage")
             except Exception as e:
@@ -1847,15 +1869,15 @@ class OneClickService:
                 await browser_session.event_bus.dispatch(
                     NavigateToUrlEvent(url=target_url, new_tab=False)
                 )
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(0.5)
                 logger.debug(f"[OneClick] 🔄 已导航到目标页面: {target_url}")
             except Exception as e:
                 logger.warning(f"[OneClick] ⚠️ 导航到目标页面失败: {e}")
-                # 备用方案：通过 CDP 直接导航
+                # 备用方案：通过 JS 直接导航
                 try:
                     page = await browser_session.must_get_current_page()
                     await page.evaluate(f"window.location.href = '{target_url}'")
-                    await asyncio.sleep(1.5)
+                    await asyncio.sleep(0.8)
                     logger.debug(f"[OneClick] 🔄 已通过 JS 导航到目标页面: {target_url}")
                 except Exception as e2:
                     logger.warning(f"[OneClick] ⚠️ JS 导航也失败: {e2}")
@@ -1927,11 +1949,18 @@ class OneClickService:
 请按照步骤执行测试，并验证预期结果。
 
 ⚠️ 重要提醒：
-- 点击按钮后，先用 wait 等待 2 秒，再观察浏览器页面状态来判断结果
+- 点击「登录」「提交」「确定」等会触发页面跳转的按钮后，先用 wait 等待 2 秒，再观察浏览器页面状态来判断结果
+- 点击其他普通按钮后等待 1 秒即可
 - 不要使用 extract 或 run_javascript 去搜索 Toast/消息提示（它们只显示1-3秒就消失了）
 - 通过 URL 变化、页面内容变化、表单是否仍在等间接证据来判断操作结果
 - 每一步都要先判断当前页面状态（URL、关键元素是否存在、是否已登录），再决定下一步操作
 - 如果页面状态与预期不一致，优先执行纠偏步骤（回到目标页、重新定位元素、等待加载）
+
+🔴 【严格步骤边界 - 必须遵守】：
+- 只执行测试步骤中明确列出的操作，执行完所有步骤后立即调用 done 返回结果
+- 禁止自行添加「步骤之外」的额外验证操作（如步骤只要求退出登录，不要再次登录验证）
+- 验证预期结果只需观察当前页面状态，不需要额外导航或重新执行之前的操作
+- 如果测试步骤完成后结果模糊，基于当前页面最直接的证据判断，然后立即 done
 
 🔴 【关键】done 的 success 字段判定规则：
 - success 表示"实际结果是否符合预期结果"，而不是"操作本身是否成功"

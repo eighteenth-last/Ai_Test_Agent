@@ -62,6 +62,7 @@ def get_bug_report(
             "error_type": bug.error_type,
             "severity_level": bug.severity_level,
             "status": bug.status,
+            "zentao_bug_id": bug.zentao_bug_id,
             "location_url": bug.location_url,
             "reproduce_steps": bug.reproduce_steps,
             "result_feedback": bug.result_feedback,

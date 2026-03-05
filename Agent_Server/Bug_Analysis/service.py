@@ -151,6 +151,7 @@ class BugAnalysisService:
                 "error_type": bug.error_type,
                 "severity_level": bug.severity_level,
                 "status": bug.status,
+                "zentao_bug_id": bug.zentao_bug_id,
                 "location_url": bug.location_url,
                 "expected_result": bug.expected_result,
                 "actual_result": bug.actual_result,

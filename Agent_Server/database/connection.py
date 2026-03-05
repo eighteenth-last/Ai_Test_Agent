@@ -130,6 +130,7 @@ class BugReport(Base):
     expected_result = Column(Text, comment='预期结果')
     actual_result = Column(Text, comment='实际结果')
     status = Column(String(20), default='待处理', comment='Bug状态')
+    zentao_bug_id = Column(Integer, comment='禅道Bug ID（已推送时记录）')
     description = Column(Text, comment='问题描述')
     case_type = Column(String(50), comment='测试类型')
     execution_mode = Column(String(20), default='单量', comment='执行模式')
@@ -395,6 +396,25 @@ class QdrantCollectionConfig(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
 
 
+class ZentaoConfig(Base):
+    """禅道系统配置表"""
+    __tablename__ = 'zentao_config'
+
+    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    config_name = Column(String(100), nullable=False, comment='配置名称')
+    base_url = Column(String(500), nullable=False, comment='禅道访问地址（如 http://zentao.example.com）')
+    account = Column(String(200), nullable=False, comment='登录账号')
+    password = Column(String(500), nullable=False, comment='登录密码')
+    default_product_id = Column(Integer, comment='默认产品ID')
+    api_version = Column(String(20), default='v2', comment='API版本: v1/v2')
+    is_active = Column(Integer, default=0, comment='是否激活（0:否 1:是）')
+    last_token = Column(String(500), comment='最近获取的Token')
+    token_expire_at = Column(DateTime, comment='Token过期时间')
+    description = Column(Text, comment='备注说明')
+    created_at = Column(DateTime, default=datetime.now, comment='创建时间')
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
+
+
 class Skill(Base):
     """Skills管理表"""
     __tablename__ = 'skills'
@@ -446,7 +466,8 @@ def init_db():
             'skills': Skill,
             'security_scan_tasks': SecurityScanTask,
             'page_knowledge': PageKnowledgeRecord,
-            'qdrant_collection_config': QdrantCollectionConfig
+            'qdrant_collection_config': QdrantCollectionConfig,
+            'zentao_config': ZentaoConfig
         }
         
         for table_name in tables_to_create:
@@ -487,6 +508,7 @@ def _upgrade_existing_tables(inspector):
         ('email_config', 'smtp_host', 'VARCHAR(200) DEFAULT NULL', None),
         ('email_config', 'smtp_port', 'INT DEFAULT 587', None),
         ('email_config', 'smtp_username', 'VARCHAR(200) DEFAULT NULL', None),
+        ('bug_reports', 'zentao_bug_id', 'INT DEFAULT NULL', None),
     ]
 
     with engine.connect() as conn:
