@@ -1,280 +1,392 @@
 """
-安全测试核心服务
+安全测试平台服务
 
-统一调度 4 种扫描类型:
-1. web_scan - ZAP Web 扫描 + sqlmap 二次验证
-2. api_attack - LLM 生成攻击 DSL + HTTP Runner 执行
-3. dependency_scan - Safety / Bandit / npm audit / Trivy
-4. baseline_check - 安全基线检测
+基于新架构设计的安全测试服务，支持：
+1. 资产管理 - 目标管理
+2. 扫描任务 - 任务调度
+3. 扫描引擎 - 工具统一调度
+4. 漏洞管理 - 漏洞记录和跟踪
+5. 报告系统 - 报告生成
 
 作者: Ai_Test_Agent Team
 """
 import asyncio
 import json
 import logging
-import re
-import traceback
 from datetime import datetime
-from typing import Dict, Any, Optional, List
-from urllib.parse import urlparse
+from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
-
-from database.connection import SecurityScanTask, SessionLocal
-from Security_Test.task_manager import (
-    register_task, cleanup_task, update_task_progress,
-    finish_task, should_stop,
+from database.connection import (
+    SecurityTarget, SecurityScanTask, SecurityScanResult,
+    SecurityVulnerability, SecurityScanLog, SessionLocal
 )
-from Security_Test.risk_scoring import calculate_risk_score
-from Security_Test.report_builder import (
-    build_markdown_report, create_bug_reports_for_critical_vulns,
-    send_security_email_notification,
-)
+from Security_Test.scan_engine import ScanEngine
+from Security_Test.models import SecurityTargetCreate, SecurityTargetUpdate, ScanTaskCreate
 
 logger = logging.getLogger(__name__)
 
-# 扫描目标白名单（私有网段 + localhost）
-ALLOWED_HOSTS = re.compile(
-    r"^(localhost|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|"
-    r"172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|"
-    r"\[::1\]|0\.0\.0\.0)$"
-)
 
-
-def _validate_target(target: str) -> bool:
-    """验证扫描目标是否在白名单内（防止扫描公网）"""
-    try:
-        parsed = urlparse(target)
-        host = parsed.hostname or ""
-        return bool(ALLOWED_HOSTS.match(host))
-    except Exception:
-        return False
-
-
-class SecurityTestService:
-    """安全测试服务"""
-
+class SecurityPlatformService:
+    """安全测试平台服务"""
+    
+    # ============================================
+    # 资产管理
+    # ============================================
+    
     @staticmethod
-    def create_task(scan_type: str, target: str, config: dict, db: Session) -> SecurityScanTask:
+    def create_target(target_data: SecurityTargetCreate, db: Session) -> SecurityTarget:
+        """创建安全目标"""
+        target = SecurityTarget(
+            name=target_data.name,
+            base_url=target_data.base_url,
+            description=target_data.description,
+            target_type=target_data.target_type,
+            environment=target_data.environment,
+            auth_config=target_data.auth_config,
+            scan_config=target_data.scan_config
+        )
+        db.add(target)
+        db.commit()
+        db.refresh(target)
+        return target
+    
+    @staticmethod
+    def get_targets(db: Session, skip: int = 0, limit: int = 100) -> List[SecurityTarget]:
+        """获取目标列表"""
+        return db.query(SecurityTarget).filter(
+            SecurityTarget.is_active == 1
+        ).offset(skip).limit(limit).all()
+    
+    @staticmethod
+    def get_target(target_id: int, db: Session) -> Optional[SecurityTarget]:
+        """获取单个目标"""
+        return db.query(SecurityTarget).filter(
+            SecurityTarget.id == target_id,
+            SecurityTarget.is_active == 1
+        ).first()
+    
+    @staticmethod
+    def update_target(target_id: int, target_data: SecurityTargetUpdate, db: Session) -> Optional[SecurityTarget]:
+        """更新目标"""
+        target = db.query(SecurityTarget).filter(SecurityTarget.id == target_id).first()
+        if not target:
+            return None
+        
+        update_data = target_data.dict(exclude_unset=True)
+        for field, value in update_data.items():
+            setattr(target, field, value)
+        
+        target.updated_at = datetime.now()
+        db.commit()
+        db.refresh(target)
+        return target
+    
+    @staticmethod
+    def delete_target(target_id: int, db: Session) -> bool:
+        """删除目标（软删除）"""
+        target = db.query(SecurityTarget).filter(SecurityTarget.id == target_id).first()
+        if not target:
+            return False
+        
+        target.is_active = 0
+        target.updated_at = datetime.now()
+        db.commit()
+        return True
+    
+    # ============================================
+    # 扫描任务管理
+    # ============================================
+    
+    @staticmethod
+    def create_scan_task(task_data: ScanTaskCreate, db: Session) -> SecurityScanTask:
         """创建扫描任务"""
+        # 验证目标是否存在
+        target = db.query(SecurityTarget).filter(
+            SecurityTarget.id == task_data.target_id,
+            SecurityTarget.is_active == 1
+        ).first()
+        
+        if not target:
+            raise ValueError(f"目标不存在: {task_data.target_id}")
+        
+        # 验证扫描类型 - 严格按照方案
+        valid_types = ["nuclei", "sqlmap", "xsstrike", "fuzz", "full_scan"]
+        if task_data.scan_type not in valid_types:
+            raise ValueError(f"无效的扫描类型: {task_data.scan_type}，支持的类型: {valid_types}")
+        
         task = SecurityScanTask(
-            scan_type=scan_type,
-            target=target,
-            status="pending",
-            progress=0,
-            config=config,
+            target_id=task_data.target_id,
+            scan_type=task_data.scan_type,
+            config=task_data.config
         )
         db.add(task)
         db.commit()
         db.refresh(task)
         return task
-
+    
     @staticmethod
-    async def run_scan(task_id: int, scan_type: str, target: str, config: dict):
-        """
-        异步执行扫描（在后台任务中调用）
-
-        每种扫描类型走不同的执行路径，最终统一:
-        漏洞列表 → 风险评分 → 报告生成 → Bug 创建 → 邮件通知
-        """
+    async def execute_scan_task(task_id: int) -> bool:
+        """执行扫描任务"""
         db = SessionLocal()
         try:
-            # 更新状态为 running
-            task = db.query(SecurityScanTask).filter(SecurityScanTask.id == task_id).first()
-            if not task:
-                return
-            task.status = "running"
-            task.start_time = datetime.now()
-            db.commit()
-
-            vulnerabilities = []
-
-            if scan_type == "web_scan":
-                vulnerabilities = await _run_web_scan(task_id, target, config, db)
-            elif scan_type == "api_attack":
-                vulnerabilities = await _run_api_attack(task_id, target, config, db)
-            elif scan_type == "dependency_scan":
-                vulnerabilities = await _run_dependency_scan(task_id, target, config, db)
-            elif scan_type == "baseline_check":
-                vulnerabilities = await _run_baseline_check(task_id, target, config, db)
-            else:
-                finish_task(db, task_id, "failed", error_message=f"未知扫描类型: {scan_type}")
-                return
-
-            if should_stop(task_id):
-                finish_task(db, task_id, "stopped")
-                return
-
-            # 风险评分
-            risk_result = calculate_risk_score(vulnerabilities)
-
-            # 生成报告
-            report = build_markdown_report(
-                scan_type=scan_type,
-                target=target,
-                vulnerabilities=vulnerabilities,
-                risk_result=risk_result,
-                duration=int((datetime.now() - task.start_time).total_seconds()) if task.start_time else 0,
-            )
-
-            # 创建 Bug 单
-            bug_ids = create_bug_reports_for_critical_vulns(vulnerabilities, task_id, db)
-
-            # 邮件通知
-            send_security_email_notification(vulnerabilities, risk_result, target, db)
-
-            # 完成任务
-            finish_task(
-                db, task_id, "finished",
-                risk_score=risk_result["score"],
-                risk_level=risk_result["level"],
-                vuln_summary=risk_result["summary"],
-                vulnerabilities=json.dumps(vulnerabilities, ensure_ascii=False),
-                report_content=report,
-            )
-
-            logger.info(f"[Security] 任务 {task_id} 完成: score={risk_result['score']}, "
-                        f"vulns={risk_result['summary']['total']}")
-
-        except Exception as e:
-            logger.error(f"[Security] 任务 {task_id} 异常: {e}\n{traceback.format_exc()}")
-            finish_task(db, task_id, "failed", error_message=str(e))
+            engine = ScanEngine(db)
+            return await engine.run_scan(task_id)
         finally:
             db.close()
-            cleanup_task(task_id)
+    
+    @staticmethod
+    def get_scan_tasks(db: Session, target_id: Optional[int] = None, 
+                      skip: int = 0, limit: int = 100) -> List[SecurityScanTask]:
+        """获取扫描任务列表"""
+        query = db.query(SecurityScanTask)
+        if target_id:
+            query = query.filter(SecurityScanTask.target_id == target_id)
+        
+        return query.order_by(SecurityScanTask.id.desc()).offset(skip).limit(limit).all()
+    
+    @staticmethod
+    def get_scan_task(task_id: int, db: Session) -> Optional[SecurityScanTask]:
+        """获取单个扫描任务"""
+        return db.query(SecurityScanTask).filter(SecurityScanTask.id == task_id).first()
+    
+    @staticmethod
+    def stop_scan_task(task_id: int, db: Session) -> bool:
+        """停止扫描任务"""
+        task = db.query(SecurityScanTask).filter(SecurityScanTask.id == task_id).first()
+        if not task or task.status not in ["pending", "running"]:
+            return False
+        
+        task.status = "stopped"
+        task.end_time = datetime.now()
+        if task.start_time:
+            task.duration = int((task.end_time - task.start_time).total_seconds())
+        db.commit()
+        return True
+    
+    # ============================================
+    # 扫描结果管理
+    # ============================================
+    
+    @staticmethod
+    def get_scan_results(task_id: int, db: Session) -> List[SecurityScanResult]:
+        """获取扫描结果"""
+        return db.query(SecurityScanResult).filter(
+            SecurityScanResult.task_id == task_id
+        ).all()
+    
+    @staticmethod
+    def get_scan_result(result_id: int, db: Session) -> Optional[SecurityScanResult]:
+        """获取单个扫描结果"""
+        return db.query(SecurityScanResult).filter(SecurityScanResult.id == result_id).first()
+    
+    # ============================================
+    # 漏洞管理
+    # ============================================
+    
+    @staticmethod
+    def get_vulnerabilities(db: Session, target_id: Optional[int] = None,
+                          severity: Optional[str] = None, status: Optional[str] = None,
+                          skip: int = 0, limit: int = 100) -> List[SecurityVulnerability]:
+        """获取漏洞列表"""
+        query = db.query(SecurityVulnerability)
+        
+        if target_id:
+            query = query.filter(SecurityVulnerability.target_id == target_id)
+        
+        if severity:
+            query = query.filter(SecurityVulnerability.severity == severity)
+        
+        if status:
+            query = query.filter(SecurityVulnerability.status == status)
+        
+        return query.order_by(SecurityVulnerability.id.desc()).offset(skip).limit(limit).all()
+    
+    @staticmethod
+    def get_vulnerability(vuln_id: int, db: Session) -> Optional[SecurityVulnerability]:
+        """获取单个漏洞"""
+        return db.query(SecurityVulnerability).filter(SecurityVulnerability.id == vuln_id).first()
+    
+    @staticmethod
+    def update_vulnerability_status(vuln_id: int, status: str, db: Session) -> bool:
+        """更新漏洞状态"""
+        valid_statuses = ["open", "fixed", "false_positive", "accepted"]
+        if status not in valid_statuses:
+            return False
+        
+        vuln = db.query(SecurityVulnerability).filter(SecurityVulnerability.id == vuln_id).first()
+        if not vuln:
+            return False
+        
+        vuln.status = status
+        vuln.updated_at = datetime.now()
+        db.commit()
+        return True
+    
+    # ============================================
+    # 扫描日志
+    # ============================================
+    
+    @staticmethod
+    def get_scan_logs(task_id: int, db: Session) -> List[SecurityScanLog]:
+        """获取扫描日志"""
+        return db.query(SecurityScanLog).filter(
+            SecurityScanLog.task_id == task_id
+        ).order_by(SecurityScanLog.id.asc()).all()
+    
+    # ============================================
+    # 统计信息
+    # ============================================
+    
+    @staticmethod
+    def get_dashboard_stats(db: Session) -> Dict:
+        """获取仪表板统计信息"""
+        # 目标统计
+        total_targets = db.query(SecurityTarget).filter(SecurityTarget.is_active == 1).count()
+        
+        # 任务统计
+        total_tasks = db.query(SecurityScanTask).count()
+        running_tasks = db.query(SecurityScanTask).filter(SecurityScanTask.status == "running").count()
+        finished_tasks = db.query(SecurityScanTask).filter(SecurityScanTask.status == "finished").count()
+        
+        # 漏洞统计
+        total_vulns = db.query(SecurityVulnerability).count()
+        critical_vulns = db.query(SecurityVulnerability).filter(SecurityVulnerability.severity == "critical").count()
+        high_vulns = db.query(SecurityVulnerability).filter(SecurityVulnerability.severity == "high").count()
+        medium_vulns = db.query(SecurityVulnerability).filter(SecurityVulnerability.severity == "medium").count()
+        low_vulns = db.query(SecurityVulnerability).filter(SecurityVulnerability.severity == "low").count()
+        
+        # 状态统计
+        open_vulns = db.query(SecurityVulnerability).filter(SecurityVulnerability.status == "open").count()
+        fixed_vulns = db.query(SecurityVulnerability).filter(SecurityVulnerability.status == "fixed").count()
+        
+        return {
+            "targets": {
+                "total": total_targets
+            },
+            "tasks": {
+                "total": total_tasks,
+                "running": running_tasks,
+                "finished": finished_tasks
+            },
+            "vulnerabilities": {
+                "total": total_vulns,
+                "by_severity": {
+                    "critical": critical_vulns,
+                    "high": high_vulns,
+                    "medium": medium_vulns,
+                    "low": low_vulns
+                },
+                "by_status": {
+                    "open": open_vulns,
+                    "fixed": fixed_vulns
+                }
+            }
+        }
+    # ============================================
+    # 扫描日志管理 (新增方法)
+    # ============================================
+    
+    @staticmethod
+    def get_logs_filtered(
+        db: Session, 
+        task_id: Optional[int] = None,
+        level: Optional[str] = None,
+        skip: int = 0, 
+        limit: int = 100
+    ) -> List[SecurityScanLog]:
+        """获取筛选后的扫描日志"""
+        query = db.query(SecurityScanLog)
+        
+        if task_id:
+            query = query.filter(SecurityScanLog.task_id == task_id)
+        if level:
+            query = query.filter(SecurityScanLog.level == level)
+            
+        return query.order_by(SecurityScanLog.created_at.desc()).offset(skip).limit(limit).all()
 
-
-# ============================================
-# 各扫描类型的具体实现
-# ============================================
-
-async def _run_web_scan(task_id: int, target: str, config: dict, db: Session) -> List[dict]:
-    """Web 扫描: ZAP Spider + Active Scan + 可选 sqlmap 验证"""
-    from Security_Test.zap_client import (
-        check_zap_running, check_zap_running_detail, get_zap_config,
-        new_session, run_spider, run_active_scan, get_alerts
-    )
-    from Security_Test.vuln_parser import parse_zap_alerts
-    from Security_Test.sqlmap_runner import verify_sql_injection
-
-    if not check_zap_running():
-        cfg = get_zap_config()
-        _, reason = check_zap_running_detail()
-        raise RuntimeError(
-            f"ZAP unreachable. url={cfg['base_url']}. "
-            f"Please check ZAP_API_URL/ZAP_API_KEY. detail={reason}"
-        )
-
-    new_session()
-    update_task_progress(db, task_id, 5, "running")
-
-    # Spider
-    def on_spider_progress(p):
-        update_task_progress(db, task_id, 5 + int(p * 0.25))
-
-    await run_spider(target, task_id, on_spider_progress)
-    if should_stop(task_id):
+    # ============================================
+    # 报告管理 (新增方法)
+    # ============================================
+    
+    @staticmethod
+    def get_reports(db: Session, skip: int = 0, limit: int = 100):
+        """获取报告列表 - 暂时返回空列表，后续实现报告表"""
+        # TODO: 实现报告表和报告管理
         return []
+    
+    @staticmethod
+    async def generate_report(task_id: int, format_type: str, db: Session):
+        """生成报告 - 暂时返回模拟数据，后续实现"""
+        from Security_Test.report_generator import ReportGenerator
+        
+        # 获取任务信息
+        task = db.query(SecurityScanTask).filter(SecurityScanTask.id == task_id).first()
+        if not task:
+            raise ValueError("任务不存在")
+        
+        # 生成报告
+        generator = ReportGenerator()
+        report_data = await generator.generate_task_report(task_id, format_type, db)
+        
+        # 返回模拟报告对象
+        class MockReport:
+            def __init__(self):
+                self.id = task_id
+                self.task_id = task_id
+                self.format = format_type
+                self.filename = f"security_report_{task_id}.{format_type}"
+                self.created_at = datetime.now()
+        
+        return MockReport()
+    
+    @staticmethod
+    def get_report(report_id: int, db: Session):
+        """获取报告详情 - 暂时返回模拟数据"""
+        # TODO: 实现报告表查询
+        class MockReport:
+            def __init__(self):
+                self.id = report_id
+                self.task_id = report_id
+                self.format = "html"
+                self.filename = f"security_report_{report_id}.html"
+                self.file_path = f"/tmp/security_report_{report_id}.html"
+        
+        return MockReport()
 
-    update_task_progress(db, task_id, 30)
+    # ============================================
+    # 统计信息 (新增方法)
+    # ============================================
+    
+    @staticmethod
+    def get_security_stats(db: Session) -> Dict:
+        """获取安全测试统计信息"""
+        return SecurityPlatformService.get_dashboard_stats(db)
 
-    # Active Scan
-    def on_active_progress(p):
-        update_task_progress(db, task_id, 30 + int(p * 0.50))
-
-    await run_active_scan(target, task_id, on_active_progress)
-    if should_stop(task_id):
-        return []
-
-    update_task_progress(db, task_id, 80)
-
-    # 获取告警
-    alerts = get_alerts()
-    vulnerabilities = parse_zap_alerts(alerts)
-
-    # sqlmap 二次验证
-    if config.get("sqlmap_verify", False):
-        update_task_progress(db, task_id, 85)
-        sql_vulns = [v for v in vulnerabilities if "sql" in v.get("vuln_type", "").lower()]
-        for vuln in sql_vulns[:3]:  # 最多验证 3 个
-            if should_stop(task_id):
-                break
-            result = await verify_sql_injection(vuln.get("url", target), vuln.get("param"))
-            if result["injectable"]:
-                from Security_Test.vuln_parser import parse_sqlmap_output
-                vulnerabilities.extend(parse_sqlmap_output(result["raw_output"], vuln.get("url", target)))
-
-    update_task_progress(db, task_id, 95)
-    return vulnerabilities
-
-
-async def _run_api_attack(task_id: int, target: str, config: dict, db: Session) -> List[dict]:
-    """API 攻击测试: LLM 生成攻击 DSL + HTTP Runner 执行"""
-    from Security_Test.api_attack_generator import generate_attack_cases, execute_attack_cases
-    from Security_Test.vuln_parser import parse_llm_attack_results
-
-    update_task_progress(db, task_id, 10)
-
-    # 获取接口列表
-    endpoints = config.get("endpoints", [])
-    if not endpoints:
-        # 尝试从数据库获取
-        from database.connection import ApiEndpoint, ApiSpecVersion
-        spec_version_id = config.get("spec_version_id")
-        if spec_version_id:
-            eps = db.query(ApiEndpoint).filter(ApiEndpoint.spec_version_id == spec_version_id).all()
-            endpoints = [{"method": ep.method, "path": ep.path, "summary": ep.summary or "",
-                          "params": ep.params} for ep in eps]
-
-    if not endpoints:
-        raise ValueError("未提供接口列表，请在 config 中指定 endpoints 或 spec_version_id")
-
-    auth_info = config.get("auth_info")
-    base_url = target.rstrip("/")
-    default_headers = config.get("headers", {})
-
-    # LLM 生成攻击用例
-    update_task_progress(db, task_id, 20)
-    attacks = await generate_attack_cases(endpoints, auth_info)
-    if should_stop(task_id):
-        return []
-
-    if not attacks:
-        logger.warning("[Security] LLM 未生成攻击用例")
-        return []
-
-    # 执行攻击
-    update_task_progress(db, task_id, 40)
-    results = await execute_attack_cases(attacks, base_url, default_headers)
-    if should_stop(task_id):
-        return []
-
-    update_task_progress(db, task_id, 90)
-    return parse_llm_attack_results(results)
-
-
-async def _run_dependency_scan(task_id: int, target: str, config: dict, db: Session) -> List[dict]:
-    """依赖扫描"""
-    from Security_Test.dependency_scan import run_full_dependency_scan
-
-    update_task_progress(db, task_id, 10)
-
-    vulns = await run_full_dependency_scan(
-        python_requirements=config.get("python_requirements"),
-        python_code_dir=config.get("python_code_dir"),
-        node_project_dir=config.get("node_project_dir"),
-        trivy_target=config.get("trivy_target"),
-    )
-
-    update_task_progress(db, task_id, 90)
-    return vulns
-
-
-async def _run_baseline_check(task_id: int, target: str, config: dict, db: Session) -> List[dict]:
-    """安全基线检测"""
-    from Security_Test.baseline_scan import run_baseline_check
-
-    update_task_progress(db, task_id, 10)
-    vulns = await run_baseline_check(target)
-    update_task_progress(db, task_id, 90)
-    return vulns
+    # ============================================
+    # 任务删除 (新增方法)
+    # ============================================
+    
+    @staticmethod
+    def delete_scan_task(task_id: int, db: Session) -> bool:
+        """删除扫描任务"""
+        try:
+            task = db.query(SecurityScanTask).filter(SecurityScanTask.id == task_id).first()
+            if not task:
+                return False
+            
+            # 删除相关的扫描结果
+            db.query(SecurityScanResult).filter(SecurityScanResult.task_id == task_id).delete()
+            
+            # 删除相关的扫描日志
+            db.query(SecurityScanLog).filter(SecurityScanLog.task_id == task_id).delete()
+            
+            # 删除任务
+            db.delete(task)
+            db.commit()
+            
+            return True
+        except Exception as e:
+            logger.error(f"删除扫描任务失败: {e}")
+            db.rollback()
+            return False

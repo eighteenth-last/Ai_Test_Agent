@@ -2,5 +2,10 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/安全测试源代码/XSStrike" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/安全测试源代码/nmap" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/安全测试源代码/nuclei" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/安全测试源代码/nuclei-templates" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/安全测试源代码/sqlmap" vcs="Git" />
   </component>
 </project>

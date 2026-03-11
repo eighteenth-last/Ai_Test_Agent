@@ -398,8 +398,80 @@ export const testEnvAPI = {
   }
 }
 
-// Security Test - 安全测试
+// Security Test - 安全测试平台 (按新方案重构)
 export const securityAPI = {
+  // 资产管理 API
+  getTargets(params = {}) {
+    return api.get('/security/targets', { params })
+  },
+  createTarget(data) {
+    return api.post('/security/targets', data)
+  },
+  updateTarget(id, data) {
+    return api.put(`/security/targets/${id}`, data)
+  },
+  deleteTarget(id) {
+    return api.delete(`/security/targets/${id}`)
+  },
+  
+  // 扫描任务 API
+  getTasks(params = {}) {
+    return api.get('/security/tasks', { params })
+  },
+  createScan(data) {
+    return api.post('/security/scan', data)
+  },
+  getTask(taskId) {
+    return api.get(`/security/tasks/${taskId}`)
+  },
+  stopTask(taskId) {
+    return api.post(`/security/tasks/${taskId}/stop`)
+  },
+  deleteTask(taskId) {
+    return api.delete(`/security/tasks/${taskId}`)
+  },
+  
+  // 漏洞管理 API
+  getVulnerabilities(params = {}) {
+    return api.get('/security/vulnerabilities', { params })
+  },
+  getVulnerability(id) {
+    return api.get(`/security/vulnerabilities/${id}`)
+  },
+  updateVulnerability(id, data) {
+    return api.put(`/security/vulnerabilities/${id}`, data)
+  },
+  
+  // 扫描日志 API
+  getLogs(params = {}) {
+    return api.get('/security/logs', { params })
+  },
+  getTaskLogs(taskId) {
+    return api.get(`/security/tasks/${taskId}/logs`)
+  },
+  
+  // 报告管理 API
+  getReports(params = {}) {
+    return api.get('/security/reports', { params })
+  },
+  generateReport(data) {
+    return api.post('/security/reports', data)
+  },
+  downloadReport(reportId) {
+    return api.get(`/security/reports/${reportId}/download`, { responseType: 'blob' })
+  },
+  
+  // 工具状态检查
+  getToolsStatus() {
+    return api.get('/security/tools/status')
+  },
+  
+  // 统计信息
+  getStats() {
+    return api.get('/security/stats')
+  },
+  
+  // 兼容旧接口 (保持向后兼容)
   run(type, target, config = {}) {
     return api.post('/security/run', { type, target, config })
   },
@@ -418,7 +490,6 @@ export const securityAPI = {
   delete(task_id) {
     return api.delete(`/security/${task_id}`)
   },
-  // 安全测试用例任务列表
   getCases(params) {
     return api.get('/security/cases', { params })
   },

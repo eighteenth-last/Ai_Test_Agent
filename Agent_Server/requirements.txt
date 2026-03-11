@@ -62,3 +62,13 @@ qdrant-client>=1.7.0       # Qdrant 向量数据库客户端
 
 # ====================== JSON Repair ================================
 json-repair                # 修复 LLM 输出的畸形 JSON
+
+# ====================== Security Testing ===========================
+jinja2>=3.0.0             # 报告模板引擎
+aiohttp>=3.8.0            # HTTP 客户端（已包含但确保版本）
+
+# 安全测试工具 - 严格按照方案指定
+# nuclei - 通过系统包管理器或二进制安装
+# sqlmap - 通过系统包管理器或pip安装  
+# xsstrike - 通过git clone安装
+# fuzz - 自定义实现，无需额外依赖

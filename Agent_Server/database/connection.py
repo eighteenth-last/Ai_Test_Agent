@@ -337,27 +337,92 @@ class TestEnvironment(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
 
 
+# ============================================
+# 安全测试平台数据模型 (基于新方案设计)
+# ============================================
+
+class SecurityTarget(Base):
+    """安全测试目标表 - 资产管理"""
+    __tablename__ = 'security_targets'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    name = Column(String(200), nullable=False, comment='目标名称')
+    base_url = Column(String(500), nullable=False, comment='基础URL')
+    description = Column(Text, comment='目标描述')
+    target_type = Column(String(50), default='web', comment='目标类型: web/api/mobile/desktop')
+    environment = Column(String(50), default='test', comment='环境: dev/test/staging/prod')
+    auth_config = Column(JSON, comment='认证配置(用户名密码等)')
+    scan_config = Column(JSON, comment='扫描配置(工具参数等)')
+    is_active = Column(Integer, default=1, comment='是否启用')
+    created_at = Column(DateTime, default=datetime.now, comment='创建时间')
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
+
+
 class SecurityScanTask(Base):
     """安全扫描任务表"""
     __tablename__ = 'security_scan_tasks'
-
+    
     id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
-    scan_type = Column(String(30), nullable=False, comment='扫描类型: web_scan/api_attack/dependency_scan/baseline_check')
-    target = Column(String(500), nullable=False, comment='扫描目标URL或路径')
+    target_id = Column(Integer, nullable=False, comment='关联目标ID')
+    scan_type = Column(String(50), nullable=False, comment='扫描类型: nuclei/sqlmap/xsstrike/fuzz/full_scan')
     status = Column(String(20), default='pending', comment='状态: pending/running/finished/failed/stopped')
     progress = Column(Integer, default=0, comment='进度百分比 0-100')
     config = Column(JSON, comment='扫描配置')
-    risk_score = Column(Integer, comment='风险评分 0-100')
-    risk_level = Column(String(10), comment='风险等级: A/B/C/D')
-    vuln_summary = Column(JSON, comment='漏洞统计摘要')
-    vulnerabilities = Column(LONGTEXT, comment='漏洞详情列表(JSON)')
-    report_content = Column(LONGTEXT, comment='报告内容(Markdown/HTML)')
-    error_message = Column(Text, comment='错误信息')
     start_time = Column(DateTime, comment='开始时间')
     end_time = Column(DateTime, comment='结束时间')
     duration = Column(Integer, comment='耗时(秒)')
+    error_message = Column(Text, comment='错误信息')
     created_at = Column(DateTime, default=datetime.now, comment='创建时间')
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
+
+
+class SecurityScanResult(Base):
+    """扫描结果表"""
+    __tablename__ = 'security_scan_results'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    task_id = Column(Integer, nullable=False, comment='关联任务ID')
+    tool = Column(String(50), nullable=False, comment='扫描工具: nuclei/sqlmap/xsstrike/fuzz')
+    severity = Column(String(20), nullable=False, comment='严重程度: critical/high/medium/low/info')
+    title = Column(String(500), nullable=False, comment='漏洞标题')
+    description = Column(Text, comment='漏洞描述')
+    evidence = Column(LONGTEXT, comment='漏洞证据')
+    url = Column(String(1000), comment='漏洞URL')
+    param = Column(String(200), comment='漏洞参数')
+    payload = Column(Text, comment='攻击载荷')
+    raw_output = Column(LONGTEXT, comment='工具原始输出')
+    created_at = Column(DateTime, default=datetime.now, comment='创建时间')
+
+
+class SecurityVulnerability(Base):
+    """漏洞记录表"""
+    __tablename__ = 'security_vulnerabilities'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    target_id = Column(Integer, nullable=False, comment='关联目标ID')
+    title = Column(String(500), nullable=False, comment='漏洞标题')
+    severity = Column(String(20), nullable=False, comment='严重程度: critical/high/medium/low/info')
+    vuln_type = Column(String(100), comment='漏洞类型: sql_injection/xss/csrf/etc')
+    description = Column(Text, comment='漏洞描述')
+    fix_suggestion = Column(Text, comment='修复建议')
+    status = Column(String(20), default='open', comment='状态: open/fixed/false_positive/accepted')
+    risk_score = Column(Integer, comment='风险评分 0-100')
+    first_found = Column(DateTime, default=datetime.now, comment='首次发现时间')
+    last_seen = Column(DateTime, default=datetime.now, comment='最后发现时间')
+    scan_results = Column(JSON, comment='关联的扫描结果ID列表')
+    created_at = Column(DateTime, default=datetime.now, comment='创建时间')
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
+
+
+class SecurityScanLog(Base):
+    """扫描日志表"""
+    __tablename__ = 'security_scan_logs'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    task_id = Column(Integer, nullable=False, comment='关联任务ID')
+    level = Column(String(20), default='info', comment='日志级别: debug/info/warning/error')
+    message = Column(Text, nullable=False, comment='日志内容')
+    created_at = Column(DateTime, default=datetime.now, comment='创建时间')
 
 
 class PageKnowledgeRecord(Base):
@@ -464,7 +529,11 @@ def init_db():
             'oneclick_sessions': OneclickSession,
             'test_environments': TestEnvironment,
             'skills': Skill,
+            'security_targets': SecurityTarget,
             'security_scan_tasks': SecurityScanTask,
+            'security_scan_results': SecurityScanResult,
+            'security_vulnerabilities': SecurityVulnerability,
+            'security_scan_logs': SecurityScanLog,
             'page_knowledge': PageKnowledgeRecord,
             'qdrant_collection_config': QdrantCollectionConfig,
             'zentao_config': ZentaoConfig

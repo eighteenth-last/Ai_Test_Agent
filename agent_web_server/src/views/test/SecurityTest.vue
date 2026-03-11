@@ -1,199 +1,302 @@
 <template>
-  <div class="security-test">
-    <!-- 顶部操作区 -->
-    <div class="glass-card p-5 mb-5">
-      <div class="flex items-center justify-between mb-4">
-        <div class="flex items-center gap-3">
-          <i class="fas fa-shield-halved text-xl text-[#007857]"></i>
-          <span class="text-lg font-bold text-slate-700">安全测试</span>
-        </div>
-        <n-button v-if="running" type="error" size="small" @click="handleStop">
-          <template #icon><i class="fas fa-stop"></i></template>
-          停止扫描
-        </n-button>
-      </div>
-
-      <!-- 扫描类型 Tab -->
-      <n-tabs v-model:value="activeTab" type="segment" animated>
-        <n-tab-pane name="web_scan" tab="Web 扫描">
-          <div class="mt-4 space-y-3">
-            <n-input v-model:value="form.target" placeholder="目标 URL（仅限内网地址，如 http://localhost:8080）" />
-            <div class="flex gap-3">
-              <n-checkbox v-model:checked="form.deepScan">深度扫描</n-checkbox>
-              <n-checkbox v-model:checked="form.sqlmapVerify">sqlmap 二次验证</n-checkbox>
-            </div>
-          </div>
-        </n-tab-pane>
-
-        <n-tab-pane name="api_attack" tab="API 攻击">
-          <div class="mt-4 space-y-3">
-            <n-input v-model:value="form.target" placeholder="API Base URL（如 http://localhost:8080）" />
-            <n-input v-model:value="form.specVersionId" placeholder="接口文件版本 ID（可选，从接口文件管理获取）" />
-            <n-input v-model:value="form.authToken" placeholder="Authorization Token（可选）" />
-          </div>
-        </n-tab-pane>
-
-        <n-tab-pane name="dependency_scan" tab="依赖扫描">
-          <div class="mt-4 space-y-3">
-            <n-input v-model:value="form.target" placeholder="项目路径或描述" />
-            <n-input v-model:value="form.pythonReq" placeholder="requirements.txt 路径（可选）" />
-            <n-input v-model:value="form.nodeDir" placeholder="Node.js 项目目录（可选）" />
-            <n-input v-model:value="form.trivyTarget" placeholder="Trivy 扫描目标（可选，如 Dockerfile 路径）" />
-          </div>
-        </n-tab-pane>
-
-        <n-tab-pane name="baseline_check" tab="基线检测">
-          <div class="mt-4 space-y-3">
-            <n-input v-model:value="form.target" placeholder="目标 URL（仅限内网地址，如 http://localhost:8080）" />
-            <p class="text-xs text-slate-400">检查安全响应头、Cookie 安全属性、HTTPS、信息泄露、敏感路径等</p>
-          </div>
-        </n-tab-pane>
-      </n-tabs>
-
-      <div class="mt-4 flex justify-end">
-        <n-button type="primary" :loading="starting" :disabled="running" @click="handleRun">
-          <template #icon><i class="fas fa-play"></i></template>
-          开始扫描
-        </n-button>
+  <div class="security-platform">
+    <!-- 页面导航 -->
+    <div class="glass-card p-3 mb-3">
+      <div class="flex items-center justify-between">
+        <n-tabs v-model:value="activeModule" type="segment" size="small">
+          <n-tab-pane name="assets" tab="资产管理" />
+          <n-tab-pane name="tasks" tab="扫描任务" />
+          <n-tab-pane name="vulnerabilities" tab="漏洞列表" />
+          <n-tab-pane name="logs" tab="扫描日志" />
+          <n-tab-pane name="reports" tab="报告下载" />
+        </n-tabs>
       </div>
     </div>
 
-    <!-- 安全测试用例任务列表 -->
-    <div class="glass-card p-5 mb-5">
-      <div class="flex items-center justify-between mb-4">
-        <div class="flex items-center gap-3">
-          <i class="fas fa-clipboard-check text-[#007857]"></i>
-          <span class="font-bold text-slate-700">安全测试用例任务</span>
-          <n-tag size="small" :bordered="false">{{ caseStats.all }} 条</n-tag>
+    <!-- 1. 资产管理页面 -->
+    <div v-if="activeModule === 'assets'" class="space-y-4">
+      <!-- 资产管理操作区 -->
+      <div class="glass-card p-4">
+        <div class="flex items-center justify-between mb-3">
+          <span class="font-bold text-slate-700">资产管理</span>
+          <n-button type="primary" @click="showCreateTarget = true">
+            <template #icon><i class="fas fa-plus"></i></template>
+            新建目标
+          </n-button>
         </div>
-        <n-button size="small" quaternary @click="loadSecurityCases">
-          <template #icon><i class="fas fa-refresh"></i></template>
-          刷新
-        </n-button>
-      </div>
+        
+        <!-- 搜索区 -->
+        <div class="flex items-center gap-3 mb-3">
+          <n-input v-model:value="targetSearch" placeholder="搜索目标..." style="width: 300px" clearable @keyup.enter="loadTargets">
+            <template #prefix><i class="fas fa-search text-slate-400"></i></template>
+          </n-input>
+          <n-button @click="loadTargets">搜索</n-button>
+        </div>
 
-      <!-- 状态筛选 -->
-      <div class="flex items-center gap-2 mb-4">
-        <n-button
-          v-for="f in caseFilters" :key="f.value"
-          :type="caseFilterStatus === f.value ? 'primary' : 'default'"
+        <!-- 目标列表 -->
+        <n-data-table
+          :columns="targetColumns"
+          :data="targets"
+          :loading="targetsLoading"
+          :pagination="{ pageSize: 10 }"
           size="small"
-          :secondary="caseFilterStatus === f.value"
-          @click="caseFilterStatus = f.value; loadSecurityCases()"
-        >
-          {{ f.label }}
-          <n-badge :value="f.count" :max="999" :offset="[8, -4]" :type="f.badgeType" />
-        </n-button>
-        <div class="flex-1"></div>
-        <n-input v-model:value="caseSearch" placeholder="搜索用例..." size="small" style="width: 200px" clearable @clear="loadSecurityCases" @keyup.enter="loadSecurityCases">
-          <template #prefix><i class="fas fa-search text-slate-400"></i></template>
-        </n-input>
-      </div>
-
-      <!-- 用例表格 -->
-      <n-data-table
-        :columns="caseColumns"
-        :data="securityCases"
-        :loading="casesLoading"
-        :pagination="casePagination"
-        size="small"
-        striped
-        @update:page="handleCasePageChange"
-      />
-    </div>
-
-    <!-- 执行中状态 -->
-    <div v-if="running" class="glass-card p-5 mb-5">
-      <div class="flex items-center gap-3 mb-3">
-        <n-spin size="small" />
-        <span class="font-bold text-slate-700">扫描进行中...</span>
-        <n-tag :type="stageTagType" size="small">{{ stageLabel }}</n-tag>
-      </div>
-      <n-progress type="line" :percentage="currentProgress" :indicator-placement="'inside'" processing />
-      <div class="mt-2 text-xs text-slate-400">
-        当前漏洞数: {{ currentVulnCount }} | 任务 ID: {{ currentTaskId }}
+          striped
+        />
       </div>
     </div>
 
-    <!-- 结果展示 -->
-    <div v-if="result" class="space-y-5">
-      <!-- 风险评分卡片 -->
-      <div class="glass-card p-5">
-        <div class="flex items-center justify-between mb-4">
-          <span class="font-bold text-slate-700">风险评估</span>
-          <n-tag :type="riskTagType" size="large">
-            {{ result.risk_level }} 级 · {{ result.risk_score }} 分
+    <!-- 2. 扫描任务页面 -->
+    <div v-if="activeModule === 'tasks'" class="space-y-4">
+      <!-- 扫描任务操作区 -->
+      <div class="glass-card p-4">
+        <div class="flex items-center justify-between mb-3">
+          <span class="font-bold text-slate-700">扫描任务</span>
+          <n-button type="primary" @click="showCreateTask = true">
+            <template #icon><i class="fas fa-plus"></i></template>
+            新建任务
+          </n-button>
+        </div>
+
+        <!-- 任务列表 -->
+        <n-data-table
+          :columns="taskColumns"
+          :data="tasks"
+          :loading="tasksLoading"
+          :pagination="{ pageSize: 10 }"
+          size="small"
+          striped
+        />
+      </div>
+
+      <!-- 执行中状态 -->
+      <div v-if="runningTask" class="glass-card p-4">
+        <div class="flex items-center gap-3 mb-2">
+          <n-spin size="small" />
+          <span class="font-bold text-slate-700">扫描进行中...</span>
+          <n-tag :type="getProgressType(runningTask.progress)" size="small">
+            {{ getProgressLabel(runningTask.progress) }}
           </n-tag>
+          <n-button type="error" size="small" @click="stopTask(runningTask.id)">
+            <template #icon><i class="fas fa-stop"></i></template>
+            停止
+          </n-button>
         </div>
-        <div class="grid grid-cols-5 gap-3 text-center">
-          <div class="p-3 rounded-lg bg-red-50">
-            <div class="text-2xl font-bold text-red-600">{{ vulnSummary.critical }}</div>
-            <div class="text-xs text-slate-500">严重</div>
-          </div>
-          <div class="p-3 rounded-lg bg-orange-50">
-            <div class="text-2xl font-bold text-orange-600">{{ vulnSummary.high }}</div>
-            <div class="text-xs text-slate-500">高危</div>
-          </div>
-          <div class="p-3 rounded-lg bg-yellow-50">
-            <div class="text-2xl font-bold text-yellow-600">{{ vulnSummary.medium }}</div>
-            <div class="text-xs text-slate-500">中危</div>
-          </div>
-          <div class="p-3 rounded-lg bg-blue-50">
-            <div class="text-2xl font-bold text-blue-600">{{ vulnSummary.low }}</div>
-            <div class="text-xs text-slate-500">低危</div>
-          </div>
-          <div class="p-3 rounded-lg bg-slate-50">
-            <div class="text-2xl font-bold text-slate-600">{{ vulnSummary.info }}</div>
-            <div class="text-xs text-slate-500">信息</div>
-          </div>
+        <n-progress type="line" :percentage="runningTask.progress" :indicator-placement="'inside'" processing />
+        <div class="mt-2 text-xs text-slate-400">
+          任务 ID: {{ runningTask.id }} | 目标: {{ getTargetName(runningTask.target_id) }}
         </div>
       </div>
+    </div>
 
-      <!-- 漏洞列表 -->
-      <div v-if="result.vulnerabilities && result.vulnerabilities.length" class="glass-card p-5">
-        <div class="flex items-center justify-between mb-4">
-          <span class="font-bold text-slate-700">漏洞详情 ({{ result.vulnerabilities.length }})</span>
+    <!-- 3. 漏洞列表页面 -->
+    <div v-if="activeModule === 'vulnerabilities'" class="space-y-4">
+      <div class="glass-card p-4">
+        <div class="flex items-center justify-between mb-3">
+          <span class="font-bold text-slate-700">漏洞管理</span>
+          <n-button size="small" quaternary @click="loadVulnerabilities">
+            <template #icon><i class="fas fa-refresh"></i></template>
+            刷新
+          </n-button>
         </div>
+
+        <!-- 筛选区 -->
+        <div class="flex items-center gap-3 mb-3">
+          <n-select v-model:value="vulnSeverityFilter" placeholder="严重程度" style="width: 120px" clearable @update:value="loadVulnerabilities">
+            <n-option value="critical" label="严重" />
+            <n-option value="high" label="高危" />
+            <n-option value="medium" label="中危" />
+            <n-option value="low" label="低危" />
+            <n-option value="info" label="信息" />
+          </n-select>
+          <n-select v-model:value="vulnStatusFilter" placeholder="状态" style="width: 120px" clearable @update:value="loadVulnerabilities">
+            <n-option value="open" label="待修复" />
+            <n-option value="fixed" label="已修复" />
+            <n-option value="false_positive" label="误报" />
+            <n-option value="accepted" label="已接受" />
+          </n-select>
+          <n-input v-model:value="vulnSearch" placeholder="搜索漏洞..." style="width: 200px" clearable @keyup.enter="loadVulnerabilities">
+            <template #prefix><i class="fas fa-search text-slate-400"></i></template>
+          </n-input>
+        </div>
+
+        <!-- 漏洞列表 -->
         <n-data-table
           :columns="vulnColumns"
-          :data="result.vulnerabilities"
+          :data="vulnerabilities"
+          :loading="vulnLoading"
           :pagination="{ pageSize: 10 }"
           :row-class-name="vulnRowClass"
           size="small"
           striped
         />
       </div>
+    </div>
 
-      <!-- Markdown 报告 -->
-      <div v-if="result.report_content" class="glass-card p-5">
-        <div class="flex items-center justify-between mb-4">
-          <span class="font-bold text-slate-700">扫描报告</span>
-          <n-button size="small" @click="showReport = !showReport">
-            {{ showReport ? '收起' : '展开' }}
+    <!-- 4. 扫描日志页面 -->
+    <div v-if="activeModule === 'logs'" class="space-y-4">
+      <div class="glass-card p-4">
+        <div class="flex items-center justify-between mb-3">
+          <span class="font-bold text-slate-700">扫描日志</span>
+          <n-button size="small" quaternary @click="loadLogs">
+            <template #icon><i class="fas fa-refresh"></i></template>
+            刷新
           </n-button>
         </div>
-        <div v-if="showReport" class="markdown-body prose max-w-none" v-html="renderedReport"></div>
+
+        <!-- 日志筛选 -->
+        <div class="flex items-center gap-3 mb-3">
+          <n-select v-model:value="logTaskFilter" placeholder="选择任务" style="width: 200px" clearable @update:value="loadLogs">
+            <n-option v-for="task in tasks" :key="task.id" :value="task.id" :label="`任务${task.id} - ${task.scan_type} (${getTargetName(task.target_id)})`" />
+          </n-select>
+          <n-select v-model:value="logLevelFilter" placeholder="日志级别" style="width: 120px" clearable @update:value="loadLogs">
+            <n-option value="debug" label="DEBUG" />
+            <n-option value="info" label="INFO" />
+            <n-option value="warning" label="WARNING" />
+            <n-option value="error" label="ERROR" />
+          </n-select>
+        </div>
+
+        <!-- 日志列表 -->
+        <n-data-table
+          :columns="logColumns"
+          :data="logs"
+          :loading="logsLoading"
+          :pagination="{ pageSize: 20 }"
+          size="small"
+          striped
+        />
       </div>
     </div>
 
-    <!-- 历史记录 -->
-    <div class="glass-card p-5 mt-5">
-      <div class="flex items-center justify-between mb-4">
-        <span class="font-bold text-slate-700">扫描历史</span>
-        <n-button size="small" quaternary @click="loadHistory">
-          <template #icon><i class="fas fa-refresh"></i></template>
-          刷新
-        </n-button>
+    <!-- 5. 报告下载页面 -->
+    <div v-if="activeModule === 'reports'" class="space-y-4">
+      <!-- 生成报告 -->
+      <div class="glass-card p-4">
+        <div class="flex items-center justify-between mb-3">
+          <span class="font-bold text-slate-700">报告管理</span>
+        </div>
+
+        <!-- 生成报告表单 -->
+        <div class="space-y-3 mb-5">
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-2">生成报告:</label>
+            <div class="flex items-center gap-3">
+              <n-select v-model:value="reportTaskId" placeholder="选择任务" style="width: 200px">
+                <n-option v-for="task in finishedTasks" :key="task.id" :value="task.id" :label="`任务${task.id} - ${task.scan_type} (${getTargetName(task.target_id)})`" />
+              </n-select>
+              <n-radio-group v-model:value="reportFormat">
+                <n-radio value="html">HTML</n-radio>
+                <n-radio value="markdown">Markdown</n-radio>
+                <n-radio value="json">JSON</n-radio>
+              </n-radio-group>
+              <n-button type="primary" :loading="generatingReport" @click="generateReport">
+                生成报告
+              </n-button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 报告历史 -->
+        <div>
+          <h3 class="text-sm font-medium text-slate-700 mb-3">报告历史:</h3>
+          <n-data-table
+            :columns="reportColumns"
+            :data="reportHistory"
+            :loading="reportsLoading"
+            :pagination="{ pageSize: 10 }"
+            size="small"
+            striped
+          />
+        </div>
       </div>
-      <n-data-table
-        :columns="historyColumns"
-        :data="historyList"
-        :loading="historyLoading"
-        :pagination="{ pageSize: 10 }"
-        size="small"
-        striped
-      />
     </div>
+
+    <!-- 新建目标对话框 -->
+    <n-modal v-model:show="showCreateTarget" preset="dialog" title="新建扫描目标">
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">名称</label>
+          <n-input v-model:value="newTarget.name" placeholder="输入目标名称" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">URL</label>
+          <n-input v-model:value="newTarget.base_url" placeholder="输入目标URL" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">描述</label>
+          <n-input v-model:value="newTarget.description" placeholder="输入描述信息" type="textarea" />
+        </div>
+      </div>
+      <template #action>
+        <n-button @click="showCreateTarget = false">取消</n-button>
+        <n-button type="primary" :loading="creatingTarget" @click="createTarget">保存</n-button>
+      </template>
+    </n-modal>
+
+    <!-- 新建任务对话框 -->
+    <n-modal v-model:show="showCreateTask" preset="dialog" title="新建扫描任务">
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">目标</label>
+          <n-select v-model:value="newTask.target_id" placeholder="选择扫描目标">
+            <n-option v-for="target in targets" :key="target.id" :value="target.id" :label="`${target.name} (${target.base_url})`" />
+          </n-select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">扫描类型</label>
+          <n-radio-group v-model:value="newTask.scan_type">
+            <n-radio value="sqlmap">SQLMap SQL注入</n-radio>
+            <n-radio value="xsstrike">XSStrike XSS检测</n-radio>
+            <n-radio value="fuzz">Fuzz 模糊测试</n-radio>
+            <n-radio value="full_scan">全面扫描</n-radio>
+          </n-radio-group>
+          <div class="text-xs text-gray-500 mt-1">
+            注意: Nuclei工具暂时不可用，需要手动安装
+          </div>
+        </div>
+      </div>
+      <template #action>
+        <n-button @click="showCreateTask = false">取消</n-button>
+        <n-button type="primary" :loading="creatingTask" @click="createTask">开始扫描</n-button>
+      </template>
+    </n-modal>
+
+    <!-- 漏洞详情对话框 -->
+    <n-modal v-model:show="showVulnDetail" preset="card" title="漏洞详情" style="width: 800px">
+      <div v-if="selectedVuln" class="space-y-4">
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">严重程度</label>
+            <n-tag :type="getSeverityType(selectedVuln.severity)">{{ getSeverityLabel(selectedVuln.severity) }}</n-tag>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">发现时间</label>
+            <span class="text-sm">{{ formatTime(selectedVuln.first_found) }}</span>
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">漏洞标题</label>
+          <p class="text-sm">{{ selectedVuln.title }}</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">描述</label>
+          <p class="text-sm">{{ selectedVuln.description || '暂无描述' }}</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">修复建议</label>
+          <p class="text-sm">{{ selectedVuln.fix_suggestion || '暂无修复建议' }}</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">状态</label>
+          <n-select v-model:value="selectedVuln.status" style="width: 150px" @update:value="updateVulnStatus">
+            <n-option value="open" label="待修复" />
+            <n-option value="fixed" label="已修复" />
+            <n-option value="false_positive" label="误报" />
+            <n-option value="accepted" label="已接受" />
+          </n-select>
+        </div>
+      </div>
+    </n-modal>
   </div>
 </template>
 
@@ -202,169 +305,222 @@ import { ref, computed, onMounted, onUnmounted, h } from 'vue'
 import { useMessage } from 'naive-ui'
 import { NTag, NButton, NProgress, NSpin, NTabs, NTabPane, NInput, NCheckbox, NDataTable, NBadge, NPopselect } from 'naive-ui'
 import { securityAPI } from '@/api/index.js'
-import { marked } from 'marked'
 
 const message = useMessage()
 
-// 表单
-const activeTab = ref('web_scan')
-const form = ref({
-  target: '',
-  deepScan: false,
-  sqlmapVerify: false,
-  specVersionId: '',
-  authToken: '',
-  pythonReq: '',
-  nodeDir: '',
-  trivyTarget: '',
+// 安全测试平台状态管理
+const activeModule = ref('assets')
+
+// 1. 资产管理相关状态
+const targets = ref([])
+const targetsLoading = ref(false)
+const targetSearch = ref('')
+const showCreateTarget = ref(false)
+const creatingTarget = ref(false)
+const newTarget = ref({
+  name: '',
+  base_url: '',
+  description: ''
 })
 
-// 状态
-const starting = ref(false)
-const running = ref(false)
-const currentTaskId = ref(null)
-const currentProgress = ref(0)
-const currentVulnCount = ref(0)
-const result = ref(null)
-const showReport = ref(false)
-let pollTimer = null
+// 2. 扫描任务相关状态
+const tasks = ref([])
+const tasksLoading = ref(false)
+const showCreateTask = ref(false)
+const creatingTask = ref(false)
+const runningTask = ref(null)
+const newTask = ref({
+  target_id: null,
+  scan_type: 'xsstrike'  // 使用可用的工具作为默认值
+})
 
-// 历史
-const historyList = ref([])
-const historyLoading = ref(false)
+// 3. 漏洞管理相关状态
+const vulnerabilities = ref([])
+const vulnLoading = ref(false)
+const vulnSeverityFilter = ref(null)
+const vulnStatusFilter = ref(null)
+const vulnSearch = ref('')
+const showVulnDetail = ref(false)
+const selectedVuln = ref(null)
 
-// 安全测试用例任务
-const securityCases = ref([])
-const casesLoading = ref(false)
-const caseFilterStatus = ref('all')
-const caseSearch = ref('')
-const caseStats = ref({ all: 0, pending: 0, pass: 0, bug: 0 })
-const casePage = ref(1)
-const casePageSize = 10
+// 4. 扫描日志相关状态
+const logs = ref([])
+const logsLoading = ref(false)
+const logTaskFilter = ref(null)
+const logLevelFilter = ref(null)
 
-const caseFilters = computed(() => [
-  { label: '全部', value: 'all', count: caseStats.value.all, badgeType: 'default' },
-  { label: '待测试', value: '待测试', count: caseStats.value.pending, badgeType: 'info' },
-  { label: '通过', value: '通过', count: caseStats.value.pass, badgeType: 'success' },
-  { label: 'Bug', value: 'bug', count: caseStats.value.bug, badgeType: 'error' },
-])
+// 5. 报告管理相关状态
+const reportHistory = ref([])
+const reportsLoading = ref(false)
+const reportTaskId = ref(null)
+const reportFormat = ref('html')
+const generatingReport = ref(false)
 
-const casePagination = computed(() => ({
-  page: casePage.value,
-  pageSize: casePageSize,
-  pageCount: Math.ceil((caseStats.value.all || 1) / casePageSize),
-  itemCount: caseFilterStatus.value === 'all' ? caseStats.value.all : securityCases.value.length,
-}))
+// 计算属性
+const finishedTasks = computed(() => {
+  return tasks.value.filter(task => task.status === 'finished')
+})
 
-// 安全用例状态选项
-const statusOptions = [
-  { label: '待测试', value: '待测试' },
-  { label: '✅ 通过', value: '通过' },
-  { label: '🐛 Bug', value: 'bug' },
-]
-const caseStatusTagType = { '待测试': 'default', '通过': 'success', 'bug': 'error' }
-
-// 安全用例表格列
-const caseColumns = [
+// 表格列定义
+const targetColumns = [
   { title: 'ID', key: 'id', width: 60 },
-  { title: '模块', key: 'module', width: 120, ellipsis: { tooltip: true } },
-  { title: '用例名称', key: 'title', width: 200, ellipsis: { tooltip: true } },
+  { title: '名称', key: 'name', width: 150, ellipsis: { tooltip: true } },
+  { title: 'URL', key: 'base_url', width: 300, ellipsis: { tooltip: true } },
+  { title: '描述', key: 'description', ellipsis: { tooltip: true } },
+  { title: '创建时间', key: 'created_at', width: 160 },
   {
-    title: '步骤',
-    key: 'steps',
-    width: 280,
+    title: '操作',
+    key: 'actions',
+    width: 120,
+    render: (row) => h('div', { class: 'flex gap-1' }, [
+      h(NButton, { size: 'tiny', type: 'primary', quaternary: true, onClick: () => editTarget(row) }, () => '编辑'),
+      h(NButton, { size: 'tiny', type: 'error', quaternary: true, onClick: () => deleteTarget(row.id) }, () => '删除'),
+    ])
+  },
+]
+
+const taskColumns = [
+  { title: 'ID', key: 'id', width: 60 },
+  { 
+    title: '目标', 
+    key: 'target_name', 
+    width: 150, 
     ellipsis: { tooltip: true },
     render: (row) => {
-      const steps = Array.isArray(row.steps) ? row.steps : []
-      return steps.map((s, i) => `${i + 1}. ${s}`).join('\n') || '-'
+      const target = targets.value.find(t => t.id === row.target_id)
+      return target ? `${target.name} (${target.base_url})` : `目标ID: ${row.target_id}`
     }
   },
   {
-    title: '优先级',
-    key: 'priority',
-    width: 70,
+    title: '扫描类型',
+    key: 'scan_type',
+    width: 120,
     render: (row) => {
-      const pMap = { '1': 'error', '2': 'warning', '3': 'info', '4': 'default' }
-      const pLabel = { '1': '1级', '2': '2级', '3': '3级', '4': '4级' }
-      return h(NTag, { type: pMap[row.priority] || 'default', size: 'small' }, () => pLabel[row.priority] || row.priority)
+      const typeMap = { nuclei: 'Nuclei', sqlmap: 'SQLMap', xsstrike: 'XSStrike', fuzz: 'Fuzz', full_scan: '全面扫描' }
+      return typeMap[row.scan_type] || row.scan_type
     }
   },
   {
     title: '状态',
-    key: 'security_status',
-    width: 120,
+    key: 'status',
+    width: 100,
     render: (row) => {
-      const currentStatus = row.security_status || '待测试'
-      return h(NPopselect, {
-        value: currentStatus,
-        options: statusOptions,
-        onUpdateValue: (val) => handleUpdateCaseStatus(row.id, val),
-        trigger: 'click',
-      }, {
-        default: () => h(NTag, {
-          type: caseStatusTagType[currentStatus] || 'default',
-          size: 'small',
-          style: 'cursor: pointer',
-        }, {
-          default: () => currentStatus,
-          icon: () => h('i', { class: 'fas fa-caret-down', style: 'margin-left: 4px; font-size: 10px' }),
-        })
-      })
+      const statusMap = { pending: '等待中', running: '运行中', finished: '已完成', failed: '失败', stopped: '已停止' }
+      const statusTypes = { pending: 'default', running: 'info', finished: 'success', failed: 'error', stopped: 'warning' }
+      return h(NTag, { type: statusTypes[row.status] || 'default', size: 'small' }, () => statusMap[row.status] || row.status)
     }
   },
+  { 
+    title: '创建时间', 
+    key: 'created_at', 
+    width: 160,
+    render: (row) => formatTime(row.created_at)
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 150,
+    render: (row) => h('div', { class: 'flex gap-1' }, [
+      row.status === 'running' ? h(NButton, { size: 'tiny', type: 'error', onClick: () => stopTask(row.id) }, () => '停止') : null,
+      row.status === 'finished' ? h(NButton, { size: 'tiny', type: 'primary', quaternary: true, onClick: () => viewTaskResult(row.id) }, () => '查看') : null,
+      h(NButton, { size: 'tiny', type: 'error', quaternary: true, onClick: () => deleteTask(row.id) }, () => '删除'),
+    ])
+  },
 ]
-
-// 计算属性
-const stageLabel = computed(() => {
-  const p = currentProgress.value
-  if (p < 5) return '初始化'
-  if (p < 30) return 'Spider 爬虫'
-  if (p < 80) return 'Active Scan'
-  if (p < 95) return '分析中'
-  return '生成报告'
-})
-
-const stageTagType = computed(() => {
-  const p = currentProgress.value
-  if (p < 30) return 'info'
-  if (p < 80) return 'warning'
-  return 'success'
-})
-
-const vulnSummary = computed(() => {
-  return result.value?.vuln_summary || { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
-})
-
-const riskTagType = computed(() => {
-  const level = result.value?.risk_level
-  if (level === 'A') return 'success'
-  if (level === 'B') return 'info'
-  if (level === 'C') return 'warning'
-  return 'error'
-})
-
-const renderedReport = computed(() => {
-  if (!result.value?.report_content) return ''
-  return marked(result.value.report_content)
-})
-
-// 漏洞表格列
-const severityMap = { critical: '严重', high: '高危', medium: '中危', low: '低危', info: '信息' }
-const severityTypeMap = { critical: 'error', high: 'warning', medium: 'warning', low: 'info', info: 'default' }
 
 const vulnColumns = [
+  { title: 'ID', key: 'id', width: 60 },
+  { title: '标题', key: 'title', width: 200, ellipsis: { tooltip: true } },
+  {
+    title: '严重程度',
+    key: 'severity',
+    width: 100,
+    render: (row) => {
+      const severityMap = { critical: '严重', high: '高危', medium: '中危', low: '低危', info: '信息' }
+      const severityTypes = { critical: 'error', high: 'warning', medium: 'warning', low: 'info', info: 'default' }
+      return h(NTag, { type: severityTypes[row.severity] || 'default', size: 'small' }, () => severityMap[row.severity] || row.severity)
+    }
+  },
+  {
+    title: '状态',
+    key: 'status',
+    width: 100,
+    render: (row) => {
+      const statusMap = { open: '待修复', fixed: '已修复', false_positive: '误报', accepted: '已接受' }
+      const statusTypes = { open: 'error', fixed: 'success', false_positive: 'warning', accepted: 'info' }
+      return h(NTag, { type: statusTypes[row.status] || 'default', size: 'small' }, () => statusMap[row.status] || row.status)
+    }
+  },
+  { title: '发现时间', key: 'first_found', width: 160 },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 100,
+    render: (row) => h(NButton, { size: 'tiny', type: 'primary', quaternary: true, onClick: () => viewVulnDetail(row) }, () => '详情')
+  },
+]
+
+const logColumns = [
+  { title: '时间', key: 'created_at', width: 160 },
   {
     title: '级别',
-    key: 'severity',
+    key: 'level',
     width: 80,
-    render: (row) => h(NTag, { type: severityTypeMap[row.severity] || 'default', size: 'small' }, () => severityMap[row.severity] || row.severity)
+    render: (row) => {
+      const levelTypes = { debug: 'default', info: 'info', warning: 'warning', error: 'error' }
+      return h(NTag, { type: levelTypes[row.level] || 'default', size: 'small' }, () => row.level?.toUpperCase() || 'INFO')
+    }
   },
-  { title: '漏洞类型', key: 'vuln_type', ellipsis: { tooltip: true } },
-  { title: '来源', key: 'source', width: 100 },
-  { title: 'URL', key: 'url', width: 200, ellipsis: { tooltip: true } },
-  { title: '描述', key: 'description', ellipsis: { tooltip: true } },
-  { title: '修复建议', key: 'solution', ellipsis: { tooltip: true } },
+  { title: '消息', key: 'message', ellipsis: { tooltip: true } },
 ]
+
+const reportColumns = [
+  { title: '时间', key: 'created_at', width: 160 },
+  { title: '任务ID', key: 'task_id', width: 80 },
+  { title: '格式', key: 'format', width: 80 },
+  { title: '文件名', key: 'filename', ellipsis: { tooltip: true } },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 100,
+    render: (row) => h(NButton, { size: 'tiny', type: 'primary', quaternary: true, onClick: () => downloadReport(row) }, () => '下载')
+  },
+]
+
+// 工具函数
+function getSeverityType(severity) {
+  const types = { critical: 'error', high: 'warning', medium: 'warning', low: 'info', info: 'default' }
+  return types[severity] || 'default'
+}
+
+function getSeverityLabel(severity) {
+  const labels = { critical: '严重', high: '高危', medium: '中危', low: '低危', info: '信息' }
+  return labels[severity] || severity
+}
+
+function getProgressType(progress) {
+  if (progress < 30) return 'info'
+  if (progress < 80) return 'warning'
+  return 'success'
+}
+
+function getProgressLabel(progress) {
+  if (progress < 5) return '初始化'
+  if (progress < 30) return '扫描中'
+  if (progress < 80) return '分析中'
+  if (progress < 95) return '生成报告'
+  return '完成'
+}
+
+function formatTime(timeStr) {
+  if (!timeStr) return '-'
+  return new Date(timeStr).toLocaleString('zh-CN')
+}
+
+function getTargetName(targetId) {
+  const target = targets.value.find(t => t.id === targetId)
+  return target ? `${target.name} (${target.base_url})` : `目标ID: ${targetId}`
+}
 
 function vulnRowClass(row) {
   if (row.severity === 'critical') return 'bg-red-50/50'
@@ -372,285 +528,666 @@ function vulnRowClass(row) {
   return ''
 }
 
-// 历史表格列
-const typeLabels = { web_scan: 'Web 扫描', api_attack: 'API 攻击', dependency_scan: '依赖扫描', baseline_check: '基线检测' }
-const statusLabels = { pending: '等待中', running: '运行中', finished: '已完成', failed: '失败', stopped: '已停止' }
-const statusTypes = { pending: 'default', running: 'info', finished: 'success', failed: 'error', stopped: 'warning' }
+// API 方法
 
-const historyColumns = [
-  { title: 'ID', key: 'task_id', width: 60 },
-  {
-    title: '类型',
-    key: 'type',
-    width: 100,
-    render: (row) => typeLabels[row.type] || row.type
-  },
-  { title: '目标', key: 'target', width: 200, ellipsis: { tooltip: true } },
-  {
-    title: '状态',
-    key: 'status',
-    width: 90,
-    render: (row) => h(NTag, { type: statusTypes[row.status] || 'default', size: 'small' }, () => statusLabels[row.status] || row.status)
-  },
-  {
-    title: '评分',
-    key: 'risk_score',
-    width: 80,
-    render: (row) => row.risk_score != null ? h(NTag, { type: riskLevelType(row.risk_level), size: 'small' }, () => `${row.risk_level} ${row.risk_score}`) : '-'
-  },
-  { title: '耗时(s)', key: 'duration', width: 80 },
-  { title: '时间', key: 'created_at', width: 160 },
-  {
-    title: '操作',
-    key: 'actions',
-    width: 100,
-    render: (row) => h('div', { class: 'flex gap-1' }, [
-      row.status === 'finished' ? h(NButton, { size: 'tiny', type: 'primary', quaternary: true, onClick: () => viewResult(row.task_id) }, () => '查看') : null,
-      h(NButton, { size: 'tiny', type: 'error', quaternary: true, onClick: () => deleteTask(row.task_id) }, () => '删除'),
-    ])
-  },
-]
-
-function riskLevelType(level) {
-  if (level === 'A') return 'success'
-  if (level === 'B') return 'info'
-  if (level === 'C') return 'warning'
-  return 'error'
+// 1. 资产管理 API
+async function loadTargets() {
+  targetsLoading.value = true
+  try {
+    const params = {}
+    if (targetSearch.value) params.search = targetSearch.value
+    
+    const response = await securityAPI.getTargets(params)
+    if (response.success) {
+      targets.value = response.data || []
+    } else {
+      message.error(response.message || '加载目标失败')
+    }
+  } catch (error) {
+    console.error('加载目标失败:', error)
+    message.error('加载目标失败')
+  } finally {
+    targetsLoading.value = false
+  }
 }
 
-// 方法
-async function handleRun() {
-  if (!form.value.target) {
-    message.warning('请输入扫描目标')
+async function createTarget() {
+  if (!newTarget.value.name || !newTarget.value.base_url) {
+    message.warning('请填写完整信息')
     return
   }
-
-  starting.value = true
+  
+  creatingTarget.value = true
   try {
-    const config = {}
-    if (activeTab.value === 'web_scan') {
-      config.deep_scan = form.value.deepScan
-      config.sqlmap_verify = form.value.sqlmapVerify
-    } else if (activeTab.value === 'api_attack') {
-      if (form.value.specVersionId) config.spec_version_id = parseInt(form.value.specVersionId)
-      if (form.value.authToken) config.auth_info = { type: 'bearer', token: form.value.authToken }
-    } else if (activeTab.value === 'dependency_scan') {
-      if (form.value.pythonReq) config.python_requirements = form.value.pythonReq
-      if (form.value.nodeDir) config.node_project_dir = form.value.nodeDir
-      if (form.value.trivyTarget) config.trivy_target = form.value.trivyTarget
-    }
-
-    const res = await securityAPI.run(activeTab.value, form.value.target, config)
-    if (res.success) {
-      currentTaskId.value = res.data.task_id
-      running.value = true
-      currentProgress.value = 0
-      currentVulnCount.value = 0
-      result.value = null
-      startPolling()
-      message.success('扫描任务已启动')
+    const response = await securityAPI.createTarget(newTarget.value)
+    if (response.success) {
+      message.success('目标创建成功')
+      showCreateTarget.value = false
+      newTarget.value = { name: '', base_url: '', description: '' }
+      loadTargets()
     } else {
-      message.error(res.message || '启动失败')
+      message.error(response.message || '创建失败')
     }
-  } catch (e) {
-    message.error(e.response?.data?.detail || e.message || '启动失败')
+  } catch (error) {
+    console.error('创建目标失败:', error)
+    message.error('创建目标失败')
   } finally {
-    starting.value = false
+    creatingTarget.value = false
   }
 }
 
-async function handleStop() {
-  if (!currentTaskId.value) return
+async function editTarget(target) {
+  // 编辑目标功能
+  newTarget.value = { ...target }
+  showCreateTarget.value = true
+}
+
+async function deleteTarget(targetId) {
   try {
-    await securityAPI.stop(currentTaskId.value)
-    running.value = false
-    stopPolling()
-    message.info('已停止扫描')
-  } catch (e) {
-    message.error('停止失败')
-  }
-}
-
-function startPolling() {
-  stopPolling()
-  pollTimer = setInterval(async () => {
-    if (!currentTaskId.value) return
-    try {
-      const res = await securityAPI.getStatus(currentTaskId.value)
-      if (res.success) {
-        const d = res.data
-        currentProgress.value = d.progress || 0
-        currentVulnCount.value = d.vuln_summary?.total || 0
-
-        if (d.status === 'finished' || d.status === 'failed' || d.status === 'stopped') {
-          running.value = false
-          stopPolling()
-          if (d.status === 'finished') {
-            await loadResult(currentTaskId.value)
-            message.success('扫描完成')
-          } else if (d.status === 'failed') {
-            message.error(`扫描失败: ${d.error_message || '未知错误'}`)
-          }
-          loadHistory()
-        }
-      }
-    } catch (e) {
-      console.error('轮询失败:', e)
+    const response = await securityAPI.deleteTarget(targetId)
+    if (response.success) {
+      message.success('目标删除成功')
+      loadTargets()
+    } else {
+      message.error(response.message || '删除失败')
     }
-  }, 2000)
-}
-
-function stopPolling() {
-  if (pollTimer) {
-    clearInterval(pollTimer)
-    pollTimer = null
+  } catch (error) {
+    console.error('删除目标失败:', error)
+    message.error('删除目标失败')
   }
 }
 
-async function loadResult(taskId) {
+// 2. 扫描任务 API
+async function loadTasks() {
+  tasksLoading.value = true
   try {
-    const res = await securityAPI.getResult(taskId)
-    if (res.success) {
-      result.value = res.data
+    const response = await securityAPI.getTasks()
+    if (response.success) {
+      tasks.value = response.data || []
+      // 检查是否有运行中的任务
+      runningTask.value = tasks.value.find(task => task.status === 'running') || null
+    } else {
+      message.error(response.message || '加载任务失败')
     }
-  } catch (e) {
-    console.error('加载结果失败:', e)
-  }
-}
-
-async function viewResult(taskId) {
-  await loadResult(taskId)
-  window.scrollTo({ top: 0, behavior: 'smooth' })
-}
-
-async function loadHistory() {
-  historyLoading.value = true
-  try {
-    const res = await securityAPI.getHistory({ page: 1, page_size: 50 })
-    if (res.success) {
-      historyList.value = res.data.items || []
-    }
-  } catch (e) {
-    console.error('加载历史失败:', e)
+  } catch (error) {
+    console.error('加载任务失败:', error)
+    message.error('加载任务失败')
   } finally {
-    historyLoading.value = false
+    tasksLoading.value = false
+  }
+}
+
+async function createTask() {
+  if (!newTask.value.target_id || !newTask.value.scan_type) {
+    message.warning('请选择目标和扫描类型')
+    return
+  }
+  
+  creatingTask.value = true
+  try {
+    const response = await securityAPI.createScan({
+      target_id: newTask.value.target_id,
+      scan_type: newTask.value.scan_type
+    })
+    if (response.success) {
+      message.success('扫描任务已创建')
+      showCreateTask.value = false
+      newTask.value = { target_id: null, scan_type: 'xsstrike' }  // 使用可用的工具
+      loadTasks()
+      // 开始轮询任务状态
+      startTaskPolling()
+    } else {
+      message.error(response.message || '创建任务失败')
+    }
+  } catch (error) {
+    console.error('创建任务失败:', error)
+    message.error('创建任务失败')
+  } finally {
+    creatingTask.value = false
+  }
+}
+
+async function stopTask(taskId) {
+  try {
+    const response = await securityAPI.stopTask(taskId)
+    if (response.success) {
+      message.success('任务已停止')
+      loadTasks()
+    } else {
+      message.error(response.message || '停止任务失败')
+    }
+  } catch (error) {
+    console.error('停止任务失败:', error)
+    message.error('停止任务失败')
+  }
+}
+
+async function viewTaskResult(taskId) {
+  try {
+    const response = await securityAPI.getTask(taskId)
+    if (response.success) {
+      // 切换到漏洞列表页面显示结果
+      activeModule.value = 'vulnerabilities'
+      loadVulnerabilities()
+    } else {
+      message.error(response.message || '获取任务结果失败')
+    }
+  } catch (error) {
+    console.error('获取任务结果失败:', error)
+    message.error('获取任务结果失败')
   }
 }
 
 async function deleteTask(taskId) {
   try {
-    await securityAPI.delete(taskId)
-    message.success('已删除')
-    loadHistory()
-  } catch (e) {
-    message.error('删除失败')
+    const response = await securityAPI.deleteTask(taskId)
+    if (response.success) {
+      message.success('任务删除成功')
+      loadTasks()
+    } else {
+      message.error(response.message || '删除任务失败')
+    }
+  } catch (error) {
+    console.error('删除任务失败:', error)
+    message.error('删除任务失败')
   }
 }
 
-// 安全测试用例任务方法
-async function loadSecurityCases() {
-  casesLoading.value = true
+// 3. 漏洞管理 API
+async function loadVulnerabilities() {
+  vulnLoading.value = true
   try {
-    const params = {
-      page: casePage.value,
-      page_size: casePageSize,
+    const params = {}
+    if (vulnSeverityFilter.value) params.severity = vulnSeverityFilter.value
+    if (vulnStatusFilter.value) params.status = vulnStatusFilter.value
+    if (vulnSearch.value) params.search = vulnSearch.value
+    
+    const response = await securityAPI.getVulnerabilities(params)
+    if (response.success) {
+      vulnerabilities.value = response.data || []
+    } else {
+      message.error(response.message || '加载漏洞失败')
     }
-    if (caseFilterStatus.value !== 'all') {
-      params.status = caseFilterStatus.value
-    }
-    if (caseSearch.value) {
-      params.search = caseSearch.value
-    }
-    const res = await securityAPI.getCases(params)
-    if (res.success) {
-      securityCases.value = res.data.items || []
-      caseStats.value = res.data.stats || { all: 0, pending: 0, pass: 0, bug: 0 }
-    }
-  } catch (e) {
-    console.error('加载安全用例失败:', e)
+  } catch (error) {
+    console.error('加载漏洞失败:', error)
+    message.error('加载漏洞失败')
   } finally {
-    casesLoading.value = false
+    vulnLoading.value = false
   }
 }
 
-function handleCasePageChange(page) {
-  casePage.value = page
-  loadSecurityCases()
+function viewVulnDetail(vuln) {
+  selectedVuln.value = { ...vuln }
+  showVulnDetail.value = true
 }
 
-async function handleUpdateCaseStatus(caseId, newStatus) {
+async function updateVulnStatus(newStatus) {
+  if (!selectedVuln.value) return
+  
   try {
-    const res = await securityAPI.updateCaseStatus(caseId, newStatus)
-    if (res.success) {
-      message.success(`已标记为「${newStatus}」`)
-      // 更新本地数据
-      const item = securityCases.value.find(c => c.id === caseId)
-      if (item) item.security_status = newStatus
-      // 刷新统计
-      loadSecurityCases()
+    const response = await securityAPI.updateVulnerability(selectedVuln.value.id, {
+      status: newStatus
+    })
+    if (response.success) {
+      message.success('状态更新成功')
+      selectedVuln.value.status = newStatus
+      loadVulnerabilities()
+    } else {
+      message.error(response.message || '状态更新失败')
     }
-  } catch (e) {
+  } catch (error) {
+    console.error('状态更新失败:', error)
     message.error('状态更新失败')
   }
 }
 
+// 4. 扫描日志 API
+async function loadLogs() {
+  logsLoading.value = true
+  try {
+    const params = {}
+    if (logTaskFilter.value) params.task_id = logTaskFilter.value
+    if (logLevelFilter.value) params.level = logLevelFilter.value
+    
+    const response = await securityAPI.getLogs(params)
+    if (response.success) {
+      logs.value = response.data || []
+    } else {
+      message.error(response.message || '加载日志失败')
+    }
+  } catch (error) {
+    console.error('加载日志失败:', error)
+    message.error('加载日志失败')
+  } finally {
+    logsLoading.value = false
+  }
+}
+
+// 5. 报告管理 API
+async function loadReportHistory() {
+  reportsLoading.value = true
+  try {
+    const response = await securityAPI.getReports()
+    if (response.success) {
+      reportHistory.value = response.data || []
+    } else {
+      message.error(response.message || '加载报告历史失败')
+    }
+  } catch (error) {
+    console.error('加载报告历史失败:', error)
+    message.error('加载报告历史失败')
+  } finally {
+    reportsLoading.value = false
+  }
+}
+
+async function generateReport() {
+  if (!reportTaskId.value || !reportFormat.value) {
+    message.warning('请选择任务和报告格式')
+    return
+  }
+  
+  generatingReport.value = true
+  try {
+    const response = await securityAPI.generateReport({
+      task_id: reportTaskId.value,
+      format: reportFormat.value
+    })
+    if (response.success) {
+      message.success('报告生成成功')
+      loadReportHistory()
+    } else {
+      message.error(response.message || '报告生成失败')
+    }
+  } catch (error) {
+    console.error('报告生成失败:', error)
+    message.error('报告生成失败')
+  } finally {
+    generatingReport.value = false
+  }
+}
+
+async function downloadReport(report) {
+  try {
+    const response = await securityAPI.downloadReport(report.id)
+    
+    // 创建下载链接
+    const url = window.URL.createObjectURL(new Blob([response]))
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', report.filename)
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.URL.revokeObjectURL(url)
+    
+    message.success('报告下载成功')
+  } catch (error) {
+    console.error('报告下载失败:', error)
+    message.error('报告下载失败')
+  }
+}
+
+// 任务状态轮询
+let taskPollTimer = null
+
+function startTaskPolling() {
+  stopTaskPolling()
+  taskPollTimer = setInterval(async () => {
+    if (runningTask.value) {
+      try {
+        const response = await securityAPI.getTask(runningTask.value.id)
+        if (response.success) {
+          const taskData = response.data
+          runningTask.value = { ...runningTask.value, ...taskData }
+          
+          if (taskData.status !== 'running') {
+            runningTask.value = null
+            stopTaskPolling()
+            loadTasks()
+            if (taskData.status === 'finished') {
+              message.success('扫描完成')
+            } else if (taskData.status === 'failed') {
+              message.error('扫描失败')
+            }
+          }
+        }
+      } catch (error) {
+        console.error('轮询任务状态失败:', error)
+      }
+    } else {
+      stopTaskPolling()
+    }
+  }, 3000)
+}
+
+function stopTaskPolling() {
+  if (taskPollTimer) {
+    clearInterval(taskPollTimer)
+    taskPollTimer = null
+  }
+}
+
+// 生命周期
 onMounted(() => {
-  loadHistory()
-  loadSecurityCases()
+  loadTargets()
+  loadTasks()
+  loadVulnerabilities()
+  loadLogs()
+  loadReportHistory()
 })
 
 onUnmounted(() => {
-  stopPolling()
+  stopTaskPolling()
 })
 </script>
 
 <style scoped>
-.security-test {
-  max-width: 1200px;
+.security-platform {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 10px 20px;
 }
 
 .glass-card {
   background: white;
   border: 1px solid rgba(0, 120, 87, 0.1);
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+  backdrop-filter: blur(10px);
 }
 
-.markdown-body {
-  font-size: 14px;
-  line-height: 1.7;
+/* 模块切换标签样式 */
+.n-tabs .n-tab-pane {
+  padding: 0;
 }
 
-.markdown-body h1, .markdown-body h2, .markdown-body h3 {
-  margin-top: 1em;
-  margin-bottom: 0.5em;
-  color: #1e293b;
+/* 表格行样式 */
+.bg-red-50\/50 {
+  background-color: rgba(254, 242, 242, 0.5);
 }
 
-.markdown-body table {
-  border-collapse: collapse;
-  width: 100%;
-  margin: 0.5em 0;
+.bg-orange-50\/50 {
+  background-color: rgba(255, 247, 237, 0.5);
 }
 
-.markdown-body th, .markdown-body td {
-  border: 1px solid #e2e8f0;
-  padding: 6px 12px;
-  text-align: left;
+/* 按钮组样式 */
+.flex.gap-1 {
+  display: flex;
+  gap: 4px;
 }
 
-.markdown-body th {
+.flex.gap-3 {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+/* 搜索区域样式 */
+.space-y-3 > * + * {
+  margin-top: 12px;
+}
+
+.space-y-4 > * + * {
+  margin-top: 16px;
+}
+
+.space-y-5 > * + * {
+  margin-top: 20px;
+}
+
+/* 表单标签样式 */
+label.block {
+  display: block;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 4px;
+}
+
+/* 进度条容器样式 */
+.progress-container {
   background: #f8fafc;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px 0;
 }
 
-.markdown-body code {
-  background: #f1f5f9;
-  padding: 2px 6px;
+/* 状态标签样式 */
+.n-tag {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* 漏洞严重程度颜色 */
+.severity-critical {
+  color: #dc2626;
+  background-color: #fef2f2;
+  border-color: #fecaca;
+}
+
+.severity-high {
+  color: #ea580c;
+  background-color: #fff7ed;
+  border-color: #fed7aa;
+}
+
+.severity-medium {
+  color: #d97706;
+  background-color: #fffbeb;
+  border-color: #fde68a;
+}
+
+.severity-low {
+  color: #059669;
+  background-color: #ecfdf5;
+  border-color: #a7f3d0;
+}
+
+.severity-info {
+  color: #0284c7;
+  background-color: #f0f9ff;
+  border-color: #bae6fd;
+}
+
+/* 任务状态颜色 */
+.status-pending {
+  color: #6b7280;
+  background-color: #f9fafb;
+  border-color: #d1d5db;
+}
+
+.status-running {
+  color: #0284c7;
+  background-color: #f0f9ff;
+  border-color: #bae6fd;
+}
+
+.status-finished {
+  color: #059669;
+  background-color: #ecfdf5;
+  border-color: #a7f3d0;
+}
+
+.status-failed {
+  color: #dc2626;
+  background-color: #fef2f2;
+  border-color: #fecaca;
+}
+
+.status-stopped {
+  color: #d97706;
+  background-color: #fffbeb;
+  border-color: #fde68a;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .security-platform {
+    padding: 10px;
+  }
+  
+  .glass-card {
+    padding: 16px !important;
+  }
+  
+  .flex.gap-3 {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  
+  .n-data-table {
+    font-size: 12px;
+  }
+}
+
+/* 动画效果 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* 加载状态 */
+.loading-overlay {
+  position: relative;
+}
+
+.loading-overlay::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+/* 工具提示样式 */
+.tooltip {
+  position: relative;
+  cursor: help;
+}
+
+.tooltip:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1f2937;
+  color: white;
+  padding: 4px 8px;
   border-radius: 4px;
-  font-size: 13px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 1000;
 }
 
-.markdown-body ul, .markdown-body ol {
-  padding-left: 1.5em;
+/* 扫描工具图标 */
+.tool-icon {
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
+}
+
+.tool-nuclei {
+  color: #059669;
+}
+
+.tool-sqlmap {
+  color: #dc2626;
+}
+
+.tool-xsstrike {
+  color: #d97706;
+}
+
+.tool-fuzz {
+  color: #7c3aed;
+}
+
+/* 统计卡片样式 */
+.stats-card {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+}
+
+.stats-number {
+  font-size: 2rem;
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.stats-label {
+  font-size: 0.875rem;
+  opacity: 0.9;
+}
+
+/* 日志级别样式 */
+.log-debug {
+  color: #6b7280;
+}
+
+.log-info {
+  color: #0284c7;
+}
+
+.log-warning {
+  color: #d97706;
+}
+
+.log-error {
+  color: #dc2626;
+}
+
+/* 报告格式图标 */
+.format-html::before {
+  content: '🌐';
+  margin-right: 4px;
+}
+
+.format-markdown::before {
+  content: '📝';
+  margin-right: 4px;
+}
+
+.format-json::before {
+  content: '📋';
+  margin-right: 4px;
+}
+
+/* 空状态样式 */
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: #6b7280;
+}
+
+.empty-state-icon {
+  font-size: 3rem;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.empty-state-text {
+  font-size: 1rem;
+  margin-bottom: 8px;
+}
+
+.empty-state-subtext {
+  font-size: 0.875rem;
+  opacity: 0.7;
 }
 </style>
