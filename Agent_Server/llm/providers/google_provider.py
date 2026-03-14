@@ -3,7 +3,7 @@ Google Provider 实现
 
 支持 Gemini 系列模型
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 """
 import json
 import os

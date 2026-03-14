@@ -3,7 +3,7 @@
 
 支持任务的暂停、停止、恢复功能
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 """
 import threading
 from typing import Dict, Any, Optional

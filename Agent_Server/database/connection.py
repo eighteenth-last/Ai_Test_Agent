@@ -1,7 +1,7 @@
 """
 数据库连接和模型定义
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 """
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON, inspect
 from sqlalchemy.ext.declarative import declarative_base

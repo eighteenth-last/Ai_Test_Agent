@@ -4,7 +4,7 @@ Markdown 接口文件解析器
 从 Markdown 文件中提取接口信息（method, path, summary, params, examples）
 支持多种常见 Markdown 接口文档格式
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 """
 import re
 import json

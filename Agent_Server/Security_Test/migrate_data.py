@@ -1,7 +1,7 @@
 """
 数据迁移脚本 - 从旧安全测试架构迁移到新架构
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 """
 import json
 import logging

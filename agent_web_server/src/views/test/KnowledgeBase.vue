@@ -12,6 +12,10 @@
         </div>
       </div>
       <div class="flex items-center gap-2">
+        <n-button size="small" type="success" @click="openExploreModal">
+          <template #icon><i class="fas fa-compass"></i></template>
+          探索页面
+        </n-button>
         <n-button size="small" quaternary @click="loadStats">
           <template #icon><i class="fas fa-sync-alt"></i></template>
           刷新
@@ -293,11 +297,70 @@
         </div>
       </div>
     </n-modal>
+
+    <!-- 页面探索 Modal -->
+    <n-modal v-model:show="showExplore" preset="card" title="页面探索" style="width: 600px; max-width: 95vw">
+      <n-form :model="exploreForm" label-placement="left" label-width="100" size="small" class="space-y-3">
+        <n-form-item label="目标 URL" required>
+          <n-input v-model:value="exploreForm.url" placeholder="https://example.com/page" />
+        </n-form-item>
+        <n-form-item label="登录账号">
+          <n-input v-model:value="exploreForm.username" placeholder="如需登录请填写" />
+        </n-form-item>
+        <n-form-item label="登录密码">
+          <n-input v-model:value="exploreForm.password" type="password" show-password-on="click" placeholder="如需登录请填写" />
+        </n-form-item>
+        <n-form-item label="探索目标">
+          <n-input v-model:value="exploreForm.user_goal" type="textarea" :rows="3" 
+            placeholder="例如：探索课程选择页面的所有功能" />
+        </n-form-item>
+      </n-form>
+
+      <div class="mt-5 pt-4 border-t border-slate-100 flex justify-end gap-2">
+        <n-button @click="showExplore = false" :disabled="exploreLoading">取消</n-button>
+        <n-button v-if="!exploreLoading" type="primary" @click="startExplore">
+          <template #icon><i class="fas fa-compass"></i></template>
+          开始探索
+        </n-button>
+        <n-button v-else type="error" @click="stopExplore">
+          <template #icon><i class="fas fa-stop"></i></template>
+          停止探索
+        </n-button>
+      </div>
+
+      <!-- 探索进度 -->
+      <div v-if="exploreProgress" class="mt-4 p-4 bg-slate-50 rounded-xl">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2">
+            <n-spin size="small" />
+            <span class="text-sm font-semibold text-slate-700">{{ exploreProgress.status }}</span>
+          </div>
+          <n-button v-if="exploreLoading" size="tiny" type="error" quaternary @click="stopExplore">
+            <template #icon><i class="fas fa-stop text-xs"></i></template>
+            中止
+          </n-button>
+        </div>
+        <p class="text-xs text-slate-500">{{ exploreProgress.message }}</p>
+      </div>
+
+      <!-- 探索结果 -->
+      <div v-if="exploreResult" class="mt-4 p-4 bg-emerald-50 rounded-xl">
+        <div class="flex items-center gap-2 mb-2">
+          <i class="fas fa-check-circle text-emerald-600"></i>
+          <span class="text-sm font-semibold text-emerald-700">探索完成</span>
+        </div>
+        <div class="text-xs text-slate-600 space-y-1">
+          <p>操作: {{ exploreResult.action === 'created' ? '新建' : '更新' }}</p>
+          <p>版本: v{{ exploreResult.version }}</p>
+          <p v-if="exploreResult.diff">变更: {{ exploreResult.diff.summary || '页面结构已更新' }}</p>
+        </div>
+      </div>
+    </n-modal>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useMessage } from 'naive-ui'
 import { knowledgeAPI } from '@/api/index'
 
@@ -354,6 +417,20 @@ const distanceOptions = [
   { label: 'Euclid（欧氏）', value: 'Euclid' },
   { label: 'Manhattan（曼哈顿）', value: 'Manhattan' },
 ]
+
+// 页面探索
+const showExplore = ref(false)
+const exploreLoading = ref(false)
+const exploreProgress = ref(null)
+const exploreResult = ref(null)
+const exploreTaskId = ref(null)
+const exploreStatusTimer = ref(null)
+const exploreForm = ref({
+  url: '',
+  username: '',
+  password: '',
+  user_goal: ''
+})
 
 // ─── API Calls ───────────────────────
 async function loadStats() {
@@ -513,6 +590,148 @@ async function initCollection(force = false) {
   }
 }
 
+// 页面探索
+function openExploreModal() {
+  exploreForm.value = {
+    url: '',
+    username: '',
+    password: '',
+    user_goal: ''
+  }
+  exploreProgress.value = null
+  exploreResult.value = null
+  exploreTaskId.value = null
+  // 清理之前的定时器
+  if (exploreStatusTimer.value) {
+    clearInterval(exploreStatusTimer.value)
+    exploreStatusTimer.value = null
+  }
+  showExplore.value = true
+}
+
+async function startExplore() {
+  if (!exploreForm.value.url) {
+    message.error('请输入目标 URL')
+    return
+  }
+
+  exploreLoading.value = true
+  exploreProgress.value = { status: '正在启动探索...', message: '正在启动浏览器' }
+  exploreResult.value = null
+  exploreTaskId.value = null
+
+  try {
+    const res = await knowledgeAPI.explorePage(
+      exploreForm.value.url,
+      exploreForm.value.username,
+      exploreForm.value.password,
+      exploreForm.value.user_goal
+    )
+
+    if (res.success !== false && res.data?.task_id) {
+      // 保存任务 ID
+      exploreTaskId.value = res.data.task_id
+      exploreProgress.value = { status: '正在探索页面...', message: '浏览器已启动，正在探索页面结构' }
+      
+      // 开始轮询任务状态
+      startStatusPolling(res.data.task_id)
+    } else {
+      message.error(res.message || '启动探索失败')
+      exploreProgress.value = { status: '启动失败', message: res.message || '未知错误' }
+      exploreLoading.value = false
+    }
+  } catch (e) {
+    console.error('启动探索失败', e)
+    message.error('启动页面探索失败')
+    exploreProgress.value = { status: '启动失败', message: e.message || '网络错误' }
+    exploreLoading.value = false
+  }
+}
+
+// 轮询任务状态
+function startStatusPolling(taskId) {
+  // 清理之前的定时器
+  if (exploreStatusTimer.value) {
+    clearInterval(exploreStatusTimer.value)
+  }
+  
+  // 每 2 秒查询一次状态
+  exploreStatusTimer.value = setInterval(async () => {
+    try {
+      const res = await knowledgeAPI.getExploreStatus(taskId)
+      
+      if (res.success && res.data) {
+        const status = res.data.status
+        
+        if (status === 'running') {
+          exploreProgress.value = { 
+            status: '正在探索...', 
+            message: '浏览器正在探索页面，请稍候...' 
+          }
+        } else if (status === 'completed') {
+          // 探索完成
+          clearInterval(exploreStatusTimer.value)
+          exploreStatusTimer.value = null
+          exploreLoading.value = false
+          exploreResult.value = res.data.result || {}
+          exploreProgress.value = null
+          message.success('页面探索完成')
+          
+          // 刷新列表
+          setTimeout(() => {
+            loadList()
+            loadStats()
+          }, 1000)
+        } else if (status === 'failed') {
+          // 探索失败
+          clearInterval(exploreStatusTimer.value)
+          exploreStatusTimer.value = null
+          exploreLoading.value = false
+          exploreProgress.value = { 
+            status: '探索失败', 
+            message: res.data.error || '未知错误' 
+          }
+          message.error('页面探索失败')
+        } else if (status === 'cancelled') {
+          // 已取消
+          clearInterval(exploreStatusTimer.value)
+          exploreStatusTimer.value = null
+          exploreLoading.value = false
+          exploreProgress.value = { 
+            status: '已取消', 
+            message: '探索任务已被用户中止' 
+          }
+          message.warning('探索任务已取消')
+        }
+      }
+    } catch (e) {
+      console.error('查询探索状态失败', e)
+    }
+  }, 2000)
+}
+
+// 停止探索
+async function stopExplore() {
+  if (!exploreTaskId.value) {
+    message.error('没有正在进行的探索任务')
+    return
+  }
+
+  try {
+    const res = await knowledgeAPI.stopExplore(exploreTaskId.value)
+    
+    if (res.success !== false) {
+      message.success('已发送停止信号')
+      exploreProgress.value = { status: '正在停止...', message: '正在中止探索任务' }
+    } else {
+      message.error(res.message || '停止失败')
+    }
+  } catch (e) {
+    console.error('停止探索失败', e)
+    message.error('停止探索失败')
+  }
+}
+
 // ─── Helpers ─────────────────────────
 function pageTypeTag(type) {
   const map = { form: 'info', list: 'success', detail: 'warning', dashboard: 'primary', login: 'error', mixed: 'default' }
@@ -523,5 +742,13 @@ function pageTypeTag(type) {
 onMounted(() => {
   loadStats()
   loadList()
+})
+
+// 清理定时器
+onUnmounted(() => {
+  if (exploreStatusTimer.value) {
+    clearInterval(exploreStatusTimer.value)
+    exploreStatusTimer.value = null
+  }
 })
 </script>

@@ -3,7 +3,7 @@ LLM 配置管理器模块
 
 从数据库获取当前激活的模型配置，提供统一的配置管理接口
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 版本: 1.0
 """
 import logging

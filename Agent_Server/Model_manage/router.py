@@ -3,7 +3,7 @@
 
 提供 LLM 模型的 CRUD 接口
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session

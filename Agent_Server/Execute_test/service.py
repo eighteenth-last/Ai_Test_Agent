@@ -3,7 +3,7 @@ Browser-Use 测试执行服务
 
 提供使用 browser-use 执行测试的核心功能
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 """
 import asyncio
 import json
@@ -192,7 +192,11 @@ class BrowserUseService:
         """
         chrome_process = None
         try:
-            from browser_use import BrowserSession
+            try:
+                from browser_use import BrowserSession
+            except ImportError:
+                # 兼容旧版本
+                from browser_use.browser import BrowserSession
             
             # 检测 Chrome 路径
             chrome_path = os.getenv('BROWSER_PATH', '').strip() or find_chrome_path()

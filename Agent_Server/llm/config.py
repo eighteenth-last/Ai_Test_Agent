@@ -3,7 +3,7 @@ LLM 模块配置
 
 包含 Provider 显示名称、默认端点、预定义模型列表等配置
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 版本: 1.0
 """
 from typing import Dict, List

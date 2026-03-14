@@ -30,12 +30,8 @@ from database.connection import (
 from llm.client import get_llm_client
 from llm.auto_switch import get_auto_switcher, classify_failure_reason
 from Api_request.prompts import (
-    ONECLICK_INTENT_ANALYSIS_SYSTEM,
-    ONECLICK_INTENT_ANALYSIS_USER_TEMPLATE,
     ONECLICK_INTENT_ANALYSIS_V2_SYSTEM,
     ONECLICK_INTENT_ANALYSIS_V2_USER_TEMPLATE,
-    ONECLICK_GENERATE_CASES_SYSTEM,
-    ONECLICK_GENERATE_CASES_USER_TEMPLATE,
     ONECLICK_GENERATE_CASES_V2_SYSTEM,
     ONECLICK_GENERATE_CASES_V2_USER_TEMPLATE,
     ONECLICK_EXPLORE_SYSTEM,
@@ -200,9 +196,15 @@ class OneClickService:
             query_text = f"{user_input} {intent.get('test_scope', '')} {intent.get('target_module', '')}"
             kb_hit = None
             try:
-                kb_hit = await PageKnowledgeService.lookup(
+                # 使用增强版知识库查询（带覆盖度计算）
+                required_modules = intent.get('required_modules', [])
+                scope_type = intent.get('scope_type', 'single_page')
+                
+                kb_hit = await PageKnowledgeService.lookup_with_coverage(
                     url=target_url,
                     query_text=query_text,
+                    user_required_modules=required_modules,
+                    scope_type=scope_type,
                 )
             except Exception as kb_err:
                 logger.warning(f"[OneClick] 知识库查询失败（不影响流程）: {kb_err}")
@@ -210,34 +212,91 @@ class OneClickService:
             page_data = {}
             page_capabilities = None
 
-            if kb_hit and kb_hit.get('hit') and not kb_hit.get('stale'):
-                # ━━ 知识库命中：跳过浏览器探索 ━━
+            # 判断是否为多模块测试
+            scope_type = intent.get('scope_type', 'single_page')
+            is_multi_module = scope_type == 'multi_module'
+
+            if kb_hit and kb_hit.get('hit'):
+                # ━━ 知识库命中：判断覆盖度是否足够 ━━
                 knowledge = kb_hit['knowledge']
                 src = kb_hit['source']
-                score = kb_hit.get('score', 0)
-                SessionManager.add_message(
-                    db, session, 'assistant',
-                    f'⚡ 知识库命中（{src}, 相似度 {score:.2f}），跳过浏览器探索'
-                )
-                page_capabilities = knowledge.to_dict() if isinstance(knowledge, PageKnowledge) else knowledge
-                page_data = page_capabilities
-                session.page_analysis = json.dumps(page_data, ensure_ascii=False)
-                session.page_capabilities = json.dumps(page_capabilities, ensure_ascii=False)
-                if not SessionManager.update_status(db, session, 'page_scanned'):
-                    return
-                db.commit()
-                logger.info(f"[OneClick] 知识库命中，跳过探索: {target_url}")
-            else:
-                # ━━ 未命中 / 已老化：执行浏览器探索 ━━
-                if kb_hit and kb_hit.get('stale'):
+                similarity_score = kb_hit.get('similarity_score', 0)
+                coverage_score = kb_hit.get('coverage_score', 0)
+                final_score = kb_hit.get('final_score', 0)
+                is_sufficient = kb_hit.get('is_sufficient', False)
+                covered_modules = kb_hit.get('covered_modules', [])
+                missing_modules = kb_hit.get('missing_modules', [])
+                kb_modules = kb_hit.get('kb_modules', [])
+                
+                # 判断是否使用知识库
+                if is_sufficient and not kb_hit.get('stale'):
+                    # 知识库足够满足需求 → 使用知识库
                     SessionManager.add_message(
                         db, session, 'assistant',
-                        '⏰ 知识库记录已老化，重新探索页面...'
+                        f'⚡ 知识库命中（{src}，相似度 {similarity_score:.2f}，覆盖度 {coverage_score:.0%}，综合得分 {final_score:.2f}），跳过浏览器探索'
                     )
+                    if covered_modules:
+                        SessionManager.add_message(
+                            db, session, 'assistant',
+                            f'✅ 已覆盖功能：{", ".join(covered_modules)}'
+                        )
+                    
+                    page_capabilities = knowledge.to_dict() if isinstance(knowledge, PageKnowledge) else knowledge
+                    page_data = page_capabilities
+                    session.page_analysis = json.dumps(page_data, ensure_ascii=False)
+                    session.page_capabilities = json.dumps(page_capabilities, ensure_ascii=False)
+                    if not SessionManager.update_status(db, session, 'page_scanned'):
+                        return
+                    db.commit()
+                    logger.info(f"[OneClick] 知识库足够，跳过探索: {target_url}")
+                else:
+                    # 知识库不足 → 继续探索
+                    if kb_hit.get('stale'):
+                        SessionManager.add_message(
+                            db, session, 'assistant',
+                            f'⏰ 知识库已老化（相似度 {similarity_score:.2f}，覆盖度 {coverage_score:.0%}），重新探索页面...'
+                        )
+                    else:
+                        SessionManager.add_message(
+                            db, session, 'assistant',
+                            f'⚠️ 知识库覆盖不足（相似度 {similarity_score:.2f}，覆盖度 {coverage_score:.0%}，综合得分 {final_score:.2f}），需要完整探索'
+                        )
+                        if kb_modules:
+                            SessionManager.add_message(
+                                db, session, 'assistant',
+                                f'📋 知识库已有功能：{", ".join(kb_modules)}'
+                            )
+                        else:
+                            SessionManager.add_message(
+                                db, session, 'assistant',
+                                f'📋 知识库为空或无相关功能'
+                            )
+                        if missing_modules:
+                            SessionManager.add_message(
+                                db, session, 'assistant',
+                                f'❌ 需要探索的功能：{", ".join(missing_modules)}'
+                            )
+                    # 重置 kb_hit，让后续逻辑执行探索
+                    kb_hit = None
+            
+            if not kb_hit or not kb_hit.get('hit') or not kb_hit.get('is_sufficient'):
+                # ━━ 未命中 / 已老化 / 覆盖不足：执行浏览器探索 ━━
 
-                explore_result = await OneClickService._explore_page(
-                    db, session, intent, env_info
-                )
+                # 根据环境变量选择探索模式
+                use_simple_explore = os.getenv("USE_SIMPLE_EXPLORE", "false").lower() == "true"
+                
+                if use_simple_explore:
+                    # 极简模式：目标驱动，自主探索，严格遵守用户范围
+                    logger.info(f"[OneClick] 使用极简探索模式")
+                    explore_result = await OneClickService._explore_page_simple(
+                        db, session, user_input, env_info
+                    )
+                else:
+                    # 原版模式：深度优先，全面探索
+                    logger.info(f"[OneClick] 使用原版探索模式")
+                    explore_result = await OneClickService._explore_page(
+                        db, session, intent, env_info
+                    )
 
                 if _is_cancelled():
                     logger.info(f"[OneClick] ⏹️ 后台任务已取消（探索后）: session_id={session_id}")
@@ -250,33 +309,47 @@ class OneClickService:
                         return
                     db.commit()
 
-                    sections = page_data.get("page_sections", [])
-                    actions = page_data.get("available_actions", [])
-                    SessionManager.add_message(
-                        db, session, 'assistant',
-                        f'✅ 页面探索完成！发现 {len(sections)} 个功能区域，'
-                        f'{len(actions)} 种可执行操作'
-                    )
+                    # 根据探索模式显示不同的消息
+                    if use_simple_explore:
+                        # 极简模式：显示探索到的功能数量
+                        explored_functions = page_data.get("explored_functions", [])
+                        SessionManager.add_message(
+                            db, session, 'assistant',
+                            f'✅ 页面探索完成！发现 {len(explored_functions)} 个功能模块'
+                        )
+                    else:
+                        # 原版模式：显示功能区域和操作数量
+                        sections = page_data.get("page_sections", [])
+                        actions = page_data.get("available_actions", [])
+                        SessionManager.add_message(
+                            db, session, 'assistant',
+                            f'✅ 页面探索完成！发现 {len(sections)} 个功能区域，'
+                            f'{len(actions)} 种可执行操作'
+                        )
 
                     if _is_cancelled():
                         return
 
-                    # 页面能力抽象
-                    SessionManager.add_message(db, session, 'assistant', '🧠 正在抽象页面能力特征...')
-                    page_capabilities = await OneClickService._abstract_page_capabilities(
-                        user_input, intent, page_data
-                    )
-                    if page_capabilities:
-                        session.page_capabilities = json.dumps(page_capabilities, ensure_ascii=False)
-                        db.commit()
-                        cap_summary = page_capabilities.get("summary", "")
-                        page_type = page_capabilities.get("page_type", "")
-                        SessionManager.add_message(
-                            db, session, 'assistant',
-                            f'✅ 页面能力识别完成：{cap_summary}（类型：{page_type}）'
+                    # 页面能力抽象（仅原版模式需要）
+                    if not use_simple_explore:
+                        SessionManager.add_message(db, session, 'assistant', '🧠 正在抽象页面能力特征...')
+                        page_capabilities = await OneClickService._abstract_page_capabilities(
+                            user_input, intent, page_data
                         )
+                        if page_capabilities:
+                            session.page_capabilities = json.dumps(page_capabilities, ensure_ascii=False)
+                            db.commit()
+                            cap_summary = page_capabilities.get("summary", "")
+                            page_type = page_capabilities.get("page_type", "")
+                            SessionManager.add_message(
+                                db, session, 'assistant',
+                                f'✅ 页面能力识别完成：{cap_summary}（类型：{page_type}）'
+                            )
+                    else:
+                        # 极简模式：直接使用 page_data 作为 capabilities
+                        page_capabilities = page_data
 
-                    # ━━ 存入知识库（版本检查 + 自动更新） ━━
+                    # ━━ 存入知识库（版本检查 + 自动更新）- 两种模式都执行 ━━
                     try:
                         caps_to_store = page_capabilities or page_data
                         kb_result = await PageKnowledgeService.check_and_update(
@@ -988,6 +1061,8 @@ class OneClickService:
             # 确保必要字段存在
             result.setdefault("target_module", user_input)
             result.setdefault("test_scope", user_input)
+            result.setdefault("scope_type", "single_page")
+            result.setdefault("required_modules", [])
             result.setdefault("keywords", user_input.split())
             result.setdefault("need_login", True)
             result.setdefault("test_type", "功能测试")
@@ -997,6 +1072,8 @@ class OneClickService:
             return {
                 "target_module": user_input,
                 "test_scope": user_input,
+                "scope_type": "single_page",
+                "required_modules": [],
                 "keywords": user_input.split(),
                 "need_login": True,
                 "test_type": "功能测试",
@@ -1070,6 +1147,374 @@ class OneClickService:
         return {"base_url": "", "_source": "未配置"}
 
     @staticmethod
+    async def _parse_user_scope(user_input: str, db: Session) -> Dict:
+        """
+        解析用户的测试范围
+        
+        返回：
+        {
+            "scope_type": "specific/all",  # 具体范围 or 所有功能
+            "requested_functions": ["课程选择", "章节学习"],  # 用户指定的功能
+            "scope_description": "测试课程选择和章节学习功能"  # 范围描述
+        }
+        """
+        llm = get_llm_client()
+        
+        prompt = f"""
+用户输入: {user_input}
+
+请分析用户的测试范围需求：
+
+1. 范围类型：
+   - specific: 用户明确指定了具体的功能（如："测试课程选择和章节学习"）
+   - all: 用户要求测试所有功能（如："测试所有功能"、"全面测试"）
+
+2. 具体功能列表：
+   - 如果是 specific，列出用户明确提到的功能
+   - 如果是 all，返回空列表
+
+3. 范围描述：
+   - 用一句话描述用户的测试范围
+
+返回 JSON 格式：
+{{
+    "scope_type": "specific/all",
+    "requested_functions": ["功能1", "功能2"],
+    "scope_description": "范围描述"
+}}
+
+示例：
+- 输入："测试课程选择、章节学习、自主练习"
+  输出：{{"scope_type": "specific", "requested_functions": ["课程选择", "章节学习", "自主练习"], "scope_description": "测试课程选择、章节学习、自主练习这3个功能"}}
+
+- 输入："测试所有功能"
+  输出：{{"scope_type": "all", "requested_functions": [], "scope_description": "测试系统的所有功能"}}
+
+- 输入："帮我测试学生端"
+  输出：{{"scope_type": "all", "requested_functions": [], "scope_description": "测试学生端的所有功能"}}
+"""
+        
+        try:
+            response = await llm.achat(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+                response_format={"type": "json_object"}
+            )
+            scope = llm.parse_json_response(response)
+            
+            # 验证和补充
+            scope.setdefault("scope_type", "all")
+            scope.setdefault("requested_functions", [])
+            scope.setdefault("scope_description", user_input)
+            
+            return scope
+        except Exception as e:
+            logger.warning(f"[OneClick] 范围解析失败: {e}")
+            return {
+                "scope_type": "all",
+                "requested_functions": [],
+                "scope_description": user_input
+            }
+
+    @staticmethod
+    async def _explore_page_simple(
+        db: Session, session: OneclickSession,
+        user_input: str, env_info: Dict
+    ) -> Dict:
+        """
+        极简版页面探索 - 目标驱动，自主探索，严格遵守范围
+        """
+        explore_browser = None
+        try:
+            from llm import get_active_browser_use_llm
+            try:
+                from browser_use import Agent, BrowserSession
+            except ImportError:
+                try:
+                    from browser_use import Agent
+                    from browser_use.browser import BrowserSession
+                except ImportError as e:
+                    logger.error(f"[OneClick] 无法导入 browser_use: {e}")
+                    return {
+                        "success": False,
+                        "message": f"browser_use 导入失败: {str(e)}，请检查 browser_use 版本"
+                    }
+            from Execute_test.service import find_chrome_path
+
+            # 1. 解析用户的测试范围
+            scope = await OneClickService._parse_user_scope(user_input, db)
+            logger.info(f"[OneClick] 测试范围: {scope}")
+            
+            SessionManager.add_message(db, session, 'assistant',
+                f"📋 测试范围: {scope['scope_description']}")
+            
+            # 2. 构建范围约束提示
+            if scope["scope_type"] == "specific":
+                scope_constraint = f"""
+【测试范围约束】
+用户只要求测试以下功能：{', '.join(scope['requested_functions'])}
+
+⚠️ 重要：
+- 只探索这些功能，不要探索其他功能
+- 探索完这些功能后立即返回结果
+- 不要自作主张扩大测试范围
+"""
+            else:
+                scope_constraint = """
+【测试范围】
+用户要求测试所有功能，请全面探索系统的所有功能模块。
+"""
+
+            headless = env_info.get("headless", False)
+            chrome_path = os.getenv('BROWSER_PATH', '').strip() or find_chrome_path()
+
+            explore_browser = BrowserSession(
+                headless=headless,
+                disable_security=os.getenv('DISABLE_SECURITY', 'false').lower() == 'true',
+                executable_path=chrome_path if chrome_path else None,
+                minimum_wait_page_load_time=1.0,
+                wait_between_actions=0.8,
+                keep_alive=True,
+            )
+
+            llm = get_active_browser_use_llm()
+            
+            # 3. 构建探索任务（使用统一的提示词模板）
+            target_url = env_info.get('base_url', '')
+            username = env_info.get('username', '')
+            password = env_info.get('password', '')
+            
+            # 构建登录指令
+            login_instruction = ""
+            login_steps = ""
+            if username and password:
+                login_instruction = f"登录账号: {username}\n登录密码: {password}"
+                login_steps = "2. 如果当前是登录页面，使用提供的账号密码完成登录，等待页面跳转\n"
+            else:
+                login_instruction = "未提供登录凭据（如需登录请在「测试环境」中配置账号密码）"
+                login_steps = "2. 如果需要登录，请观察登录页面结构并记录\n"
+            
+            task = ONECLICK_EXPLORE_TASK_TEMPLATE.format(
+                target_url=target_url,
+                login_instruction=login_instruction,
+                explore_target=user_input,
+                login_steps=login_steps,
+            )
+
+            # 4. 使用统一的系统提示词
+            agent = Agent(
+                task=task,
+                llm=llm,
+                browser_session=explore_browser,
+                use_vision=os.getenv("LLM_USE_VISION", "false").lower() == "true",
+                max_actions_per_step=int(os.getenv("MAX_ACTIONS", "10")),
+                extend_system_message=ONECLICK_EXPLORE_SYSTEM,
+            )
+
+            logger.info(f"[OneClick] 🌐 开始自主探索: {scope['scope_description']}")
+
+            # 5. 根据范围类型调整最大步骤数
+            if scope["scope_type"] == "specific":
+                # 具体范围：步骤数 = 功能数 × 10
+                max_steps = len(scope["requested_functions"]) * 10 + 10
+            else:
+                # 所有功能：使用默认步骤数
+                max_steps = int(os.getenv("EXPLORE_MAX_STEPS", "50"))
+            
+            logger.info(f"[OneClick] 最大步骤数: {max_steps}")
+            
+            history = await agent.run(max_steps=max_steps)
+
+            # 6. 解析结果
+            final_result = history.final_result() if hasattr(history, 'final_result') else ""
+            total_steps = len(history.history) if hasattr(history, 'history') else 0
+
+            logger.info(f"[OneClick] 🌐 自主探索完成，共 {total_steps} 步")
+
+            # 7. 解析 JSON 并验证范围合规性
+            if final_result:
+                try:
+                    llm_client = get_llm_client()
+                    exploration_result = llm_client.parse_json_response(final_result)
+                    
+                    # 验证范围合规性
+                    if scope["scope_type"] == "specific":
+                        explored = exploration_result.get("scope_compliance", {}).get("explored", [])
+                        requested = set(scope["requested_functions"])
+                        explored_set = set(explored)
+                        
+                        if not explored_set.issubset(requested):
+                            extra = explored_set - requested
+                            logger.warning(f"[OneClick] ⚠️ 探索超出范围: {extra}")
+                            SessionManager.add_message(db, session, 'assistant',
+                                f"⚠️ 注意：探索了用户未要求的功能: {', '.join(extra)}")
+                    
+                except Exception:
+                    exploration_result = {
+                        "explored_functions": [],
+                        "raw_output": final_result[:3000]
+                    }
+            else:
+                logger.warning(f"[OneClick] ⚠️ 探索未返回结果")
+                return {
+                    "success": False,
+                    "message": "探索未返回结果"
+                }
+
+            exploration_result["total_steps"] = total_steps
+            exploration_result["user_input"] = user_input
+            exploration_result["scope"] = scope
+
+            return {"success": True, "page_data": exploration_result}
+
+        except Exception as e:
+            logger.error(f"[OneClick] 探索失败: {e}\n{traceback.format_exc()}")
+            return {"success": False, "message": str(e)}
+        finally:
+            if explore_browser:
+                try:
+                    await explore_browser.kill()
+                    logger.info("[OneClick] 🌐 探索浏览器已关闭")
+                except Exception as e:
+                    logger.warning(f"[OneClick] ⚠️ 关闭浏览器异常: {e}")
+
+    @staticmethod
+    async def _explore_page_task_driven(
+        db: Session, session: OneclickSession,
+        user_input: str, env_info: Dict
+    ) -> Dict:
+        """
+        任务列表驱动的页面探索
+
+        流程：
+        1. 使用 TaskPlanner 生成任务列表
+        2. 使用 TaskExecutor 逐个执行任务
+        3. 每完成一个任务就标记完成，防止目标偏离
+        4. 返回探索结果
+        """
+        explore_browser = None
+        try:
+            from llm import get_active_browser_use_llm
+            try:
+                from browser_use import Agent, BrowserSession
+            except ImportError:
+                try:
+                    from browser_use import Agent
+                    from browser_use.browser import BrowserSession
+                except ImportError as e:
+                    logger.error(f"[OneClick] 无法导入 browser_use: {e}")
+                    return {
+                        "success": False,
+                        "message": f"browser_use 导入失败: {str(e)}，请检查 browser_use 版本"
+                    }
+            from Execute_test.service import find_chrome_path
+            from OneClick_Test.task_planner import TaskPlanner
+            from OneClick_Test.task_executor import TaskExecutor
+
+            # 1. 生成任务列表
+            logger.info(f"[OneClick] 📋 开始生成任务列表: {user_input}")
+            SessionManager.add_message(db, session, 'assistant',
+                f'📋 正在分析需求并生成任务列表...')
+
+            planner = TaskPlanner()
+            tasks = await planner.plan(
+                user_input=user_input,
+                env_info=env_info
+            )
+
+            if not tasks:
+                logger.warning(f"[OneClick] ⚠️ 任务列表为空")
+                return {
+                    "success": False,
+                    "message": "无法生成任务列表"
+                }
+
+            # 显示任务列表
+            task_list_text = planner.format_task_list(tasks)
+            logger.info(f"[OneClick] 📋 生成了 {len(tasks)} 个任务:\n{task_list_text}")
+            SessionManager.add_message(db, session, 'assistant',
+                f'📋 已生成 {len(tasks)} 个任务:\n{task_list_text}')
+
+            # 2. 创建浏览器会话
+            headless = env_info.get("headless", False)
+            chrome_path = os.getenv('BROWSER_PATH', '').strip() or find_chrome_path()
+
+            explore_browser = BrowserSession(
+                headless=headless,
+                disable_security=os.getenv('DISABLE_SECURITY', 'false').lower() == 'true',
+                executable_path=chrome_path if chrome_path else None,
+                minimum_wait_page_load_time=1.0,
+                wait_between_actions=0.8,
+                keep_alive=True,
+            )
+
+            # 3. 执行任务列表
+            logger.info(f"[OneClick] 🚀 开始执行任务列表")
+            SessionManager.add_message(db, session, 'assistant',
+                f'🚀 开始执行任务...')
+
+            executor = TaskExecutor()
+            max_steps_per_task = int(os.getenv("TASK_MAX_STEPS", "20"))
+
+            result = await executor.execute_tasks(
+                tasks=tasks,
+                browser_session=explore_browser,
+                max_steps_per_task=max_steps_per_task
+            )
+
+            # 4. 显示执行结果
+            completed_count = result['completed_count']
+            total_count = result['total_count']
+
+            if result['all_completed']:
+                logger.info(f"[OneClick] ✅ 所有任务完成 ({completed_count}/{total_count})")
+                SessionManager.add_message(db, session, 'assistant',
+                    f'✅ 所有任务完成 ({completed_count}/{total_count})')
+            else:
+                logger.warning(f"[OneClick] ⚠️ 部分任务未完成 ({completed_count}/{total_count})")
+                SessionManager.add_message(db, session, 'assistant',
+                    f'⚠️ 部分任务未完成 ({completed_count}/{total_count})')
+
+            # 更新任务状态显示
+            updated_task_list = planner.format_task_list(result['tasks'])
+            SessionManager.add_message(db, session, 'assistant',
+                f'📋 任务执行结果:\n{updated_task_list}')
+
+            # 5. 整理探索结果
+            exploration_result = {
+                "tasks": result['tasks'],
+                "task_results": result['results'],
+                "all_completed": result['all_completed'],
+                "completed_count": completed_count,
+                "total_count": total_count,
+                "user_input": user_input,
+                "explored_functions": [],  # 从任务结果中提取
+            }
+
+            # 从任务结果中提取探索的功能模块
+            for task_result in result['results']:
+                if task_result.get('status') == 'completed':
+                    task_name = task_result.get('task_name', '')
+                    exploration_result['explored_functions'].append(task_name)
+
+            return {
+                "success": result['all_completed'],
+                "page_data": exploration_result
+            }
+
+        except Exception as e:
+            logger.error(f"[OneClick] 任务驱动探索失败: {e}\n{traceback.format_exc()}")
+            return {"success": False, "message": str(e)}
+        finally:
+            if explore_browser:
+                try:
+                    await explore_browser.kill()
+                    logger.info("[OneClick] 🌐 探索浏览器已关闭")
+                except Exception as e:
+                    logger.warning(f"[OneClick] ⚠️ 关闭浏览器异常: {e}")
+
+
+    @staticmethod
     async def _explore_page(
         db: Session, session: OneclickSession,
         intent: Dict, env_info: Dict
@@ -1087,7 +1532,19 @@ class OneClickService:
         explore_browser = None
         try:
             from llm import get_active_browser_use_llm
-            from browser_use import Agent, BrowserSession
+            try:
+                from browser_use import Agent, BrowserSession
+            except ImportError:
+                # 兼容旧版本 browser_use
+                try:
+                    from browser_use import Agent
+                    from browser_use.browser import BrowserSession
+                except ImportError as e:
+                    logger.error(f"[OneClick] 无法导入 browser_use: {e}")
+                    return {
+                        "success": False,
+                        "message": f"browser_use 导入失败: {str(e)}，请检查 browser_use 版本"
+                    }
             from Execute_test.service import find_chrome_path
 
             headless = env_info.get("headless", False)
@@ -1103,7 +1560,9 @@ class OneClickService:
             )
 
             llm = get_active_browser_use_llm()
-            max_steps = int(os.getenv("EXPLORE_MAX_STEPS", "15"))
+            # 深度探索多个模块及其子功能时需要更多步骤
+            # 建议设置 EXPLORE_MAX_STEPS=50-80 以支持完整探索
+            max_steps = int(os.getenv("EXPLORE_MAX_STEPS", "50"))
 
             # 构建探索任务
             target_url = env_info.get("login_url") or env_info.get("base_url", "")
@@ -1123,15 +1582,13 @@ class OneClickService:
                 login_steps = "2. 如果需要登录，请观察登录页面结构并记录\n"
 
             nav_hints = intent.get("navigation_hints", [])
-            nav_hints_text = " → ".join(nav_hints) if nav_hints else "根据页面导航自行探索"
-
-            explore_target = intent.get("target_module", intent.get("test_scope", ""))
+            
+            explore_target = session.user_input or intent.get("target_module", intent.get("test_scope", ""))  # 使用用户原始输入作为探索目标
 
             task = ONECLICK_EXPLORE_TASK_TEMPLATE.format(
                 target_url=target_url,
                 login_instruction=login_instruction,
                 explore_target=explore_target,
-                navigation_hints=nav_hints_text,
                 login_steps=login_steps,
             )
 
@@ -1519,6 +1976,20 @@ class OneClickService:
         }
         test_env_text = json.dumps(test_env, ensure_ascii=False, indent=2)
 
+        # ━━ 检查探索结果中的模块数量 ━━
+        explored_modules = page_data.get("explored_modules", []) if page_data else []
+        explored_functions = page_data.get("explored_functions", []) if page_data else []
+        module_count = len(explored_modules) or len(explored_functions)
+        
+        if module_count > 1:
+            logger.info(f"[OneClick] 检测到多模块测试：共 {module_count} 个模块")
+            SessionManager.add_message(
+                db, session, 'assistant',
+                f'📋 检测到 {module_count} 个功能模块，将为每个模块生成测试用例'
+            )
+        else:
+            logger.info(f"[OneClick] 单页面测试：{module_count} 个模块")
+
         page_exploration_text = json.dumps(page_data or {}, ensure_ascii=False, indent=2)
         if len(page_exploration_text) > 7000:
             page_exploration_text = page_exploration_text[:7000] + "\n... (已截断)"
@@ -1569,6 +2040,21 @@ class OneClickService:
 
             cases = result.get("cases", [])
             summary = result.get("summary", "")
+
+            # ━━ 验证生成的用例是否覆盖所有模块 ━━
+            if module_count > 1:
+                case_modules = set(case.get("module", "") for case in cases)
+                logger.info(f"[OneClick] 生成的用例覆盖模块：{case_modules}")
+                
+                if len(case_modules) < module_count:
+                    logger.warning(
+                        f"[OneClick] ⚠️ 用例覆盖不足：探索了 {module_count} 个模块，"
+                        f"但只生成了 {len(case_modules)} 个模块的用例"
+                    )
+                    SessionManager.add_message(
+                        db, session, 'assistant',
+                        f'⚠️ 注意：探索了 {module_count} 个模块，但只生成了 {len(case_modules)} 个模块的用例'
+                    )
 
             # 保存到会话
             session.generated_cases = json.dumps(cases, ensure_ascii=False)
@@ -1804,7 +2290,11 @@ class OneClickService:
     @staticmethod
     async def _create_shared_browser(env_info: Dict):
         """创建共享的 BrowserSession（所有用例复用）"""
-        from browser_use import BrowserSession
+        try:
+            from browser_use import BrowserSession
+        except ImportError:
+            # 兼容旧版本
+            from browser_use.browser import BrowserSession
         from Execute_test.service import find_chrome_path
 
         headless = env_info.get("headless", False)

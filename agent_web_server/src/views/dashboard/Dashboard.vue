@@ -407,23 +407,104 @@ const loadSecurityCharts = async () => {
     // 扫描类型分布 - 环形图
     if (secScanTypeChartRef.value) {
       if (!secScanTypeChart) secScanTypeChart = echarts.init(secScanTypeChartRef.value)
-      const typeLabels = { web_scan: 'Web 扫描', api_attack: 'API 攻击', dependency_scan: '依赖扫描', baseline_check: '基线检测' }
-      const typeColors = { web_scan: '#5470c6', api_attack: '#ee6666', dependency_scan: '#91cc75', baseline_check: '#fac858' }
+      const typeLabels = { 
+        nuclei: 'Nuclei', 
+        sqlmap: 'SQLMap', 
+        xsstrike: 'XSStrike', 
+        fuzz: 'Fuzz',
+        full_scan: '全面扫描'
+      }
+      const typeDescriptions = {
+        nuclei: 'Nuclei 漏洞扫描',
+        sqlmap: 'SQLMap SQL注入',
+        xsstrike: 'XSStrike XSS检测',
+        fuzz: 'Fuzz 模糊测试',
+        full_scan: '全面安全扫描'
+      }
+      const typeColors = { 
+        nuclei: '#5470c6', 
+        sqlmap: '#ee6666', 
+        xsstrike: '#91cc75', 
+        fuzz: '#fac858',
+        full_scan: '#73c0de'
+      }
       const byType = data.by_type || {}
+      
+      // 计算总数
+      const total = Object.values(byType).reduce((sum, val) => sum + val, 0)
+      
+      // 过滤掉值为0的项
+      const chartData = Object.entries(byType)
+        .filter(([, val]) => val > 0)
+        .map(([key, val]) => ({
+          value: val, 
+          name: typeLabels[key] || key,
+          description: typeDescriptions[key] || key,
+          itemStyle: { 
+            color: typeColors[key] || '#73c0de'
+          }
+        }))
+      
       secScanTypeChart.setOption({
-        tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-        legend: { orient: 'vertical', right: '5%', top: 'middle' },
+        tooltip: { 
+          trigger: 'item',
+          formatter: (params) => {
+            const percent = ((params.value / total) * 100).toFixed(1)
+            return `<div style="padding: 8px;">
+              <div style="font-weight: bold; margin-bottom: 4px;">${params.data.description}</div>
+              <div style="color: #666;">扫描次数: <span style="color: ${params.color}; font-weight: bold;">${params.value}</span></div>
+              <div style="color: #666;">占比: <span style="color: ${params.color}; font-weight: bold;">${percent}%</span></div>
+            </div>`
+          },
+          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+          borderColor: '#ddd',
+          borderWidth: 1,
+          textStyle: { color: '#333' }
+        },
+        legend: { 
+          orient: 'vertical', 
+          right: '5%', 
+          top: 'middle',
+          itemGap: 12,
+          itemWidth: 14,
+          itemHeight: 14,
+          textStyle: {
+            fontSize: 13,
+            color: '#333'
+          },
+          formatter: (name) => {
+            const item = chartData.find(d => d.name === name)
+            return item ? `${name}  ${item.value}` : name
+          }
+        },
         series: [{
-          name: '扫描类型', type: 'pie', radius: ['40%', '70%'], center: ['35%', '50%'],
+          name: '扫描类型', 
+          type: 'pie', 
+          radius: ['40%', '70%'], 
+          center: ['35%', '50%'],
           avoidLabelOverlap: false,
-          itemStyle: { borderRadius: 10, borderColor: '#fff', borderWidth: 2 },
-          label: { show: false, position: 'center' },
-          emphasis: { label: { show: true, fontSize: 16, fontWeight: 'bold' } },
-          labelLine: { show: false },
-          data: Object.entries(byType).map(([key, val]) => ({
-            value: val, name: typeLabels[key] || key,
-            itemStyle: { color: typeColors[key] || '#73c0de' }
-          }))
+          itemStyle: { 
+            borderRadius: 10,
+            borderColor: '#fff',
+            borderWidth: 2
+          },
+          label: { 
+            show: false,
+            position: 'center'
+          },
+          emphasis: { 
+            label: { 
+              show: true, 
+              fontSize: 16, 
+              fontWeight: 'bold'
+            }
+          },
+          labelLine: { 
+            show: false
+          },
+          data: chartData.length > 0 ? chartData : [
+            { value: 1, name: '暂无数据', itemStyle: { color: '#e0e0e0' } }
+          ]
         }]
       })
       setTimeout(() => secScanTypeChart?.resize(), 100)

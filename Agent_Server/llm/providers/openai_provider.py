@@ -3,7 +3,7 @@ OpenAI Provider 实现
 
 支持 GPT-4、GPT-3.5、O1 等模型
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 """
 import os
 import logging

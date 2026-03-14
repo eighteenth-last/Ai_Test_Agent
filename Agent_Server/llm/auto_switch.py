@@ -7,7 +7,7 @@
 - 带冷却检测：失败的模型进入冷却期，冷却结束后自动恢复
 - Token 使用量统计和利用率追踪
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 版本: 2.0
 """
 import time

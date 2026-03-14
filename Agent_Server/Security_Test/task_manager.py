@@ -3,7 +3,7 @@
 
 负责任务的启动、进度更新、停止、超时控制
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 """
 import asyncio
 import logging

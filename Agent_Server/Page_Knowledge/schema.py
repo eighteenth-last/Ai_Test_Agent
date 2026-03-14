@@ -299,6 +299,34 @@ class PageKnowledge:
         except Exception:
             pass
 
+        # 处理 buttons：兼容字符串列表和字典列表
+        buttons_raw = capabilities.get("buttons", [])
+        buttons = []
+        for btn in buttons_raw:
+            if isinstance(btn, dict):
+                # 字典格式：提取 name 字段
+                buttons.append(btn.get("name", str(btn)))
+            elif isinstance(btn, str):
+                # 字符串格式：直接使用
+                buttons.append(btn)
+            else:
+                # 其他类型：转为字符串
+                buttons.append(str(btn))
+
+        # 处理 page_sections：兼容字符串列表和字典列表
+        sections_raw = capabilities.get("page_sections", [])
+        page_sections = []
+        for sec in sections_raw:
+            if isinstance(sec, dict):
+                # 字典格式：提取 section_name 或 name 字段
+                page_sections.append(sec.get("section_name", sec.get("name", str(sec))))
+            elif isinstance(sec, str):
+                # 字符串格式：直接使用
+                page_sections.append(sec)
+            else:
+                # 其他类型：转为字符串
+                page_sections.append(str(sec))
+
         pk = cls(
             url=url,
             page_title=capabilities.get("page_title", ""),
@@ -307,10 +335,10 @@ class PageKnowledge:
             description=capabilities.get("description", ""),
             forms=forms,
             tables=tables,
-            buttons=capabilities.get("buttons", []),
+            buttons=buttons,
             links=capabilities.get("links", []),
             dynamic_elements=capabilities.get("dynamic_elements", []),
-            page_sections=capabilities.get("page_sections", []),
+            page_sections=page_sections,
             auth_required=capabilities.get("auth_required", True),
             has_file_upload=capabilities.get("has_file_upload", False),
             has_export=capabilities.get("has_export", False),

@@ -3,7 +3,7 @@ LLM 工厂模块
 
 提供统一的 LLM 创建接口，根据 Provider 类型创建对应的实例
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 版本: 1.0
 """
 import logging

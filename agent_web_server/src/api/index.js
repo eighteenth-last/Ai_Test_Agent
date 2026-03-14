@@ -533,6 +533,18 @@ export const knowledgeAPI = {
   createCollection(force = false) {
     return api.post('/knowledge/collection-create', { force })
   },
+  // 页面探索专用接口
+  explorePage(url, username = '', password = '', user_goal = '') {
+    return api.post('/knowledge/explore-page', { url, username, password, user_goal })
+  },
+  // 停止页面探索
+  stopExplore(task_id) {
+    return api.post('/knowledge/stop-explore', { task_id })
+  },
+  // 查询探索任务状态
+  getExploreStatus(task_id) {
+    return api.get(`/knowledge/explore-status/${task_id}`)
+  }
 }
 
 // Skills - 技能管理

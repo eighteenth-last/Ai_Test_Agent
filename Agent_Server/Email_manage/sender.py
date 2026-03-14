@@ -9,7 +9,7 @@
     from Email_manage.sender import dispatch_send
     dispatch_send(email_config, to_email, subject, html_body)
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 """
 from __future__ import annotations
 from typing import TYPE_CHECKING

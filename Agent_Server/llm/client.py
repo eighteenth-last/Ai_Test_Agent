@@ -3,7 +3,7 @@ LLM 客户端模块
 
 提供与原有 LLMClient 兼容的接口，方便迁移
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 版本: 1.0
 """
 import json

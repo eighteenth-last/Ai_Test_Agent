@@ -1,7 +1,7 @@
 """
 安全测试数据模型
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 """
 from pydantic import BaseModel
 from typing import Optional, Dict, List, Any

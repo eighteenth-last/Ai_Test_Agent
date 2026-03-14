@@ -3,7 +3,7 @@
 
 用于支持任何兼容 OpenAI API 的模型服务
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 """
 import json
 import os

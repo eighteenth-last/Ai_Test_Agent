@@ -3,7 +3,7 @@ MiniMax Provider 实现
 
 支持 MiniMax 系列模型（abab6.5s、abab6.5、abab5.5s 等），兼容 OpenAI API
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 """
 import json
 import os

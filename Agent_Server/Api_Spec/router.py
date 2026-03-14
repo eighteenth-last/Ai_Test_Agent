@@ -3,7 +3,7 @@
 
 上传 Markdown 接口文件到 MinIO，解析并入库索引
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 """
 import hashlib
 import io

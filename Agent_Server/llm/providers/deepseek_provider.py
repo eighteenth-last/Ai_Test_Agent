@@ -4,7 +4,7 @@ DeepSeek Provider 实现
 支持 DeepSeek Chat 和 DeepSeek Reasoner（R1）模型
 特别处理 R1 模型的 reasoning_content 输出
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 """
 import json
 import os

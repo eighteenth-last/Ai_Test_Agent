@@ -3,7 +3,7 @@ Moonshot/Kimi Provider 实现
 
 支持月之暗面 Moonshot 系列模型，兼容 OpenAI API
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 """
 import json
 import os

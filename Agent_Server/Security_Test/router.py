@@ -8,7 +8,7 @@
 4. 漏洞管理 - 漏洞跟踪
 5. 仪表板 - 统计信息
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 """
 import asyncio
 import logging

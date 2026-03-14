@@ -57,7 +57,7 @@ LLM 模块
     >>> config = get_active_llm_config()
     >>> llm = get_active_langchain_llm()
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 版本: 1.0
 """
 

@@ -8,7 +8,7 @@
 4. 漏洞管理 - 漏洞记录和跟踪
 5. 报告系统 - 报告生成
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 """
 import asyncio
 import json

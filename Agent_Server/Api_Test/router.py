@@ -1,7 +1,7 @@
 """
 接口测试 API 路由
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 """
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel

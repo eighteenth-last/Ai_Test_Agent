@@ -8,7 +8,7 @@
 - 模型可能返回 {"thinking": "..."} 而非 {"action": [...]} 格式
 - 需要 dont_force_structured_output=True + add_schema_to_system_prompt=True
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 """
 import json
 import os

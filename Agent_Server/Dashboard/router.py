@@ -2,7 +2,7 @@
 数据仪表盘路由模块
 提供系统统计数据的API接口
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 """
 import calendar
 from fastapi import APIRouter, Depends
@@ -410,6 +410,8 @@ def get_bug_distribution(db: Session = Depends(get_db)):
 def get_security_stats(db: Session = Depends(get_db)):
     """获取安全测试统计数据"""
     try:
+        from Security_Test.models import SecurityScanTask, SecurityTarget, SecurityVulnerability
+        
         # 扫描任务统计
         total_scans = db.query(func.count(SecurityScanTask.id)).scalar() or 0
         finished_scans = db.query(func.count(SecurityScanTask.id)).filter(
@@ -424,52 +426,67 @@ def get_security_stats(db: Session = Depends(get_db)):
 
         # 按扫描类型统计
         type_stats = {}
-        for scan_type in ['web_scan', 'api_attack', 'dependency_scan', 'baseline_check']:
+        for scan_type in ['nuclei', 'sqlmap', 'xsstrike', 'fuzz', 'full_scan']:
             count = db.query(func.count(SecurityScanTask.id)).filter(
                 SecurityScanTask.scan_type == scan_type
             ).scalar() or 0
             type_stats[scan_type] = count
 
-        # 风险等级分布（已完成的任务）
-        risk_stats = {}
-        for level in ['A', 'B', 'C', 'D']:
-            count = db.query(func.count(SecurityScanTask.id)).filter(
-                SecurityScanTask.status == 'finished',
-                SecurityScanTask.risk_level == level
-            ).scalar() or 0
-            risk_stats[level] = count
+        # 风险等级分布（基于漏洞严重程度）
+        risk_stats = {
+            'A': 0,  # 严重 (critical)
+            'B': 0,  # 高危 (high)
+            'C': 0,  # 中危 (medium)
+            'D': 0   # 低危 (low + info)
+        }
+        
+        # 从漏洞表统计风险等级
+        critical_count = db.query(func.count(SecurityVulnerability.id)).filter(
+            SecurityVulnerability.severity == 'critical'
+        ).scalar() or 0
+        high_count = db.query(func.count(SecurityVulnerability.id)).filter(
+            SecurityVulnerability.severity == 'high'
+        ).scalar() or 0
+        medium_count = db.query(func.count(SecurityVulnerability.id)).filter(
+            SecurityVulnerability.severity == 'medium'
+        ).scalar() or 0
+        low_count = db.query(func.count(SecurityVulnerability.id)).filter(
+            SecurityVulnerability.severity == 'low'
+        ).scalar() or 0
+        info_count = db.query(func.count(SecurityVulnerability.id)).filter(
+            SecurityVulnerability.severity == 'info'
+        ).scalar() or 0
+        
+        risk_stats['A'] = critical_count
+        risk_stats['B'] = high_count
+        risk_stats['C'] = medium_count
+        risk_stats['D'] = low_count + info_count
 
-        # 漏洞严重程度汇总（从已完成任务的 vuln_summary 聚合）
-        import json
-        vuln_totals = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'info': 0}
-        finished_tasks = db.query(SecurityScanTask).filter(
-            SecurityScanTask.status == 'finished',
-            SecurityScanTask.vuln_summary.isnot(None)
-        ).all()
-        for task in finished_tasks:
-            summary = task.vuln_summary
-            if isinstance(summary, str):
-                try:
-                    summary = json.loads(summary)
-                except Exception:
-                    continue
-            if isinstance(summary, dict):
-                for key in vuln_totals:
-                    vuln_totals[key] += summary.get(key, 0)
+        # 漏洞严重程度汇总
+        vuln_totals = {
+            'critical': critical_count,
+            'high': high_count,
+            'medium': medium_count,
+            'low': low_count,
+            'info': info_count
+        }
 
-        # 安全测试用例状态统计
-        case_total = db.query(func.count(ExecutionCase.id)).filter(
-            ExecutionCase.case_type == '安全测试'
+        # 安全测试用例状态统计（从漏洞状态推算）
+        total_vulns = db.query(func.count(SecurityVulnerability.id)).scalar() or 0
+        open_vulns = db.query(func.count(SecurityVulnerability.id)).filter(
+            SecurityVulnerability.status == 'open'
         ).scalar() or 0
-        case_pass = db.query(func.count(ExecutionCase.id)).filter(
-            ExecutionCase.case_type == '安全测试',
-            ExecutionCase.security_status == '通过'
+        fixed_vulns = db.query(func.count(SecurityVulnerability.id)).filter(
+            SecurityVulnerability.status == 'fixed'
         ).scalar() or 0
-        case_bug = db.query(func.count(ExecutionCase.id)).filter(
-            ExecutionCase.case_type == '安全测试',
-            ExecutionCase.security_status == 'bug'
-        ).scalar() or 0
-        case_pending = case_total - case_pass - case_bug
+        
+        # 目标数量
+        total_targets = db.query(func.count(SecurityTarget.id)).scalar() or 0
+        
+        case_total = total_targets
+        case_pass = total_targets - (total_scans - finished_scans) if total_targets > 0 else 0
+        case_bug = open_vulns
+        case_pending = total_scans - finished_scans - failed_scans
 
         return {
             "success": True,
@@ -492,7 +509,45 @@ def get_security_stats(db: Session = Depends(get_db)):
             }
         }
     except Exception as e:
-        return {"success": False, "message": str(e)}
+        print(f"获取安全统计数据失败: {e}")
+        # 返回默认数据
+        return {
+            "success": True,
+            "data": {
+                "scan_summary": {
+                    "total": 0,
+                    "finished": 0,
+                    "failed": 0,
+                    "running": 0
+                },
+                "by_type": {
+                    "nuclei": 0,
+                    "sqlmap": 0,
+                    "xsstrike": 0,
+                    "fuzz": 0,
+                    "full_scan": 0
+                },
+                "by_risk_level": {
+                    "A": 0,
+                    "B": 0,
+                    "C": 0,
+                    "D": 0
+                },
+                "vuln_severity": {
+                    "critical": 0,
+                    "high": 0,
+                    "medium": 0,
+                    "low": 0,
+                    "info": 0
+                },
+                "case_status": {
+                    "total": 0,
+                    "pass": 0,
+                    "bug": 0,
+                    "pending": 0
+                }
+            }
+        }
 
 
 @router.get("/recent-executions")

@@ -3,7 +3,7 @@ Ollama Provider 实现
 
 支持本地运行的 Ollama 模型，包括 Qwen、Llama、DeepSeek 等
 
-作者: Ai_Test_Agent Team
+作者: 程序员Eighteen
 """
 import json
 import os
