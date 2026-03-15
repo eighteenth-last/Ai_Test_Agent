@@ -484,7 +484,7 @@ async def _background_explore_task(
     env_info: Dict,
     cancel_event: asyncio.Event,
 ):
-    """后台执行探索任务"""
+    """后台执行探索任务 - 使用精准探索模式"""
     from database.connection import SessionLocal
     from OneClick_Test.service import OneClickService
     
@@ -496,10 +496,11 @@ async def _background_explore_task(
             _explore_tasks[task_id]["status"] = "failed"
             return
         
-        # 执行页面探索
-        logger.info(f"[PageKB API] 开始探索页面: {req.url}")
-        explore_result = await OneClickService._explore_page(
-            db, temp_session, intent, env_info
+        # 使用精准探索模式（OpenClaw 风格）
+        logger.info(f"[PageKB API] 开始精准探索页面: {req.url}")
+        
+        explore_result = await OneClickService._explore_page_with_precision(
+            db, temp_session, req.user_goal or f"探索页面: {req.url}", env_info
         )
         
         # 检查是否被取消
@@ -519,14 +520,8 @@ async def _background_explore_task(
         
         page_data = explore_result.get("page_data", {})
         
-        # 页面能力抽象
-        logger.info(f"[PageKB API] 正在抽象页面能力...")
-        page_capabilities = await OneClickService._abstract_page_capabilities(
-            req.user_goal or "页面探索", intent, page_data
-        )
-        
-        if not page_capabilities:
-            page_capabilities = page_data
+        # 精准模式：直接使用 page_data 作为 capabilities
+        page_capabilities = page_data
         
         # 检查是否被取消
         if cancel_event.is_set():
@@ -557,13 +552,14 @@ async def _background_explore_task(
             "page_data": page_data,
             "capabilities": page_capabilities,
             "diff": diff.to_dict() if diff else None,
+            "explore_mode": "precision",  # 固定使用精准模式
         }
         
         # 清理临时会话
         db.delete(temp_session)
         db.commit()
         
-        logger.info(f"[PageKB API] 探索完成: {task_id}")
+        logger.info(f"[PageKB API] 精准探索完成: {task_id}")
         
     except Exception as e:
         logger.error(f"[PageKB API] 后台探索任务失败: {e}")

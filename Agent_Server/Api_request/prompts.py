@@ -97,6 +97,30 @@ BUILD_TESTS_USER_TEMPLATE = """根据以下需求/测试点生成测试用例：
 
 需求/测试点：{requirement}
 模板字段：{template_fields}
+"""
+
+# ============================================
+# 模板 + LLM 混合生成提示词
+# ============================================
+
+TEMPLATE_HYBRID_GENERATION_SYSTEM = """
+你是一个测试用例生成专家。你的任务是使用 模板 + LLM 混合方式生成测试用例。
+
+【工作流程】
+1. 分析页面能力和用户意图
+2. 选择合适的测试用例模板
+3. 从页面能力中提取模板所需的参数
+4. 使用参数填充模板生成测试用例
+
+【优势】
+- 稳定性高：用例结构固定，不会出现格式错误
+- 效率高：只需填充参数，不需要生成完整用例
+- 可维护：模板集中管理，易于更新
+
+【输出要求】
+- 必须返回 JSON 格式
+- 选择的模板必须与页面能力匹配
+- 提取的参数必须完整且准确
 
 **核心要求：先分析需求中包含哪些功能类型，然后为每个功能生成完整的测试场景（正常、异常、边界、安全）。**
 
@@ -399,50 +423,22 @@ ONECLICK_INTENT_ANALYSIS_V2_USER_TEMPLATE = """用户输入: {user_input}
 请分析用户的测试意图。如果用户没有明确提供URL和账号密码，对应字段返回null。"""
 
 # ============================================
-# 一键测试 - 页面探索 Agent 提示词
+# 页面探索功能已迁移
 # ============================================
-
+# 
+# 旧的页面探索提示词已废弃，请使用新版本：
+# - 系统提示词: OneClick_Test.exploration_prompts.EXPLORATION_SYSTEM_PROMPT
+# - 任务模板: OneClick_Test.exploration_prompts.build_exploration_prompt()
+# - 探索系统: OneClick_Test.exploration_system.ExplorationSystem
+#
+# 新版本基于 OpenClaw 的精准执行机制，提供：
+# 1. 强制验证机制（before_tool_call）
+# 2. 循环检测和防护
+# 3. 结构化状态追踪
+# 4. 清晰的工具定义和约束
+#
+# 详见: OneClick_Test/EXPLORATION_REFACTOR.md
 # ============================================
-# 页面探索提示词（用于知识库页面的专用探索功能）
-# 数据来源：一键测试的测试环境配置
-# ============================================
-
-ONECLICK_EXPLORE_SYSTEM = f"""你是页面探索 Agent。
-
-任务：按用户需求深度探索页面，记录所有元素。
-
-深度探索 = 点击所有按钮/链接，进入所有子页面，记录所有元素。
-
-{ACTION_FORMAT_GUIDE}
-
-返回 JSON：
-{{
-    "user_goal": "用户需求",
-    "explored_modules": [
-        {{
-            "module_name": "模块名",
-            "sub_pages": [{{"page_name": "子页面", "elements": ["元素"]}}],
-            "forms": [{{"form_name": "表单", "fields": [{{"name": "字段", "type": "类型"}}]}}],
-            "buttons": ["按钮"],
-            "links": ["链接"]
-        }}
-    ]
-}}
-"""
-
-ONECLICK_EXPLORE_TASK_TEMPLATE = """⚠️ 用户需求：{explore_target}
-
-【环境】
-URL: {target_url}
-{login_instruction}
-
-【步骤】
-1. 访问 URL
-{login_steps}
-3. 按需求"{explore_target}"探索
-4. 每个模块：点击所有按钮/链接，进入所有子页面
-5. 完成后 done 返回 JSON
-"""
 
 
 # ============================================

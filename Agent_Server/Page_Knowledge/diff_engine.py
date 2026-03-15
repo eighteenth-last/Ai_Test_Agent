@@ -227,8 +227,23 @@ class DiffEngine:
     @staticmethod
     def _diff_buttons(old: PageKnowledge, new: PageKnowledge, result: DiffResult):
         """对比按钮"""
-        old_set = set(old.buttons)
-        new_set = set(new.buttons)
+        # 处理 buttons 可能包含 dict 的情况（兼容旧数据）
+        def normalize_buttons(buttons):
+            normalized = []
+            for btn in buttons:
+                if isinstance(btn, dict):
+                    normalized.append(btn.get("name", str(btn)))
+                elif isinstance(btn, str):
+                    normalized.append(btn)
+                else:
+                    normalized.append(str(btn))
+            return normalized
+        
+        old_buttons = normalize_buttons(old.buttons)
+        new_buttons = normalize_buttons(new.buttons)
+        
+        old_set = set(old_buttons)
+        new_set = set(new_buttons)
 
         for b in new_set - old_set:
             result.add_change(ChangeType.BUTTON_ADDED, f"新增按钮: {b}", {"button": b})

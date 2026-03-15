@@ -301,6 +301,15 @@
     <!-- 页面探索 Modal -->
     <n-modal v-model:show="showExplore" preset="card" title="页面探索" style="width: 600px; max-width: 95vw">
       <n-form :model="exploreForm" label-placement="left" label-width="100" size="small" class="space-y-3">
+        <n-form-item label="测试环境">
+          <n-select 
+            v-model:value="selectedEnvId" 
+            :options="envOptions" 
+            placeholder="选择已配置的测试环境（可选）"
+            clearable
+            @update:value="onEnvSelect"
+          />
+        </n-form-item>
         <n-form-item label="目标 URL" required>
           <n-input v-model:value="exploreForm.url" placeholder="https://example.com/page" />
         </n-form-item>
@@ -431,6 +440,11 @@ const exploreForm = ref({
   password: '',
   user_goal: ''
 })
+
+// 测试环境相关
+const selectedEnvId = ref(null)
+const envList = ref([])
+const envOptions = ref([])
 
 // ─── API Calls ───────────────────────
 async function loadStats() {
@@ -591,13 +605,14 @@ async function initCollection(force = false) {
 }
 
 // 页面探索
-function openExploreModal() {
+async function openExploreModal() {
   exploreForm.value = {
     url: '',
     username: '',
     password: '',
     user_goal: ''
   }
+  selectedEnvId.value = null
   exploreProgress.value = null
   exploreResult.value = null
   exploreTaskId.value = null
@@ -606,7 +621,46 @@ function openExploreModal() {
     clearInterval(exploreStatusTimer.value)
     exploreStatusTimer.value = null
   }
+  // 加载测试环境列表
+  await loadEnvList()
   showExplore.value = true
+}
+
+// 加载测试环境列表
+async function loadEnvList() {
+  try {
+    const res = await knowledgeAPI.getTestEnvList()
+    if (res.success !== false) {
+      envList.value = res.data || []
+      // 构建下拉选项
+      envOptions.value = envList.value.map(env => ({
+        label: `${env.name}${env.is_default ? ' (默认)' : ''}`,
+        value: env.id
+      }))
+      // 自动选择默认环境
+      const defaultEnv = envList.value.find(e => e.is_default === 1)
+      if (defaultEnv) {
+        selectedEnvId.value = defaultEnv.id
+        onEnvSelect(defaultEnv.id)
+      }
+    }
+  } catch (e) {
+    console.error('加载测试环境失败', e)
+  }
+}
+
+// 选择测试环境时自动填充表单
+function onEnvSelect(envId) {
+  if (!envId) {
+    // 清空选择
+    return
+  }
+  const env = envList.value.find(e => e.id === envId)
+  if (env) {
+    exploreForm.value.url = env.base_url || env.login_url || ''
+    exploreForm.value.username = env.username || ''
+    exploreForm.value.password = env.password || ''
+  }
 }
 
 async function startExplore() {

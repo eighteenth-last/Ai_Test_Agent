@@ -544,6 +544,10 @@ export const knowledgeAPI = {
   // 查询探索任务状态
   getExploreStatus(task_id) {
     return api.get(`/knowledge/explore-status/${task_id}`)
+  },
+  // 获取测试环境列表（用于页面探索）
+  getTestEnvList() {
+    return api.get('/test-env/list')
   }
 }
 
