@@ -23,7 +23,7 @@ class TaskStatus(Enum):
 
 class TaskManager:
     """任务管理器"""
-    
+
     _instance = None
     _lock = threading.Lock()
     
