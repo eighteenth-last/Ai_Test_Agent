@@ -132,24 +132,205 @@ const routes = [
     component: () => import('@/views/report/MixedReport.vue'),
     meta: { title: '综合测试报告', menu: 'report' }
   },
-  // 禅道集成模块
+  // 企业项目管理模块 - 总控制台
   {
-    path: '/zentao/config',
-    name: 'ZentaoConfig',
-    component: () => import('@/views/zentao/ZentaoConfig.vue'),
-    meta: { title: '禅道配置', menu: 'zentao' }
+    path: '/project/control',
+    name: 'ProjectControl',
+    component: () => import('@/views/project/PlatformControl.vue'),
+    meta: { title: '项目管理平台总控制台', menu: 'project' }
   },
+  // 企业项目管理模块 - 禅道（只保留用例导入和Bug推送）
   {
-    path: '/zentao/cases',
+    path: '/project/zentao/cases',
     name: 'ZentaoCases',
     component: () => import('@/views/zentao/ZentaoCases.vue'),
-    meta: { title: '用例导入', menu: 'zentao' }
+    meta: { title: '禅道用例导入', menu: 'project' }
+  },
+  {
+    path: '/project/zentao/bugs',
+    name: 'ZentaoBugs',
+    component: () => import('@/views/zentao/ZentaoBugs.vue'),
+    meta: { title: '禅道Bug推送与同步', menu: 'project' }
+  },
+  // 企业项目管理模块 - PingCode
+  {
+    path: '/project/pingcode/config',
+    name: 'PingCodeConfig',
+    component: () => import('@/views/project/PingCodeConfig.vue'),
+    meta: { title: 'PingCode配置', menu: 'project' }
+  },
+  {
+    path: '/project/pingcode/cases',
+    name: 'PingCodeCases',
+    component: () => import('@/views/project/PingCodeCases.vue'),
+    meta: { title: 'PingCode用例导入', menu: 'project' }
+  },
+  {
+    path: '/project/pingcode/bugs',
+    name: 'PingCodeBugs',
+    component: () => import('@/views/project/PingCodeBugs.vue'),
+    meta: { title: 'PingCode Bug推送与同步', menu: 'project' }
+  },
+  // 企业项目管理模块 - Worktile
+  {
+    path: '/project/worktile/config',
+    name: 'WorktileConfig',
+    component: () => import('@/views/project/WorktileConfig.vue'),
+    meta: { title: 'Worktile配置', menu: 'project' }
+  },
+  {
+    path: '/project/worktile/cases',
+    name: 'WorktileCases',
+    component: () => import('@/views/project/WorktileCases.vue'),
+    meta: { title: 'Worktile用例导入', menu: 'project' }
+  },
+  {
+    path: '/project/worktile/bugs',
+    name: 'WorktileBugs',
+    component: () => import('@/views/project/WorktileBugs.vue'),
+    meta: { title: 'Worktile Bug推送与同步', menu: 'project' }
+  },
+  // 企业项目管理模块 - ONES
+  {
+    path: '/project/ones/config',
+    name: 'OnesConfig',
+    component: () => import('@/views/project/OnesConfig.vue'),
+    meta: { title: 'ONES配置', menu: 'project' }
+  },
+  {
+    path: '/project/ones/cases',
+    name: 'OnesCases',
+    component: () => import('@/views/project/OnesCases.vue'),
+    meta: { title: 'ONES用例导入', menu: 'project' }
+  },
+  {
+    path: '/project/ones/bugs',
+    name: 'OnesBugs',
+    component: () => import('@/views/project/OnesBugs.vue'),
+    meta: { title: 'ONES Bug推送与同步', menu: 'project' }
+  },
+  // 企业项目管理模块 - 云效
+  {
+    path: '/project/yunxiao/config',
+    name: 'YunxiaoConfig',
+    component: () => import('@/views/project/YunxiaoConfig.vue'),
+    meta: { title: '云效配置', menu: 'project' }
+  },
+  {
+    path: '/project/yunxiao/cases',
+    name: 'YunxiaoCases',
+    component: () => import('@/views/project/YunxiaoCases.vue'),
+    meta: { title: '云效用例导入', menu: 'project' }
+  },
+  {
+    path: '/project/yunxiao/bugs',
+    name: 'YunxiaoBugs',
+    component: () => import('@/views/project/YunxiaoBugs.vue'),
+    meta: { title: '云效Bug推送与同步', menu: 'project' }
+  },
+  // 企业项目管理模块 - TAPD
+  {
+    path: '/project/tapd/config',
+    name: 'TapdConfig',
+    component: () => import('@/views/project/TapdConfig.vue'),
+    meta: { title: 'TAPD配置', menu: 'project' }
+  },
+  {
+    path: '/project/tapd/cases',
+    name: 'TapdCases',
+    component: () => import('@/views/project/TapdCases.vue'),
+    meta: { title: 'TAPD用例导入', menu: 'project' }
+  },
+  {
+    path: '/project/tapd/bugs',
+    name: 'TapdBugs',
+    component: () => import('@/views/project/TapdBugs.vue'),
+    meta: { title: 'TAPD Bug推送与同步', menu: 'project' }
+  },
+  // 企业项目管理模块 - 8Manage PM
+  {
+    path: '/project/8manage/config',
+    name: '8ManageConfig',
+    component: () => import('@/views/project/8ManageConfig.vue'),
+    meta: { title: '8Manage配置', menu: 'project' }
+  },
+  {
+    path: '/project/8manage/cases',
+    name: '8ManageCases',
+    component: () => import('@/views/project/8ManageCases.vue'),
+    meta: { title: '8Manage用例导入', menu: 'project' }
+  },
+  {
+    path: '/project/8manage/bugs',
+    name: '8ManageBugs',
+    component: () => import('@/views/project/8ManageBugs.vue'),
+    meta: { title: '8Manage Bug推送与同步', menu: 'project' }
+  },
+  // 企业项目管理模块 - Microsoft Project
+  {
+    path: '/project/msproject/config',
+    name: 'MsProjectConfig',
+    component: () => import('@/views/project/MsProjectConfig.vue'),
+    meta: { title: 'Microsoft Project配置', menu: 'project' }
+  },
+  {
+    path: '/project/msproject/cases',
+    name: 'MsProjectCases',
+    component: () => import('@/views/project/MsProjectCases.vue'),
+    meta: { title: 'Microsoft Project用例导入', menu: 'project' }
+  },
+  {
+    path: '/project/msproject/bugs',
+    name: 'MsProjectBugs',
+    component: () => import('@/views/project/MsProjectBugs.vue'),
+    meta: { title: 'Microsoft Project Bug推送与同步', menu: 'project' }
+  },
+  // 企业项目管理模块 - Asana
+  {
+    path: '/project/asana/config',
+    name: 'AsanaConfig',
+    component: () => import('@/views/project/AsanaConfig.vue'),
+    meta: { title: 'Asana配置', menu: 'project' }
+  },
+  {
+    path: '/project/asana/cases',
+    name: 'AsanaCases',
+    component: () => import('@/views/project/AsanaCases.vue'),
+    meta: { title: 'Asana用例导入', menu: 'project' }
+  },
+  {
+    path: '/project/asana/bugs',
+    name: 'AsanaBugs',
+    component: () => import('@/views/project/AsanaBugs.vue'),
+    meta: { title: 'Asana Bug推送与同步', menu: 'project' }
+  },
+  // 企业项目管理模块 - ClickUp
+  {
+    path: '/project/clickup/config',
+    name: 'ClickUpConfig',
+    component: () => import('@/views/project/ClickUpConfig.vue'),
+    meta: { title: 'ClickUp配置', menu: 'project' }
+  },
+  {
+    path: '/project/clickup/cases',
+    name: 'ClickUpCases',
+    component: () => import('@/views/project/ClickUpCases.vue'),
+    meta: { title: 'ClickUp用例导入', menu: 'project' }
+  },
+  {
+    path: '/project/clickup/bugs',
+    name: 'ClickUpBugs',
+    component: () => import('@/views/project/ClickUpBugs.vue'),
+    meta: { title: 'ClickUp Bug推送与同步', menu: 'project' }
+  },
+  // 兼容旧路由（重定向到新路由）
+  {
+    path: '/zentao/cases',
+    redirect: '/project/zentao/cases'
   },
   {
     path: '/zentao/bugs',
-    name: 'ZentaoBugs',
-    component: () => import('@/views/zentao/ZentaoBugs.vue'),
-    meta: { title: 'Bug推送与同步', menu: 'zentao' }
+    redirect: '/project/zentao/bugs'
   }
 ]
 

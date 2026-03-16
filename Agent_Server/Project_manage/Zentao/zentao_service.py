@@ -1,104 +1,36 @@
 """
-禅道集成 - 服务层
+禅道集成 - 服务层（已迁移到 Project_manage 模块）
 
-配置管理、Bug 推送 / 同步、用例导入。
+Bug 推送 / 同步、用例导入。
+配置管理已统一到 ProjectPlatformConfig 表。
 """
 import logging
 from typing import Optional
 from sqlalchemy.orm import Session
-from database.connection import ZentaoConfig, BugReport, ExecutionCase
-from Zentao_manage.client import ZentaoClient
+from database.connection import ProjectPlatformConfig, BugReport, ExecutionCase
+from Project_manage.zentao_client import ZentaoClient
 
 logger = logging.getLogger(__name__)
 
 
 # =====================================================================
-# 辅助：从数据库获取激活的禅道配置并创建客户端
+# 辅助：从数据库获取禅道配置并创建客户端
 # =====================================================================
 
-def _get_active_config(db: Session) -> Optional[ZentaoConfig]:
-    return db.query(ZentaoConfig).filter(ZentaoConfig.is_active == 1).first()
+def _get_zentao_config(db: Session) -> Optional[ProjectPlatformConfig]:
+    """获取已激活的禅道配置"""
+    return db.query(ProjectPlatformConfig).filter(
+        ProjectPlatformConfig.platform_id == 'zentao',
+        ProjectPlatformConfig.is_active == 1
+    ).first()
 
 
-def _build_client(cfg: ZentaoConfig) -> ZentaoClient:
+def _build_client(cfg: ProjectPlatformConfig) -> ZentaoClient:
     return ZentaoClient(
         base_url=cfg.base_url,
         account=cfg.account,
         password=cfg.password,
     )
-
-
-# =====================================================================
-# 1. 配置管理 CRUD
-# =====================================================================
-
-class ZentaoConfigService:
-
-    @staticmethod
-    def list_configs(db: Session) -> list[dict]:
-        rows = db.query(ZentaoConfig).order_by(ZentaoConfig.id.desc()).all()
-        return [ZentaoConfigService._to_dict(r) for r in rows]
-
-    @staticmethod
-    def get_active(db: Session) -> Optional[dict]:
-        cfg = _get_active_config(db)
-        return ZentaoConfigService._to_dict(cfg) if cfg else None
-
-    @staticmethod
-    def create(db: Session, data: dict) -> dict:
-        cfg = ZentaoConfig(**{k: v for k, v in data.items()
-                              if hasattr(ZentaoConfig, k)})
-        db.add(cfg)
-        db.commit()
-        db.refresh(cfg)
-        return ZentaoConfigService._to_dict(cfg)
-
-    @staticmethod
-    def update(db: Session, config_id: int, data: dict) -> dict:
-        cfg = db.query(ZentaoConfig).filter(ZentaoConfig.id == config_id).first()
-        if not cfg:
-            raise ValueError("配置不存在")
-        for k, v in data.items():
-            if hasattr(cfg, k) and k not in ("id", "created_at"):
-                setattr(cfg, k, v)
-        db.commit()
-        db.refresh(cfg)
-        return ZentaoConfigService._to_dict(cfg)
-
-    @staticmethod
-    def delete(db: Session, config_id: int):
-        cfg = db.query(ZentaoConfig).filter(ZentaoConfig.id == config_id).first()
-        if not cfg:
-            raise ValueError("配置不存在")
-        db.delete(cfg)
-        db.commit()
-
-    @staticmethod
-    def activate(db: Session, config_id: int) -> dict:
-        """激活指定配置，同时取消其他配置的激活"""
-        db.query(ZentaoConfig).update({ZentaoConfig.is_active: 0})
-        cfg = db.query(ZentaoConfig).filter(ZentaoConfig.id == config_id).first()
-        if not cfg:
-            raise ValueError("配置不存在")
-        cfg.is_active = 1
-        db.commit()
-        db.refresh(cfg)
-        return ZentaoConfigService._to_dict(cfg)
-
-    @staticmethod
-    def _to_dict(cfg: ZentaoConfig) -> dict:
-        return {
-            "id": cfg.id,
-            "config_name": cfg.config_name,
-            "base_url": cfg.base_url,
-            "account": cfg.account,
-            "default_product_id": cfg.default_product_id,
-            "api_version": cfg.api_version,
-            "is_active": cfg.is_active,
-            "description": cfg.description,
-            "created_at": cfg.created_at.isoformat() if cfg.created_at else None,
-            "updated_at": cfg.updated_at.isoformat() if cfg.updated_at else None,
-        }
 
 
 # =====================================================================
@@ -112,9 +44,9 @@ class ZentaoBugService:
                        product_id: int | None = None,
                        severity: int = 3, pri: int = 3) -> dict:
         """将本系统 Bug 推送到禅道"""
-        cfg = _get_active_config(db)
+        cfg = _get_zentao_config(db)
         if not cfg:
-            raise ValueError("请先配置并激活禅道连接")
+            raise ValueError("请先在项目管理平台总控制台配置并激活禅道连接")
 
         bug: BugReport = db.query(BugReport).filter(BugReport.id == bug_id).first()
         if not bug:
@@ -194,9 +126,9 @@ class ZentaoBugService:
     @staticmethod
     async def sync_bug_status(db: Session, bug_id: int | None = None) -> dict:
         """从禅道同步 Bug 状态到本地"""
-        cfg = _get_active_config(db)
+        cfg = _get_zentao_config(db)
         if not cfg:
-            raise ValueError("请先配置并激活禅道连接")
+            raise ValueError("请先在项目管理平台总控制台配置并激活禅道连接")
 
         client = _build_client(cfg)
 
@@ -242,9 +174,9 @@ class ZentaoCaseService:
                            limit: int | None = None,
                            concurrency: int = 5) -> dict:
         """从禅道并发导入测试用例到本地用例库"""
-        cfg = _get_active_config(db)
+        cfg = _get_zentao_config(db)
         if not cfg:
-            raise ValueError("请先配置并激活禅道连接")
+            raise ValueError("请先在项目管理平台总控制台配置并激活禅道连接")
 
         client = _build_client(cfg)
         _conc = max(1, concurrency or 5)
@@ -311,9 +243,9 @@ class ZentaoCaseService:
     @staticmethod
     async def list_products(db: Session) -> list:
         """获取禅道产品列表（用于前端选择）"""
-        cfg = _get_active_config(db)
+        cfg = _get_zentao_config(db)
         if not cfg:
-            raise ValueError("请先配置并激活禅道连接")
+            raise ValueError("请先在项目管理平台总控制台配置并激活禅道连接")
         client = _build_client(cfg)
         return await client.get_products()
 

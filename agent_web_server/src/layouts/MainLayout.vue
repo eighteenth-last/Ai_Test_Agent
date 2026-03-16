@@ -16,7 +16,9 @@
           :menu="menu"
           :isOpen="openMenus.includes(menu.id)"
           :currentPath="currentPath"
+          :openSubMenus="openSubMenus"
           @toggle="toggleMenu"
+          @toggle-sub="toggleSubMenu"
         />
       </nav>
     </aside>
@@ -54,15 +56,30 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { NBadge, NButton } from 'naive-ui'
 import MenuItem from '@/components/MenuItem.vue'
 import logo from '@/assets/logo.png'
+import { listActivePlatforms } from '@/api/project'
 
 const route = useRoute()
 
-const menuList = [
+// 平台ID到路由映射
+const platformRouteMap = {
+  zentao: { label: '禅道 (Zentao)', id: 'zentao' },
+  pingcode: { label: 'PingCode', id: 'pingcode' },
+  worktile: { label: 'Worktile', id: 'worktile' },
+  ones: { label: 'ONES', id: 'ones' },
+  yunxiao: { label: '云效', id: 'yunxiao' },
+  tapd: { label: 'TAPD', id: 'tapd' },
+  '8manage': { label: '8Manage PM', id: '8manage' },
+  msproject: { label: 'Microsoft Project', id: 'msproject' },
+  asana: { label: 'Asana', id: 'asana' },
+  clickup: { label: 'ClickUp', id: 'clickup' }
+}
+
+const menuList = ref([
   {
     id: 'dashboard',
     icon: 'fa-chart-line',
@@ -131,29 +148,75 @@ const menuList = [
     ]
   },
   {
-    id: 'zentao',
-    icon: 'fa-bug',
-    label: '禅道集成',
-    children: [
-      { label: '禅道配置', path: '/zentao/config' },
-      { label: '用例导入', path: '/zentao/cases' },
-      { label: 'Bug推送与同步', path: '/zentao/bugs' }
-    ]
+    id: 'project',
+    icon: 'fa-project-diagram',
+    label: '企业项目管理模块',
+    children: []
   }
-]
+])
 
 const openMenus = ref(['test'])
+const openSubMenus = ref([])
 const currentPath = computed(() => route.path)
 const currentTitle = computed(() => route.meta?.title || '请选择功能模块')
 
+// 动态加载项目管理平台菜单
+const loadProjectPlatforms = async () => {
+  const projectMenu = menuList.value.find(m => m.id === 'project')
+  if (!projectMenu) return
+  
+  // 总控制台始终显示在第一位
+  const children = [
+    { label: '平台总控制台', path: '/project/control' }
+  ]
+  
+  try {
+    const res = await listActivePlatforms()
+    if (res.success && res.data) {
+      // 添加已激活的平台
+      res.data.forEach(platform => {
+        const platformInfo = platformRouteMap[platform.platform_id]
+        if (platformInfo) {
+          children.push({
+            id: platform.platform_id,
+            label: platformInfo.label,
+            children: [
+              { label: '用例导入', path: `/project/${platform.platform_id}/cases` },
+              { label: 'Bug推送与同步', path: `/project/${platform.platform_id}/bugs` }
+            ]
+          })
+        }
+      })
+    }
+  } catch (error) {
+    console.error('加载项目管理平台菜单失败:', error)
+  } finally {
+    // 无论是否成功加载平台列表，都要设置菜单（至少包含总控制台）
+    projectMenu.children = children
+  }
+}
+
+onMounted(() => {
+  loadProjectPlatforms()
+})
+
 // 根据路由自动展开对应菜单（手风琴效果）
 watch(
-  () => route.meta?.menu,
-  (menuId) => {
+  () => route.path,
+  (path) => {
+    // 自动展开一级菜单
+    const menuId = route.meta?.menu
     if (menuId) {
       openMenus.value = [menuId]
-    } else {
-      openMenus.value = []
+    }
+    
+    // 自动展开二级菜单（三级菜单的父级）
+    if (path.startsWith('/project/')) {
+      const parts = path.split('/')
+      if (parts.length >= 3) {
+        const subMenuId = parts[2] // 例如：zentao, pingcode
+        openSubMenus.value = [subMenuId]
+      }
     }
   },
   { immediate: true }
@@ -162,8 +225,19 @@ watch(
 const toggleMenu = (menuId) => {
   if (openMenus.value[0] === menuId) {
     openMenus.value = []
+    openSubMenus.value = []
   } else {
     openMenus.value = [menuId]
+    openSubMenus.value = []
+  }
+}
+
+const toggleSubMenu = (subMenuId) => {
+  const index = openSubMenus.value.indexOf(subMenuId)
+  if (index > -1) {
+    openSubMenus.value.splice(index, 1)
+  } else {
+    openSubMenus.value.push(subMenuId)
   }
 }
 </script>

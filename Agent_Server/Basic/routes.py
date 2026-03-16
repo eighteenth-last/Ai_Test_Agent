@@ -17,7 +17,8 @@ from Api_Test.router import router as api_test_router
 from OneClick_Test.router import router as oneclick_router
 from Security_Test.router import router as security_router
 from Page_Knowledge.router import router as knowledge_router
-from Zentao_manage.router import router as zentao_router
+from Project_manage.router import router as project_router
+from Project_manage.zentao_router import router as zentao_router
 
 
 def register_routes(app: FastAPI):
@@ -35,4 +36,5 @@ def register_routes(app: FastAPI):
     app.include_router(oneclick_router)
     app.include_router(security_router)
     app.include_router(knowledge_router)
+    app.include_router(project_router)
     app.include_router(zentao_router)

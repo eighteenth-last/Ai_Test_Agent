@@ -461,20 +461,26 @@ class QdrantCollectionConfig(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
 
 
-class ZentaoConfig(Base):
-    """禅道系统配置表"""
-    __tablename__ = 'zentao_config'
+class ProjectPlatformConfig(Base):
+    """项目管理平台统一配置表（整合所有项目管理工具配置）"""
+    __tablename__ = 'project_platform_config'
 
     id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    platform_id = Column(String(50), nullable=False, unique=True, comment='平台标识（zentao/pingcode/worktile等）')
+    platform_name = Column(String(100), nullable=False, comment='平台名称')
     config_name = Column(String(100), nullable=False, comment='配置名称')
-    base_url = Column(String(500), nullable=False, comment='禅道访问地址（如 http://zentao.example.com）')
+    base_url = Column(String(500), nullable=False, comment='平台访问地址')
     account = Column(String(200), nullable=False, comment='登录账号')
     password = Column(String(500), nullable=False, comment='登录密码')
-    default_product_id = Column(Integer, comment='默认产品ID')
-    api_version = Column(String(20), default='v2', comment='API版本: v1/v2')
-    is_active = Column(Integer, default=0, comment='是否激活（0:否 1:是）')
+    api_token = Column(String(500), comment='API Token（某些平台使用）')
+    default_product_id = Column(Integer, comment='默认产品ID（禅道等平台使用）')
+    api_version = Column(String(20), default='v2', comment='API版本（禅道等平台使用）')
     last_token = Column(String(500), comment='最近获取的Token')
     token_expire_at = Column(DateTime, comment='Token过期时间')
+    extra_config = Column(Text, comment='额外配置（JSON格式，存储平台特有字段）')
+    is_active = Column(Integer, default=0, comment='是否激活（0:否 1:是）')
+    is_enabled = Column(Integer, default=1, comment='是否启用（0:禁用 1:启用）')
+    last_sync_at = Column(DateTime, comment='最后同步时间')
     description = Column(Text, comment='备注说明')
     created_at = Column(DateTime, default=datetime.now, comment='创建时间')
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
@@ -536,7 +542,7 @@ def init_db():
             'security_scan_logs': SecurityScanLog,
             'page_knowledge': PageKnowledgeRecord,
             'qdrant_collection_config': QdrantCollectionConfig,
-            'zentao_config': ZentaoConfig
+            'project_platform_config': ProjectPlatformConfig
         }
         
         for table_name in tables_to_create:
@@ -578,6 +584,10 @@ def _upgrade_existing_tables(inspector):
         ('email_config', 'smtp_port', 'INT DEFAULT 587', None),
         ('email_config', 'smtp_username', 'VARCHAR(200) DEFAULT NULL', None),
         ('bug_reports', 'zentao_bug_id', 'INT DEFAULT NULL', None),
+        ('project_platform_config', 'default_product_id', 'INT DEFAULT NULL', None),
+        ('project_platform_config', 'api_version', "VARCHAR(20) DEFAULT 'v2'", None),
+        ('project_platform_config', 'last_token', 'VARCHAR(500) DEFAULT NULL', None),
+        ('project_platform_config', 'token_expire_at', 'DATETIME DEFAULT NULL', None),
     ]
 
     with engine.connect() as conn:
