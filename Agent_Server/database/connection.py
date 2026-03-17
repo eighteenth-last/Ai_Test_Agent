@@ -486,6 +486,24 @@ class ProjectPlatformConfig(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
 
 
+class CaseTemplateConfig(Base):
+    """用例模板配置表 - 存储从项目管理平台同步的用例字段模板"""
+    __tablename__ = 'case_template_config'
+
+    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    source_platform = Column(String(50), comment='模板来源平台（zentao/jira/tapd等）')
+    template_name = Column(String(100), nullable=False, default='默认模板', comment='模板名称')
+    fields = Column(JSON, nullable=False, comment='字段定义列表（JSON）')
+    priority_options = Column(JSON, comment='优先级选项')
+    case_type_options = Column(JSON, comment='用例类型选项')
+    stage_options = Column(JSON, comment='适用阶段选项')
+    extra_prompt = Column(Text, comment='附加给LLM的提示词（如特殊格式要求）')
+    is_active = Column(Integer, default=1, comment='是否启用（0:否 1:是）')
+    synced_at = Column(DateTime, comment='最后同步时间')
+    created_at = Column(DateTime, default=datetime.now, comment='创建时间')
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
+
+
 class Skill(Base):
     """Skills管理表"""
     __tablename__ = 'skills'
@@ -542,7 +560,8 @@ def init_db():
             'security_scan_logs': SecurityScanLog,
             'page_knowledge': PageKnowledgeRecord,
             'qdrant_collection_config': QdrantCollectionConfig,
-            'project_platform_config': ProjectPlatformConfig
+            'project_platform_config': ProjectPlatformConfig,
+            'case_template_config': CaseTemplateConfig,
         }
         
         for table_name in tables_to_create:

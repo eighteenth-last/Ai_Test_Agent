@@ -1,5 +1,16 @@
 <template>
   <div class="test-case-view">
+    <!-- 模板来源提示条 -->
+    <n-alert v-if="templateSource" type="success" style="margin-bottom: 16px">
+      <template #icon><i class="fas fa-layer-group"></i></template>
+      当前生成模板：<strong>{{ templateSource }}</strong>
+      <span v-if="templateFieldCount" style="margin-left: 8px; color: #666;">（{{ templateFieldCount }} 个字段）</span>
+      <n-button text size="small" style="margin-left: 12px" @click="goToTemplate">
+        <template #icon><i class="fas fa-cog"></i></template>
+        配置模板
+      </n-button>
+    </n-alert>
+
     <!-- 生成测试用例卡片 -->
     <n-card title="测试用例生成">
       <n-grid :cols="2" :x-gap="24">
@@ -43,9 +54,9 @@
               </n-upload-dragger>
             </n-upload>
           </n-form-item>
-          <n-button 
-            type="success" 
-            @click="uploadFileAndGenerate" 
+          <n-button
+            type="success"
+            @click="uploadFileAndGenerate"
             :loading="uploading"
             :disabled="!selectedFile"
           >
@@ -61,43 +72,59 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { 
+import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import {
   NCard, NGrid, NGi, NFormItem, NInput, NButton, NUpload, NUploadDragger,
-  useMessage
+  NAlert, useMessage
 } from 'naive-ui'
 import { testCaseAPI } from '@/api'
+import { getActiveTemplate } from '@/api/caseTemplate'
 
 const message = useMessage()
+const router = useRouter()
 
-// 表单数据
+// ── 模板信息 ──────────────────────────────────────────────────────────
+const templateSource = ref('')
+const templateFieldCount = ref(0)
+
+const loadTemplate = async () => {
+  try {
+    const res = await getActiveTemplate()
+    if (!res.success) return
+    const tpl = res.data
+    templateSource.value = tpl.template_name || tpl.source_platform || '系统默认模板'
+    templateFieldCount.value = tpl.fields?.length || 0
+  } catch (e) {
+    console.warn('[CaseGenerate] 加载模板失败', e)
+  }
+}
+
+const goToTemplate = () => router.push('/case/template')
+
+// ── 表单 ──────────────────────────────────────────────────────────────
 const form = ref({ requirement: '' })
 const generating = ref(false)
 const uploading = ref(false)
 const selectedFile = ref(null)
 const uploadRef = ref(null)
 
-// 文件选择处理
 const handleFileChange = ({ file }) => {
   selectedFile.value = file.file
 }
 
-// 上传文件并生成
 const uploadFileAndGenerate = async () => {
   if (!selectedFile.value) {
     message.warning('请先选择文件')
     return
   }
-  
   uploading.value = true
   try {
     const result = await testCaseAPI.uploadFile(selectedFile.value)
     if (result.success) {
       message.success(result.message)
       selectedFile.value = null
-      if (uploadRef.value) {
-        uploadRef.value.clear()
-      }
+      if (uploadRef.value) uploadRef.value.clear()
     } else {
       message.error(result.message)
     }
@@ -109,13 +136,11 @@ const uploadFileAndGenerate = async () => {
   }
 }
 
-// 生成测试用例
 const generateTestCases = async () => {
   if (!form.value.requirement.trim()) {
     message.warning('请输入测试需求')
     return
   }
-  
   generating.value = true
   try {
     const result = await testCaseAPI.generate(form.value.requirement)
@@ -132,6 +157,8 @@ const generateTestCases = async () => {
     generating.value = false
   }
 }
+
+onMounted(loadTemplate)
 </script>
 
 <style scoped>

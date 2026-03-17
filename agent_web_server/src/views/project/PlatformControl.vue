@@ -29,8 +29,8 @@
     </n-card>
 
     <!-- 配置表单弹窗 -->
-    <n-modal 
-      v-model:show="showConfigModal" 
+    <n-modal
+      v-model:show="showConfigModal"
       preset="card"
       :title="`${selectedPlatform?.platform_name || ''} 配置`"
       style="width: 700px"
@@ -56,7 +56,7 @@
         <n-form-item label="登录密码" path="password">
           <n-input v-model:value="formData.password" type="password" placeholder="密码" show-password-on="click" />
         </n-form-item>
-        
+
         <!-- 禅道特有字段 -->
         <template v-if="selectedPlatform?.platform_id === 'zentao'">
           <n-form-item label="默认产品ID" path="default_product_id">
@@ -66,21 +66,57 @@
             <n-select v-model:value="formData.api_version" :options="apiVersionOptions" />
           </n-form-item>
         </template>
-        
+
+        <!-- PingCode 特有字段 -->
+        <template v-if="selectedPlatform?.platform_id === 'pingcode'">
+          <n-form-item label="鉴权方式" path="pingcode_auth_type">
+            <n-select
+              v-model:value="pingcodeExtra.auth_type"
+              :options="pingcodeAuthOptions"
+              @update:value="pingcodeExtra.auth_type = $event"
+            />
+          </n-form-item>
+          <n-form-item label="Client ID" path="pingcode_client_id">
+            <n-input v-model:value="pingcodeExtra.client_id" placeholder="OAuth2 Client ID" />
+          </n-form-item>
+          <n-form-item label="Client Secret" path="pingcode_client_secret">
+            <n-input v-model:value="pingcodeExtra.client_secret" type="password" placeholder="OAuth2 Client Secret" show-password-on="click" />
+          </n-form-item>
+          <n-form-item v-if="pingcodeExtra.auth_type === 'authorization_code'" label="回调地址" path="pingcode_redirect_uri">
+            <n-input v-model:value="pingcodeExtra.redirect_uri" placeholder="https://your-app.com/oauth/callback" />
+          </n-form-item>
+        </template>
+
+        <!-- Worktile 特有字段 -->
+        <template v-if="selectedPlatform?.platform_id === 'worktile'">
+          <n-form-item label="鉴权方式">
+            <n-text depth="3" style="font-size: 13px">Authorization Code（需要用户在浏览器完成授权，token 端点：dev.worktile.com）</n-text>
+          </n-form-item>
+          <n-form-item label="Client ID" path="worktile_client_id">
+            <n-input v-model:value="worktileExtra.client_id" placeholder="OAuth2 Client ID" />
+          </n-form-item>
+          <n-form-item label="Client Secret" path="worktile_client_secret">
+            <n-input v-model:value="worktileExtra.client_secret" type="password" placeholder="OAuth2 Client Secret" show-password-on="click" />
+          </n-form-item>
+          <n-form-item label="回调地址" path="worktile_redirect_uri">
+            <n-input v-model:value="worktileExtra.redirect_uri" placeholder="https://your-app.com/oauth/callback（可选）" />
+          </n-form-item>
+        </template>
+
         <!-- 其他平台可能需要API Token -->
         <n-form-item v-if="needsApiToken(selectedPlatform?.platform_id)" label="API Token" path="api_token">
           <n-input v-model:value="formData.api_token" placeholder="可选，某些平台使用" />
         </n-form-item>
-        
+
         <n-form-item label="备注说明" path="description">
           <n-input v-model:value="formData.description" type="textarea" placeholder="可选" />
         </n-form-item>
-        
+
         <n-form-item label="启用状态">
           <n-space align="center">
-            <n-switch 
-              v-model:value="formData.is_enabled" 
-              :checked-value="1" 
+            <n-switch
+              v-model:value="formData.is_enabled"
+              :checked-value="1"
               :unchecked-value="0"
             >
               <template #checked>在菜单中显示</template>
@@ -92,7 +128,7 @@
           </n-space>
         </n-form-item>
       </n-form>
-      
+
       <template #footer>
         <n-space justify="space-between">
           <n-space>
@@ -105,6 +141,9 @@
           </n-space>
           <n-space>
             <n-button @click="showConfigModal = false">取消</n-button>
+            <n-button @click="handleTestConnection" :loading="testing">
+              测试连接
+            </n-button>
             <n-button type="primary" @click="handleSubmit" :loading="submitting">
               {{ isEdit ? '保存配置' : '创建配置' }}
             </n-button>
@@ -116,7 +155,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { NCard, NButton, NSpace, NAlert, NGrid, NGridItem, NModal, NForm, NFormItem, NInput, NInputNumber, NSelect, NSwitch, NTag, NText, useMessage } from 'naive-ui'
 import {
   getSupportedPlatforms,
@@ -125,18 +164,39 @@ import {
   createPlatform,
   updatePlatform,
   deletePlatform,
-  activatePlatform
+  activatePlatform,
+  testConnection
 } from '@/api/project'
 
 const message = useMessage()
-const loading = ref(false)
 const supportedPlatforms = ref([])
 const configuredPlatforms = ref([])
 const selectedPlatform = ref(null)
 const showConfigModal = ref(false)
 const submitting = ref(false)
+const testing = ref(false)
 const isEdit = ref(false)
 const formRef = ref(null)
+
+// PingCode OAuth2 额外配置
+const pingcodeExtra = ref({
+  auth_type: 'client_credentials',
+  client_id: '',
+  client_secret: '',
+  redirect_uri: ''
+})
+
+// Worktile OAuth2 额外配置（Authorization Code 流程）
+const worktileExtra = ref({
+  client_id: '',
+  client_secret: '',
+  redirect_uri: ''
+})
+
+const pingcodeAuthOptions = [
+  { label: 'Client Credentials（推荐，服务端直接调用）', value: 'client_credentials' },
+  { label: 'Authorization Code（需要用户授权）', value: 'authorization_code' }
+]
 
 const formData = ref({
   platform_id: '',
@@ -166,48 +226,61 @@ const apiVersionOptions = [
   { label: 'API v2', value: 'v2' }
 ]
 
-// 判断平台是否需要API Token
 const needsApiToken = (platformId) => {
   return ['pingcode', 'worktile', 'ones', 'jira', 'asana', 'clickup'].includes(platformId)
 }
 
-// 获取平台状态
 const getPlatformStatus = (platformId) => {
   const config = configuredPlatforms.value.find(p => p.platform_id === platformId)
   if (!config) return null
-  
-  if (config.is_active) {
-    return { type: 'success', text: '已激活' }
-  } else if (config.is_enabled) {
-    return { type: 'info', text: '已配置' }
-  } else {
-    return { type: 'default', text: '已禁用' }
-  }
+  if (config.is_active) return { type: 'success', text: '已激活' }
+  if (config.is_enabled) return { type: 'info', text: '已配置' }
+  return { type: 'default', text: '已禁用' }
 }
 
-// 选择平台
+const getExtraConfig = (platformId) => {
+  if (platformId === 'pingcode') return JSON.stringify(pingcodeExtra.value)
+  if (platformId === 'worktile') return JSON.stringify(worktileExtra.value)
+  return formData.value.extra_config
+}
+
 const selectPlatform = async (platform) => {
   selectedPlatform.value = platform
   showConfigModal.value = true
-  
-  // 尝试加载已有配置
+
   try {
     const res = await getPlatform(platform.platform_id)
     if (res.success && res.data) {
-      // 已有配置，进入编辑模式
       isEdit.value = true
       formData.value = {
         ...res.data,
-        password: '', // 密码不回显
+        password: '',
         is_enabled: res.data.is_enabled || 0,
         is_active: res.data.is_active || 0
       }
+      // 回显 extra_config
+      if (res.data.extra_config) {
+        try {
+          const extra = typeof res.data.extra_config === 'string'
+            ? JSON.parse(res.data.extra_config)
+            : res.data.extra_config
+          if (platform.platform_id === 'pingcode') {
+            pingcodeExtra.value = { auth_type: 'client_credentials', client_id: '', client_secret: '', redirect_uri: '', ...extra }
+          } else if (platform.platform_id === 'worktile') {
+            worktileExtra.value = { client_id: '', client_secret: '', redirect_uri: '', ...extra }
+          }
+        } catch (e) { /* ignore */ }
+      }
     } else {
-      // 新建配置
       isEdit.value = false
       resetForm()
       formData.value.platform_id = platform.platform_id
       formData.value.platform_name = platform.platform_name
+      if (platform.platform_id === 'pingcode') {
+        pingcodeExtra.value = { auth_type: 'client_credentials', client_id: '', client_secret: '', redirect_uri: '' }
+      } else if (platform.platform_id === 'worktile') {
+        worktileExtra.value = { client_id: '', client_secret: '', redirect_uri: '' }
+      }
     }
   } catch (error) {
     console.error('加载平台配置失败:', error)
@@ -218,36 +291,29 @@ const selectPlatform = async (platform) => {
   }
 }
 
-// 加载支持的平台列表
 const loadSupportedPlatforms = async () => {
   try {
     const res = await getSupportedPlatforms()
-    if (res.success) {
-      supportedPlatforms.value = res.data
-    }
+    if (res.success) supportedPlatforms.value = res.data
   } catch (error) {
     message.error('加载平台列表失败：' + error.message)
   }
 }
 
-// 加载已配置的平台
 const loadConfiguredPlatforms = async () => {
   try {
     const res = await listPlatforms()
-    if (res.success) {
-      configuredPlatforms.value = res.data
-    }
+    if (res.success) configuredPlatforms.value = res.data
   } catch (error) {
     console.error('加载已配置平台失败:', error)
   }
 }
 
-// 提交表单
 const handleSubmit = async () => {
   try {
     await formRef.value?.validate()
     submitting.value = true
-    
+
     const data = {
       platform_id: selectedPlatform.value.platform_id,
       platform_name: formData.value.platform_name,
@@ -260,26 +326,21 @@ const handleSubmit = async () => {
       api_version: formData.value.api_version,
       description: formData.value.description,
       is_enabled: formData.value.is_enabled,
-      is_active: formData.value.is_active
+      is_active: formData.value.is_active,
+      extra_config: getExtraConfig(selectedPlatform.value.platform_id)
     }
-    
-    // 如果密码为空且是编辑模式，删除密码字段（不更新）
-    if (isEdit.value && !data.password) {
-      delete data.password
-    }
-    
-    console.log('提交数据:', data) // 调试日志
-    
+
+    if (isEdit.value && !data.password) delete data.password
+
     const res = isEdit.value
       ? await updatePlatform(formData.value.id, data)
       : await createPlatform(data)
-    
+
     if (res.success) {
       message.success(res.message || (isEdit.value ? '更新成功' : '创建成功'))
       showConfigModal.value = false
       selectedPlatform.value = null
       await loadConfiguredPlatforms()
-      // 刷新页面以更新菜单
       window.location.reload()
     }
   } catch (error) {
@@ -291,7 +352,6 @@ const handleSubmit = async () => {
   }
 }
 
-// 激活配置
 const handleActivate = async () => {
   try {
     const res = await activatePlatform(formData.value.id)
@@ -299,7 +359,6 @@ const handleActivate = async () => {
       message.success(res.message)
       formData.value.is_active = 1
       await loadConfiguredPlatforms()
-      // 刷新页面以更新菜单
       window.location.reload()
     }
   } catch (error) {
@@ -307,11 +366,36 @@ const handleActivate = async () => {
   }
 }
 
-// 删除配置
-const handleDelete = async () => {
-  if (!confirm(`确定要删除 "${formData.value.platform_name}" 的配置吗？`)) {
+const handleTestConnection = async () => {
+  if (!formData.value.base_url) {
+    message.warning('请先填写平台地址')
     return
   }
+  testing.value = true
+  try {
+    const res = await testConnection({
+      base_url: formData.value.base_url,
+      account: formData.value.account,
+      password: formData.value.password,
+      api_token: formData.value.api_token,
+      platform_id: selectedPlatform.value?.platform_id,
+      api_version: formData.value.api_version,
+      extra_config: getExtraConfig(selectedPlatform.value?.platform_id)
+    })
+    if (res.success) {
+      message.success(res.message || '连接成功')
+    } else {
+      message.error(res.message || '连接失败')
+    }
+  } catch (error) {
+    message.error('测试失败：' + error.message)
+  } finally {
+    testing.value = false
+  }
+}
+
+const handleDelete = async () => {
+  if (!confirm(`确定要删除 "${formData.value.platform_name}" 的配置吗？`)) return
   try {
     const res = await deletePlatform(formData.value.id)
     if (res.success) {
@@ -319,7 +403,6 @@ const handleDelete = async () => {
       showConfigModal.value = false
       selectedPlatform.value = null
       await loadConfiguredPlatforms()
-      // 刷新页面以更新菜单
       window.location.reload()
     }
   } catch (error) {
@@ -327,7 +410,6 @@ const handleDelete = async () => {
   }
 }
 
-// 重置表单
 const resetForm = () => {
   formData.value = {
     platform_id: '',

@@ -100,6 +100,12 @@ const routes = [
     component: () => import('@/views/case/ApiSpecManage.vue'),
     meta: { title: '接口文件管理', menu: 'case' }
   },
+  {
+    path: '/case/template',
+    name: 'CaseTemplate',
+    component: () => import('@/views/case/CaseTemplate.vue'),
+    meta: { title: '用例模板配置', menu: 'case' }
+  },
   // 提示词模块
   {
     path: '/prompt/list',

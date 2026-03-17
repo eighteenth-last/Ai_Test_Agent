@@ -233,78 +233,102 @@ class LLMClient:
         self,
         requirement: str,
         count: int = 3,
-        priority: str = "3"
+        priority: str = "3",
+        db=None,
     ) -> Dict[str, Any]:
         """
-        根据需求生成测试用例
-        
+        根据需求生成测试用例。
+        若传入 db，则从数据库读取当前激活的用例模板注入 prompt，实现自适应字段结构。
+
         Args:
             requirement: 用户需求或测试点
             count: 生成数量
             priority: 默认优先级
-        
+            db: SQLAlchemy Session（可选，传入后启用模板自适应）
+
         Returns:
             生成的测试用例数据
         """
-        template_fields = [
-            "module", "title", "precondition", "steps", "expected",
-            "keywords", "priority", "case_type", "stage"
-        ]
-        
+        # ── 读取模板配置 ──────────────────────────────────────────
+        template_info = None
+        if db is not None:
+            try:
+                from Project_manage.case_template.service import CaseTemplateService
+                template_info = CaseTemplateService.get_template_for_llm(db)
+            except Exception as e:
+                logger.warning(f"[LLMClient] 读取用例模板失败，使用默认字段: {e}")
+
+        if template_info:
+            fields = template_info.get("fields", [])
+            field_keys = [f["key"] for f in fields]
+            field_desc = "\n".join(
+                f'  - {f["key"]}（{f["label"]}）{"【必填】" if f.get("required") else "【可选】"}'
+                for f in fields
+            )
+            priority_opts = template_info.get("priority_options") or []
+            case_type_opts = template_info.get("case_type_options") or []
+            stage_opts = template_info.get("stage_options") or []
+            extra_prompt = template_info.get("extra_prompt") or ""
+            source = template_info.get("source_platform") or "系统默认"
+
+            priority_hint = ""
+            if priority_opts:
+                opts_str = "、".join(f'{o["value"]}({o["label"]})' for o in priority_opts)
+                priority_hint = f"\n- priority 字段的合法值为：{opts_str}"
+            case_type_hint = ""
+            if case_type_opts:
+                opts_str = "、".join(o["value"] for o in case_type_opts)
+                case_type_hint = f"\n- case_type 字段的合法值为：{opts_str}"
+            stage_hint = ""
+            if stage_opts:
+                opts_str = "、".join(o["value"] for o in stage_opts)
+                stage_hint = f"\n- stage 字段的合法值为：{opts_str}"
+
+            template_section = f"""
+【用例模板来源：{source}】
+每条用例必须包含以下字段：
+{field_desc}
+{priority_hint}{case_type_hint}{stage_hint}
+{extra_prompt}
+""".strip()
+        else:
+            field_keys = ["module", "title", "precondition", "steps", "expected",
+                          "keywords", "priority", "case_type", "stage"]
+            template_section = "每条用例包含字段：module, title, precondition, steps, expected, keywords, priority, case_type, stage"
+
+        # ── 构建 example JSON ─────────────────────────────────────
+        example_fields = {k: f"<{k}>" for k in field_keys}
+        example_fields["steps"] = ["步骤1", "步骤2"]
+        example_json = json.dumps({"test_cases": [example_fields]}, ensure_ascii=False, indent=4)
+
         system_prompt = """你是一个专业的软件测试工程师，擅长编写测试用例。
 请根据用户提供的需求，生成结构化的测试用例。
+输出格式要求：必须返回有效的 JSON 对象，包含 test_cases 数组。"""
 
-输出格式要求:
-- 必须返回有效的 JSON 对象
-- 包含 test_cases 数组
-- 每个测试用例包含: module, title, precondition, steps, expected, keywords, priority, case_type, stage"""
-        
-        user_prompt = f"""请根据以下需求生成测试用例:
+        user_prompt = f"""请根据以下需求生成测试用例：
 
-需求: {requirement}
+需求：{requirement}
 
-请生成包含以下字段的测试用例: {', '.join(template_fields)}
+{template_section}
 
-以 JSON 格式返回，格式如:
-{{
-    "test_cases": [
-        {{
-            "module": "模块名",
-            "title": "用例标题",
-            "precondition": "前置条件",
-            "steps": ["步骤1", "步骤2"],
-            "expected": "预期结果",
-            "keywords": "关键词",
-            "priority": "3",
-            "case_type": "功能测试",
-            "stage": "系统测试"
-        }}
-    ]
-}}"""
-        
+以 JSON 格式返回，示例：
+{example_json}"""
+
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
+            {"role": "user", "content": user_prompt},
         ]
-        
+
         try:
             response = self.chat(
                 messages=messages,
                 temperature=0.7,
                 response_format={"type": "json_object"}
             )
-            
             result = json.loads(response)
-            return {
-                "success": True,
-                **result
-            }
+            return {"success": True, **result}
         except Exception as e:
-            return {
-                "success": False,
-                "message": str(e),
-                "test_cases": []
-            }
+            return {"success": False, "message": str(e), "test_cases": []}
     
     def generate_test_report(
         self,

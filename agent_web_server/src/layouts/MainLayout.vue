@@ -125,7 +125,8 @@ const menuList = ref([
     children: [
       { label: '用例生成', path: '/case/generate' },
       { label: '用例管理', path: '/case/manage' },
-      { label: '接口文件管理', path: '/case/api-spec' }
+      { label: '接口文件管理', path: '/case/api-spec' },
+      { label: '用例模板配置', path: '/case/template' }
     ]
   },
   {

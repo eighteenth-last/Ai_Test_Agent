@@ -92,3 +92,11 @@ export const disablePlatform = async (configId) => {
   const response = await axios.post(`${API_BASE}/api/project-platform/${configId}/disable`)
   return response.data
 }
+
+/**
+ * 测试平台连接是否可达
+ */
+export const testConnection = async (data) => {
+  const response = await axios.post(`${API_BASE}/api/project-platform/test-connection`, data)
+  return response.data
+}

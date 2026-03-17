@@ -47,10 +47,11 @@ class TestCaseService:
             
             llm_client = get_llm_client()
             
-            # 调用 LLM 生成测试用例
+            # 调用 LLM 生成测试用例（传入 db 以启用模板自适应）
             result = llm_client.generate_test_cases(
                 requirement=requirement,
-                priority="3"
+                priority="3",
+                db=db,
             )
             
             if not result.get('success'):
