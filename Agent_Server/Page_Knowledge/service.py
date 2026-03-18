@@ -31,273 +31,150 @@ FRESHNESS_HOURS = 4            # 新鲜度：4 小时内的知识直接复用
 
 
 class PageKnowledgeService:
-    """页面知识库读写服务"""
 
-    # ═══════════════════════════════════════════════
-    # 1. 查询知识库
-    # ═══════════════════════════════════════════════
 
     @staticmethod
-    def calculate_coverage(
-        user_required_modules: List[str],
-        kb_available_modules: List[str]
-    ) -> Dict:
-        """
-        计算知识库对用户需求的覆盖度
-        
-        Args:
-            user_required_modules: 用户要求测试的功能列表
-            kb_available_modules: 知识库中已有的功能列表
-        
-        Returns:
-            {
-                "coverage_score": 0.6,  # 覆盖度分数 (0-1)
-                "covered_modules": ["登录", "课程"],  # 已覆盖的功能
-                "missing_modules": ["作业", "练习"],  # 缺失的功能
-                "extra_modules": ["个人中心"],  # 知识库多出的功能
-                "is_sufficient": False  # 是否足够满足需求
-            }
-        """
-        if not user_required_modules:
-            # 用户没有明确要求 → 知识库有什么就用什么
-            return {
-                "coverage_score": 1.0,
-                "covered_modules": kb_available_modules,
-                "missing_modules": [],
-                "extra_modules": [],
-                "is_sufficient": True
-            }
-        
-        # 标准化模块名称（去除空格、统一大小写）
-        user_set = set(m.strip().lower() for m in user_required_modules if m)
-        kb_set = set(m.strip().lower() for m in kb_available_modules if m)
-        
-        if not user_set:
-            return {
-                "coverage_score": 1.0,
-                "covered_modules": kb_available_modules,
-                "missing_modules": [],
-                "extra_modules": [],
-                "is_sufficient": True
-            }
-        
-        # 计算交集和差集
-        covered = user_set & kb_set
-        missing = user_set - kb_set
-        extra = kb_set - user_set
-        
-        # 覆盖度 = 已覆盖功能数 / 用户要求功能数
-        coverage_score = len(covered) / len(user_set)
-        
-        # 是否足够：覆盖度 >= 0.8（80%）
-        is_sufficient = coverage_score >= 0.8
-        
-        return {
-            "coverage_score": coverage_score,
-            "covered_modules": list(covered),
-            "missing_modules": list(missing),
-            "extra_modules": list(extra),
-            "is_sufficient": is_sufficient
-        }
-
-    @staticmethod
-    def _extract_modules_from_knowledge(knowledge: PageKnowledge) -> List[str]:
-        """
-        从知识库中提取功能模块列表
-        
-        从以下字段提取：
-        - module_name
-        - explored_modules (如果有)
-        - forms.name
-        - tables.name
-        """
-        modules = []
-        
-        # 1. 主模块名称
-        if knowledge.module_name:
-            modules.append(knowledge.module_name)
-        
-        # 2. 探索的模块列表（如果是多模块探索结果）
-        knowledge_dict = knowledge.to_dict() if hasattr(knowledge, 'to_dict') else {}
-        explored_modules = knowledge_dict.get('explored_modules', [])
-        if explored_modules:
-            for mod in explored_modules:
-                if isinstance(mod, dict):
-                    mod_name = mod.get('module_name', '')
-                    if mod_name:
-                        modules.append(mod_name)
-                elif isinstance(mod, str):
-                    modules.append(mod)
-        
-        # 3. 从表单名称推断功能
-        if knowledge.forms:
-            for form in knowledge.forms:
-                if form.name and form.name not in modules:
-                    modules.append(form.name)
-        
-        # 4. 从表格名称推断功能
-        if knowledge.tables:
-            for table in knowledge.tables:
-                if table.name and table.name not in modules:
-                    modules.append(table.name)
-        
-        # 去重和清理
-        modules = [m.strip() for m in modules if m and m.strip()]
-        return list(set(modules))
-
-    @staticmethod
-    async def lookup_with_coverage(
-        url: str,
-        query_text: str = "",
-        user_required_modules: List[str] = None,
-        scope_type: str = "single_page",
+    async def lookup_by_env_urls(
+        base_url: str,
+        login_url: str = "",
+        user_input: str = "",
     ) -> Optional[Dict]:
         """
-        增强版知识库查询：考虑功能覆盖度
-        
-        Args:
-            url: 目标 URL
-            query_text: 查询文本
-            user_required_modules: 用户要求测试的功能列表
-            scope_type: 测试范围类型 (single_page/multi_module)
-        
-        Returns:
-            {
-                "hit": True/False,
-                "knowledge": PageKnowledge,
-                "source": "exact/semantic",
-                "similarity_score": 0.95,  # 向量相似度
-                "coverage_score": 0.6,     # 功能覆盖度
-                "final_score": 0.75,       # 综合得分
-                "is_sufficient": False,    # 是否足够满足需求
-                "covered_modules": [...],
-                "missing_modules": [...],
-                "stale": False
-            }
+        通过测试环境的 URL 查找知识库（精确匹配优先）。
+
+        策略：
+          1. 先用 login_url 精确匹配（知识库通常存的是登录页）
+          2. 再用 base_url 精确匹配
+          3. 都没命中 → 返回 None
+
+        命中后直接返回完整知识，不做覆盖度计算。
+        后续由 assess_sufficiency_with_llm 判断是否满足需求。
         """
         store = get_vector_store()
-        embed_client = get_embedding_client()
-        
-        # ── 1. 精确匹配 URL ──
-        point_id = generate_point_id(url)
-        existing = await asyncio.to_thread(store.get_by_id, point_id)
-        
-        if existing and existing.get("payload"):
-            payload = existing["payload"]
-            knowledge = PageKnowledge.from_dict(payload.get("knowledge", payload))
-            
-            # 提取知识库中的功能列表
-            kb_modules = PageKnowledgeService._extract_modules_from_knowledge(knowledge)
-            
-            # 计算覆盖度
-            coverage = PageKnowledgeService.calculate_coverage(
-                user_required_modules or [], kb_modules
-            )
-            
-            # 综合得分 = 向量相似度 × 0.3 + 覆盖度 × 0.7
-            # （精确匹配时向量相似度为 1.0）
-            similarity_score = 1.0
-            final_score = similarity_score * 0.3 + coverage["coverage_score"] * 0.7
-            
-            # 判断是否足够
-            is_sufficient = coverage["is_sufficient"]
-            
-            # 新鲜度检查
-            is_fresh = PageKnowledgeService._is_fresh(knowledge)
-            
-            logger.info(
-                f"[PageKB] 精确命中: {url}, "
-                f"相似度={similarity_score:.2f}, "
-                f"覆盖度={coverage['coverage_score']:.2f}, "
-                f"综合得分={final_score:.2f}, "
-                f"足够={is_sufficient}"
-            )
-            
-            # 更新访问时间
-            if is_fresh and is_sufficient:
-                knowledge.last_accessed = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                try:
-                    await asyncio.to_thread(store.upsert, point_id, [], {
-                        **payload,
-                        "knowledge": {**payload.get("knowledge", payload), "last_accessed": knowledge.last_accessed}
-                    })
-                except Exception:
-                    pass
-            
-            return {
-                "hit": True,
-                "knowledge": knowledge,
-                "source": "exact",
-                "similarity_score": similarity_score,
-                "coverage_score": coverage["coverage_score"],
-                "final_score": final_score,
-                "is_sufficient": is_sufficient,
-                "covered_modules": coverage["covered_modules"],
-                "missing_modules": coverage["missing_modules"],
-                "kb_modules": kb_modules,
-                "stale": not is_fresh,
-            }
-        
-        # ── 2. 语义检索 ──
-        if not query_text:
-            query_text = url
-        
-        try:
-            query_vector = await embed_client.embed(query_text)
-            results = await asyncio.to_thread(
-                store.search,
-                query_vector,
-                3,
-                SIMILARITY_THRESHOLD,
-                None,
-            )
-            
-            if results:
-                best = results[0]
-                payload = best["payload"]
+
+        async def _exact_lookup(url: str) -> Optional[Dict]:
+            if not url:
+                return None
+            point_id = generate_point_id(url)
+            existing = await asyncio.to_thread(store.get_by_id, point_id)
+            if existing and existing.get("payload"):
+                payload = existing["payload"]
                 knowledge = PageKnowledge.from_dict(payload.get("knowledge", payload))
-                
-                # 提取知识库中的功能列表
-                kb_modules = PageKnowledgeService._extract_modules_from_knowledge(knowledge)
-                
-                # 计算覆盖度
-                coverage = PageKnowledgeService.calculate_coverage(
-                    user_required_modules or [], kb_modules
-                )
-                
-                # 综合得分 = 向量相似度 × 0.3 + 覆盖度 × 0.7
-                similarity_score = best["score"]
-                final_score = similarity_score * 0.3 + coverage["coverage_score"] * 0.7
-                
-                # 判断是否足够
-                is_sufficient = coverage["is_sufficient"]
-                
-                logger.info(
-                    f"[PageKB] 语义命中: {knowledge.url}, "
-                    f"相似度={similarity_score:.2f}, "
-                    f"覆盖度={coverage['coverage_score']:.2f}, "
-                    f"综合得分={final_score:.2f}, "
-                    f"足够={is_sufficient}"
-                )
-                
+                is_fresh = PageKnowledgeService._is_fresh(knowledge)
+                logger.info(f"[PageKB] 精确命中: {url}, 新鲜={is_fresh}")
                 return {
                     "hit": True,
                     "knowledge": knowledge,
-                    "source": "semantic",
-                    "similarity_score": similarity_score,
-                    "coverage_score": coverage["coverage_score"],
-                    "final_score": final_score,
-                    "is_sufficient": is_sufficient,
-                    "covered_modules": coverage["covered_modules"],
-                    "missing_modules": coverage["missing_modules"],
-                    "kb_modules": kb_modules,
-                    "stale": not PageKnowledgeService._is_fresh(knowledge),
+                    "matched_url": url,
+                    "stale": not is_fresh,
+                    "payload": payload,
+                    "point_id": point_id,
                 }
-        except Exception as e:
-            logger.warning(f"[PageKB] 语义检索失败: {e}")
-        
-        logger.info(f"[PageKB] 未命中: {url}")
+            return None
+
+        # 优先 login_url（知识库通常以登录页为入口存储）
+        result = await _exact_lookup(login_url)
+        if result:
+            return result
+
+        # 再试 base_url
+        result = await _exact_lookup(base_url)
+        if result:
+            return result
+
+        logger.info(f"[PageKB] 未命中: login_url={login_url}, base_url={base_url}")
         return None
+
+    @staticmethod
+    async def assess_sufficiency_with_llm(
+        knowledge: "PageKnowledge",
+        user_input: str,
+    ) -> Dict:
+        """
+        用 LLM 判断知识库内容是否满足用户需求。
+
+        Returns:
+            {
+                "is_sufficient": True/False,
+                "reason": "...",
+                "missing_elements": ["..."],   # 缺失的功能/元素
+                "matched_elements": ["..."],   # 已匹配的功能/元素
+            }
+        """
+        from llm.client import get_llm_client
+
+        # 构建知识库摘要（全文关键信息）
+        k = knowledge
+        kb_summary_parts = []
+        if k.summary:
+            kb_summary_parts.append(f"页面摘要：{k.summary}")
+        if k.description:
+            kb_summary_parts.append(f"详细描述：{k.description}")
+        if k.page_sections:
+            kb_summary_parts.append(f"功能区域：{', '.join(k.page_sections[:20])}")
+        if k.buttons:
+            kb_summary_parts.append(f"按钮/操作：{', '.join(str(b) for b in k.buttons[:30])}")
+        if k.forms:
+            for f in k.forms:
+                fields_str = ', '.join(ff.label or ff.name for ff in f.fields[:10])
+                kb_summary_parts.append(f"表单[{f.name}]：{fields_str}")
+        if k.tables:
+            for t in k.tables:
+                kb_summary_parts.append(f"表格[{t.name}]：{', '.join(t.columns[:10])}")
+        if k.links:
+            kb_summary_parts.append(f"导航链接：{', '.join(k.links[:20])}")
+        if k.tags:
+            kb_summary_parts.append(f"标签：{', '.join(k.tags)}")
+
+        kb_text = "\n".join(kb_summary_parts) if kb_summary_parts else "（知识库内容为空）"
+
+        prompt = f"""你是一个测试需求分析专家。请判断以下知识库内容是否足以支持用户的测试需求。
+
+【用户测试需求】
+{user_input}
+
+【知识库已有内容】
+{kb_text}
+
+请判断：
+1. 知识库中是否包含用户需求涉及的页面元素、功能模块、操作入口？
+2. 如果知识库内容足够，直接基于它生成测试用例即可，无需重新探索页面。
+3. 如果知识库内容缺失关键功能，需要重新探索。
+
+返回 JSON：
+{{
+    "is_sufficient": true/false,
+    "reason": "判断理由（一句话）",
+    "matched_elements": ["已匹配的功能/元素列表"],
+    "missing_elements": ["缺失的功能/元素列表，为空则表示全部满足"]
+}}"""
+
+        try:
+            llm = get_llm_client()
+            response = await llm.achat(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                response_format={"type": "json_object"},
+            )
+            result = llm.parse_json_response(response)
+            result.setdefault("is_sufficient", False)
+            result.setdefault("reason", "")
+            result.setdefault("matched_elements", [])
+            result.setdefault("missing_elements", [])
+            logger.info(
+                f"[PageKB] LLM 充分性判断: sufficient={result['is_sufficient']}, "
+                f"reason={result['reason']}"
+            )
+            return result
+        except Exception as e:
+            logger.warning(f"[PageKB] LLM 充分性判断失败，默认不足: {e}")
+            return {
+                "is_sufficient": False,
+                "reason": f"LLM 判断失败: {e}",
+                "matched_elements": [],
+                "missing_elements": [],
+            }
+
 
     @staticmethod
     async def lookup(

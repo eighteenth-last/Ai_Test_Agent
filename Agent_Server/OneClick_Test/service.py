@@ -197,18 +197,14 @@ class OneClickService:
             SessionManager.update_status(db, session, 'exploring')
 
             target_url = env_info.get('base_url', session.target_url or '')
-            query_text = f"{user_input} {intent.get('test_scope', '')} {intent.get('target_module', '')}"
+            login_url = env_info.get('login_url', '')
             kb_hit = None
             try:
-                # 使用增强版知识库查询（带覆盖度计算）
-                required_modules = intent.get('required_modules', [])
-                scope_type = intent.get('scope_type', 'single_page')
-                
-                kb_hit = await PageKnowledgeService.lookup_with_coverage(
-                    url=target_url,
-                    query_text=query_text,
-                    user_required_modules=required_modules,
-                    scope_type=scope_type,
+                # 用 login_url + base_url 精确查知识库
+                kb_hit = await PageKnowledgeService.lookup_by_env_urls(
+                    base_url=target_url,
+                    login_url=login_url,
+                    user_input=user_input,
                 )
             except Exception as kb_err:
                 logger.warning(f"[OneClick] 知识库查询失败（不影响流程）: {kb_err}")
@@ -221,69 +217,68 @@ class OneClickService:
             is_multi_module = scope_type == 'multi_module'
 
             if kb_hit and kb_hit.get('hit'):
-                # ━━ 知识库命中：判断覆盖度是否足够 ━━
+                # ━━ 知识库命中：用 LLM 判断是否满足需求 ━━
                 knowledge = kb_hit['knowledge']
-                src = kb_hit['source']
-                similarity_score = kb_hit.get('similarity_score', 0)
-                coverage_score = kb_hit.get('coverage_score', 0)
-                final_score = kb_hit.get('final_score', 0)
-                is_sufficient = kb_hit.get('is_sufficient', False)
-                covered_modules = kb_hit.get('covered_modules', [])
-                missing_modules = kb_hit.get('missing_modules', [])
-                kb_modules = kb_hit.get('kb_modules', [])
-                
-                # 判断是否使用知识库
-                if is_sufficient and not kb_hit.get('stale'):
-                    # 知识库足够满足需求 → 使用知识库
+                matched_url = kb_hit.get('matched_url', target_url)
+
+                if kb_hit.get('stale'):
                     SessionManager.add_message(
                         db, session, 'assistant',
-                        f'⚡ 知识库命中（{src}，相似度 {similarity_score:.2f}，覆盖度 {coverage_score:.0%}，综合得分 {final_score:.2f}），跳过浏览器探索'
+                        f'⏰ 知识库已老化（{matched_url}），重新探索页面...'
                     )
-                    if covered_modules:
-                        SessionManager.add_message(
-                            db, session, 'assistant',
-                            f'✅ 已覆盖功能：{", ".join(covered_modules)}'
-                        )
-                    
-                    page_capabilities = knowledge.to_dict() if isinstance(knowledge, PageKnowledge) else knowledge
-                    page_data = page_capabilities
-                    session.page_analysis = json.dumps(page_data, ensure_ascii=False)
-                    session.page_capabilities = json.dumps(page_capabilities, ensure_ascii=False)
-                    if not SessionManager.update_status(db, session, 'page_scanned'):
-                        return
-                    db.commit()
-                    logger.info(f"[OneClick] 知识库足够，跳过探索: {target_url}")
+                    kb_hit = None
                 else:
-                    # 知识库不足 → 继续探索
-                    if kb_hit.get('stale'):
+                    SessionManager.add_message(
+                        db, session, 'assistant',
+                        f'📚 知识库命中（{matched_url}），正在评估是否满足需求...'
+                    )
+                    # LLM 判断充分性
+                    try:
+                        sufficiency = await PageKnowledgeService.assess_sufficiency_with_llm(
+                            knowledge=knowledge,
+                            user_input=user_input,
+                        )
+                    except Exception as e:
+                        logger.warning(f"[OneClick] 充分性判断失败: {e}")
+                        sufficiency = {"is_sufficient": False, "reason": str(e),
+                                       "matched_elements": [], "missing_elements": []}
+
+                    is_sufficient = sufficiency.get('is_sufficient', False)
+                    reason = sufficiency.get('reason', '')
+                    matched_elements = sufficiency.get('matched_elements', [])
+                    missing_elements = sufficiency.get('missing_elements', [])
+
+                    if is_sufficient:
                         SessionManager.add_message(
                             db, session, 'assistant',
-                            f'⏰ 知识库已老化（相似度 {similarity_score:.2f}，覆盖度 {coverage_score:.0%}），重新探索页面...'
+                            f'⚡ 知识库满足需求，跳过浏览器探索\n原因：{reason}'
                         )
+                        if matched_elements:
+                            SessionManager.add_message(
+                                db, session, 'assistant',
+                                f'✅ 已覆盖：{", ".join(matched_elements[:10])}'
+                            )
+                        page_capabilities = knowledge.to_dict() if isinstance(knowledge, PageKnowledge) else knowledge
+                        page_data = page_capabilities
+                        session.page_analysis = json.dumps(page_data, ensure_ascii=False)
+                        session.page_capabilities = json.dumps(page_capabilities, ensure_ascii=False)
+                        if not SessionManager.update_status(db, session, 'page_scanned'):
+                            return
+                        db.commit()
+                        logger.info(f"[OneClick] 知识库足够，跳过探索: {matched_url}")
                     else:
                         SessionManager.add_message(
                             db, session, 'assistant',
-                            f'⚠️ 知识库覆盖不足（相似度 {similarity_score:.2f}，覆盖度 {coverage_score:.0%}，综合得分 {final_score:.2f}），需要完整探索'
+                            f'⚠️ 知识库内容不足，需要深度探索\n原因：{reason}'
                         )
-                        if kb_modules:
+                        if missing_elements:
                             SessionManager.add_message(
                                 db, session, 'assistant',
-                                f'📋 知识库已有功能：{", ".join(kb_modules)}'
+                                f'❌ 缺失功能：{", ".join(missing_elements[:10])}'
                             )
-                        else:
-                            SessionManager.add_message(
-                                db, session, 'assistant',
-                                f'📋 知识库为空或无相关功能'
-                            )
-                        if missing_modules:
-                            SessionManager.add_message(
-                                db, session, 'assistant',
-                                f'❌ 需要探索的功能：{", ".join(missing_modules)}'
-                            )
-                    # 重置 kb_hit，让后续逻辑执行探索
-                    kb_hit = None
+                        kb_hit = None  # 触发浏览器探索
             
-            if not kb_hit or not kb_hit.get('hit') or not kb_hit.get('is_sufficient'):
+            if not kb_hit or not kb_hit.get('hit'):
                 # ━━ 未命中 / 已老化 / 覆盖不足：执行浏览器探索 ━━
 
                 # 使用精准探索模式（OpenClaw 风格）
@@ -1060,9 +1055,10 @@ class OneClickService:
 
         优先级：
         1. 用户在指令中明确提供的 URL/凭据
-        2. 数据库中的默认测试环境
-        3. 数据库中第一个激活的测试环境
-        4. 环境变量兜底
+        2. 按 preferred_env_name 模糊匹配数据库环境（如"教师端"匹配"教师端开发环境"）
+        3. 数据库中的默认测试环境
+        4. 数据库中第一个激活的测试环境
+        5. 环境变量兜底
         """
         user_url = intent.get("user_provided_url")
         user_username = intent.get("user_provided_username")
@@ -1079,30 +1075,55 @@ class OneClickService:
                 "_source": "用户输入",
             }
 
-        # 2. 从数据库获取默认环境
-        default_env = db.query(TestEnvironment).filter(
-            TestEnvironment.is_default == 1,
+        # 获取所有激活的环境
+        all_envs = db.query(TestEnvironment).filter(
             TestEnvironment.is_active == 1,
-        ).first()
+        ).all()
 
-        if not default_env:
-            # 3. 获取第一个激活的环境
-            default_env = db.query(TestEnvironment).filter(
-                TestEnvironment.is_active == 1,
-            ).first()
+        matched_env = None
 
-        if default_env:
+        # 2. 按 preferred_env_name 模糊匹配
+        preferred_name = intent.get("preferred_env_name")
+        if preferred_name and all_envs:
+            preferred_lower = preferred_name.lower()
+            # 先精确包含匹配
+            for env in all_envs:
+                env_name_lower = (env.name or "").lower()
+                env_desc_lower = (env.description or "").lower()
+                if preferred_lower in env_name_lower or preferred_lower in env_desc_lower:
+                    matched_env = env
+                    break
+            # 再尝试关键词部分匹配（如"教师"匹配"教师端开发环境"）
+            if not matched_env:
+                keywords = [preferred_lower[i:i+2] for i in range(len(preferred_lower)-1)]
+                for env in all_envs:
+                    env_name_lower = (env.name or "").lower()
+                    if any(kw in env_name_lower for kw in keywords):
+                        matched_env = env
+                        break
+
+        # 3. 默认环境
+        if not matched_env:
+            matched_env = next(
+                (e for e in all_envs if e.is_default == 1), None
+            )
+
+        # 4. 第一个激活的环境
+        if not matched_env and all_envs:
+            matched_env = all_envs[0]
+
+        if matched_env:
             return {
-                "base_url": default_env.base_url,
-                "login_url": default_env.login_url or default_env.base_url,
-                "username": user_username or default_env.username or "",
-                "password": user_password or default_env.password or "",
+                "base_url": matched_env.base_url,
+                "login_url": matched_env.login_url or matched_env.base_url,
+                "username": user_username or matched_env.username or "",
+                "password": user_password or matched_env.password or "",
                 "headless": os.getenv("HEADLESS", "false").lower() == "true",
-                "_source": f"数据库({default_env.name})",
-                "_env_id": default_env.id,
+                "_source": f"数据库({matched_env.name})",
+                "_env_id": matched_env.id,
             }
 
-        # 4. 环境变量兜底
+        # 5. 环境变量兜底
         base_url = os.getenv("API_BASE_URL", "")
         if base_url:
             return {
@@ -1281,8 +1302,21 @@ class OneClickService:
             )
 
             logger.info(f"[OneClick v2] 🌐 开始精准探索")
-            SessionManager.add_message(db, session, 'assistant',
-                "🔍 开始深度探索，将严格遵守探索规则...")
+
+            # ── 探索前 DOM 检测 ──────────────────────────────────────
+            # 先导航到目标页面，再检测 DOM 丰富度
+            try:
+                from Execute_test.dom_mode.detector import DomRichnessDetector
+                # 等待浏览器会话就绪后再检测（此时还未导航，先跳过，在 Agent 每步后检测）
+                # 探索阶段的 DOM 检测通过 exploration_controller 的 record_page 触发
+                # 这里仅记录日志，实际切换在 _execute_browser_test 中处理
+                logger.info("[OneClick v2] DOM 模式已启用，将在每次页面访问时自动检测")
+                SessionManager.add_message(db, session, 'assistant',
+                    "🔍 开始深度探索（DOM 自适应模式已启用）...")
+            except ImportError:
+                SessionManager.add_message(db, session, 'assistant',
+                    "🔍 开始深度探索，将严格遵守探索规则...")
+            # ── DOM 检测结束 ─────────────────────────────────────────
 
             # 6. 执行探索（增加步数限制）
             max_steps = int(os.getenv("EXPLORE_MAX_STEPS", "200"))
@@ -2090,8 +2124,72 @@ class OneClickService:
         - 检测 429 限流错误并返回特殊状态
         - 集成循环检测，防止 Agent 陷入无限循环
         - 集成自动切换，模型失败时自动切换
+        - 集成 DOM 模式：每次执行前检测页面 DOM 丰富度，丰富则切换 DOM 模式
         """
         start = time.time()
+
+        # ── DOM 模式检测 ──────────────────────────────────────────────
+        # 如果有共享浏览器会话，先检测当前页面 DOM 丰富度
+        if browser_session is not None:
+            try:
+                from Execute_test.dom_mode.detector import DomRichnessDetector
+                from Execute_test.dom_mode.agent_browser_client import AgentBrowserClient
+                from Execute_test.dom_mode.dom_executor import DomExecutor
+
+                detect_result = await DomRichnessDetector.detect(browser_session)
+                logger.info(
+                    f"[OneClick] DOM 检测: interactive={detect_result.get('interactive')}, "
+                    f"total={detect_result.get('total')}, mode={detect_result.get('mode')}"
+                )
+
+                if detect_result.get("rich"):
+                    # DOM 丰富 → 尝试使用 DOM 模式
+                    logger.info("[OneClick] 🌐 DOM 节点丰富，切换到 DOM 模式执行")
+                    try:
+                        # 从 BrowserSession 提取 CDP 端口号
+                        # browser-use 的 cdp_url 格式: ws://127.0.0.1:PORT/devtools/browser/...
+                        # agent-browser --cdp 接受端口号或完整 ws URL
+                        cdp_port = None
+                        raw_cdp = None
+                        for attr in ("cdp_url", "_cdp_url", "ws_url"):
+                            val = getattr(browser_session, attr, None)
+                            if val:
+                                raw_cdp = val
+                                break
+
+                        if raw_cdp:
+                            import re as _re
+                            m = _re.search(r":(\d{4,5})/", raw_cdp)
+                            if m:
+                                cdp_port = int(m.group(1))
+
+                        if cdp_port:
+                            ab_client = AgentBrowserClient.from_cdp_port(cdp_port)
+                        else:
+                            # 无法获取 CDP 端口，回退到视觉模式
+                            logger.warning("[OneClick] 无法获取 CDP 端口，回退到视觉模式")
+                            raise RuntimeError("CDP 端口不可用")
+
+                        dom_executor = DomExecutor(ab_client)
+                        dom_result = await dom_executor.execute_test_case(
+                            case=case,
+                            target_url=target_url,
+                            cancel_event=cancel_event,
+                        )
+                        logger.info(f"[OneClick] DOM 模式执行完成: {dom_result.get('status')}")
+                        return dom_result
+
+                    except Exception as dom_err:
+                        logger.warning(f"[OneClick] DOM 模式执行失败，回退到视觉模式: {dom_err}")
+                        # 继续走视觉模式
+                else:
+                    logger.info("[OneClick] DOM 节点不丰富，使用视觉大模型模式")
+
+            except ImportError as ie:
+                logger.debug(f"[OneClick] DOM 模式模块未加载，跳过检测: {ie}")
+            except Exception as detect_err:
+                logger.warning(f"[OneClick] DOM 检测异常，回退到视觉模式: {detect_err}")
+        # ── DOM 模式检测结束 ──────────────────────────────────────────
 
         try:
             from llm import get_active_browser_use_llm, FailoverChatModel, get_auto_switcher

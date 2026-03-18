@@ -69,6 +69,23 @@ class ExplorationController(Tools):
                 logger.warning(f"⚠️ 获取 URL 失败: {e}")
                 current_url = ""
             
+            # ── DOM 丰富度检测（每次访问新页面时执行）──────────────
+            dom_mode_hint = ""
+            try:
+                from Execute_test.dom_mode.detector import DomRichnessDetector
+                detect_result = await DomRichnessDetector.detect(browser_session)
+                mode = detect_result.get("mode", "vision")
+                interactive = detect_result.get("interactive", 0)
+                total = detect_result.get("total", 0)
+                dom_mode_hint = (
+                    f"\n[DOM检测] interactive={interactive}, total={total}, "
+                    f"推荐模式={mode}"
+                )
+                logger.info(f"🔍 DOM检测 @ {current_url}: {dom_mode_hint.strip()}")
+            except Exception as dom_err:
+                logger.debug(f"DOM 检测跳过: {dom_err}")
+            # ── DOM 检测结束 ─────────────────────────────────────────
+
             # 更新状态
             result = self.exploration_state.record_page(
                 page_id=params.page_id,
@@ -79,7 +96,7 @@ class ExplorationController(Tools):
             if not result['success']:
                 return ActionResult(error=result['message'], include_in_memory=True)
             
-            msg = f"✅ 已记录页面 '{params.page_id}'，共 {len(params.elements)} 个元素"
+            msg = f"✅ 已记录页面 '{params.page_id}'，共 {len(params.elements)} 个元素{dom_mode_hint}"
             logger.info(msg)
             return ActionResult(extracted_content=msg, include_in_memory=True)
         
@@ -172,7 +189,6 @@ class ExplorationController(Tools):
                 current_url = await browser_session.get_current_page_url()
                 
                 # 重新导航到当前 URL（相当于刷新）
-                from browser_use.browser.views import BrowserState
                 page = browser_session.context.pages[0] if browser_session.context.pages else None
                 if page:
                     await page.reload()
