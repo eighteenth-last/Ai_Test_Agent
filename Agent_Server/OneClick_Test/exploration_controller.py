@@ -1,228 +1,182 @@
-"""
-探索专用 Controller - 基于 browser-use 0.11.1
-
-核心特性：
-1. 继承 Tools 类
-2. 注册 3 个精准 action：record_page, explore_link, complete_exploration
-3. 内置验证逻辑
-4. 独立状态管理
-
-作者: Kiro AI Assistant
-日期: 2025-01-XX
-"""
-
-import logging
 import asyncio
-from typing import Optional
+import logging
+from typing import Any, Dict, List
+
 from pydantic import BaseModel, Field
 
 try:
-    from browser_use.tools.service import Tools
     from browser_use.agent.views import ActionResult
-    from browser_use.browser import BrowserSession
+    from browser_use.tools.service import Tools
     from browser_use.tools.views import ClickElementAction
-except ImportError as e:
-    logging.error(f"无法导入 browser-use: {e}")
+    try:
+        from browser_use import BrowserSession
+    except ImportError:
+        from browser_use.browser import BrowserSession
+except ImportError as exc:
+    logging.error("failed to import browser-use: %s", exc)
     raise
 
 logger = logging.getLogger(__name__)
 
 
 class ExplorationController(Tools):
-    """探索专用 Controller（继承 Tools）"""
-    
     def __init__(self, exploration_state):
-        """初始化探索 Controller"""
-        # 排除不需要的默认 actions
-        super().__init__(
-            exclude_actions=['search', 'extract', 'upload_file', 'screenshot']
-        )
-        
+        super().__init__(exclude_actions=["search", "extract", "upload_file", "screenshot"])
         self.exploration_state = exploration_state
         self._register_exploration_actions()
-        
-        logger.info("✅ ExplorationController 初始化完成")
-    
+        logger.info("[ExplorationController] initialized")
+
     def _register_exploration_actions(self):
-        """注册探索专用 actions"""
-        
-        # Action 1: record_page（移除元素数量限制）
         class RecordPageParams(BaseModel):
-            page_id: str = Field(description="页面标识")
-            elements: list[dict] = Field(description="页面元素列表（记录所有可点击元素，越多越好）")
-        
+            page_id: str = Field(description="Stable page identifier")
+            elements: List[Dict[str, Any]] = Field(description="Interactive elements detected on the page")
+
         @self.registry.action(
-            description='记录当前页面的所有元素（必须在导航前调用，记录所有可点击元素）',
-            param_model=RecordPageParams
+            description="Record the current page before navigating away from it.",
+            param_model=RecordPageParams,
         )
-        async def record_page(
-            params: RecordPageParams,
-            browser_session: BrowserSession
-        ) -> ActionResult:
-            """记录当前页面元素"""
-            logger.info(f"🔍 record_page: page_id={params.page_id}, elements={len(params.elements)}")
-            
-            # 获取当前 URL
+        async def record_page(params: RecordPageParams, browser_session: BrowserSession) -> ActionResult:
+            logger.info(
+                "[ExplorationController] record_page page_id=%s elements=%s",
+                params.page_id,
+                len(params.elements),
+            )
+
+            current_url = ""
             try:
                 current_url = await browser_session.get_current_page_url()
-            except Exception as e:
-                logger.warning(f"⚠️ 获取 URL 失败: {e}")
-                current_url = ""
-            
-            # ── DOM 丰富度检测（每次访问新页面时执行）──────────────
+            except Exception as exc:
+                logger.warning("[ExplorationController] failed to read current url: %s", exc)
+
             dom_mode_hint = ""
+            dom_summary: Dict[str, Any] = {}
+
             try:
                 from Execute_test.dom_mode.detector import DomRichnessDetector
+
                 detect_result = await DomRichnessDetector.detect(browser_session)
                 mode = detect_result.get("mode", "vision")
                 interactive = detect_result.get("interactive", 0)
                 total = detect_result.get("total", 0)
-                dom_mode_hint = (
-                    f"\n[DOM检测] interactive={interactive}, total={total}, "
-                    f"推荐模式={mode}"
-                )
-                logger.info(f"🔍 DOM检测 @ {current_url}: {dom_mode_hint.strip()}")
-            except Exception as dom_err:
-                logger.debug(f"DOM 检测跳过: {dom_err}")
-            # ── DOM 检测结束 ─────────────────────────────────────────
+                dom_mode_hint = f" DOM detect: interactive={interactive}, total={total}, mode={mode}"
+            except Exception as exc:
+                logger.debug("[ExplorationController] DOM richness detection skipped: %s", exc)
 
-            # 更新状态
+            try:
+                from Exploration.browser_use_tools import extract_dom_summary
+
+                dom_summary = await extract_dom_summary(browser_session)
+            except Exception as exc:
+                logger.warning("[ExplorationController] failed to extract DOM summary: %s", exc)
+
             result = self.exploration_state.record_page(
                 page_id=params.page_id,
                 elements=params.elements,
-                url=current_url
+                url=current_url,
+                dom_summary=dom_summary,
             )
-            
-            if not result['success']:
-                return ActionResult(error=result['message'], include_in_memory=True)
-            
-            msg = f"✅ 已记录页面 '{params.page_id}'，共 {len(params.elements)} 个元素{dom_mode_hint}"
-            logger.info(msg)
+            if not result["success"]:
+                return ActionResult(error=result["message"], include_in_memory=True)
+
+            title = str(dom_summary.get("title") or params.page_id)
+            msg = (
+                f"Recorded page '{params.page_id}' ({title}) with "
+                f"{len(dom_summary.get('interactive_elements') or params.elements)} interactive elements."
+                f"{dom_mode_hint}"
+            )
             return ActionResult(extracted_content=msg, include_in_memory=True)
-        
-        # Action 2: explore_link（增强：自动等待+返回提示）
+
         class ExploreLinkParams(BaseModel):
-            element_index: int = Field(description="要点击的元素索引")
-            target_page_name: str = Field(description="目标页面名称")
-        
+            element_index: int = Field(description="Interactive element index to click")
+            target_page_name: str = Field(description="Expected target page name")
+
         @self.registry.action(
-            description='点击链接探索新页面（必须先调用 record_page，探索完子页面后必须 go_back）',
-            param_model=ExploreLinkParams
+            description="Click a link or button to explore a child page, then continue exploration there.",
+            param_model=ExploreLinkParams,
         )
-        async def explore_link(
-            params: ExploreLinkParams,
-            browser_session: BrowserSession
-        ) -> ActionResult:
-            """探索链接"""
-            logger.info(f"🔗 explore_link: index={params.element_index}, target={params.target_page_name}")
-            
-            # 验证：当前页面是否已记录
+        async def explore_link(params: ExploreLinkParams, browser_session: BrowserSession) -> ActionResult:
+            logger.info(
+                "[ExplorationController] explore_link index=%s target=%s",
+                params.element_index,
+                params.target_page_name,
+            )
+
             validation = self.exploration_state.validate_navigate()
-            if not validation['success']:
-                logger.warning(f"❌ {validation['message']}")
-                return ActionResult(error=validation['message'], include_in_memory=True)
-            
-            # 验证：是否重复探索
+            if not validation["success"]:
+                return ActionResult(error=validation["message"], include_in_memory=True)
+
             if self.exploration_state.is_link_explored(params.element_index):
-                error_msg = f"元素 {params.element_index} 已探索过"
-                logger.warning(f"❌ {error_msg}")
-                return ActionResult(error=error_msg, include_in_memory=True)
-            
-            # 执行点击
+                return ActionResult(
+                    error=f"element {params.element_index} has already been explored",
+                    include_in_memory=True,
+                )
+
             try:
-                click_action = self.registry.registry.actions.get('click')
+                click_action = self.registry.registry.actions.get("click")
                 if not click_action:
-                    return ActionResult(error="click action 不可用")
-                
+                    return ActionResult(error="click action is unavailable", include_in_memory=True)
+
                 click_params = ClickElementAction(index=params.element_index)
                 click_result = await click_action.function(
                     params=click_params,
-                    browser_session=browser_session
+                    browser_session=browser_session,
                 )
-                
                 if isinstance(click_result, ActionResult) and click_result.error:
-                    logger.error(f"❌ 点击失败: {click_result.error}")
                     return click_result
-                
-            except Exception as e:
-                error_msg = f"点击失败: {str(e)}"
-                logger.error(f"❌ {error_msg}")
-                return ActionResult(error=error_msg, include_in_memory=True)
-            
-            # 等待页面加载
+            except Exception as exc:
+                return ActionResult(error=f"click failed: {exc}", include_in_memory=True)
+
             await asyncio.sleep(3)
-            
-            # 更新状态（进入子页面）
             self.exploration_state.mark_link_explored(
                 element_index=params.element_index,
-                target_page_name=params.target_page_name
+                target_page_name=params.target_page_name,
             )
-            
-            msg = f"✅ 已进入 '{params.target_page_name}'，请记录该页面后继续探索（探索完毕后调用 go_back）"
-            logger.info(msg)
+            msg = (
+                f"Entered '{params.target_page_name}'. Record the new page, explore it deeply, "
+                "then use go_back() after it is complete."
+            )
             return ActionResult(extracted_content=msg, include_in_memory=True)
-        
-        # Action 3: mark_page_completed（新增：标记页面探索完成）
+
         @self.registry.action(
-            description='标记当前页面探索完成（所有子元素都已探索后调用，然后 go_back 返回上一页）',
+            description="Mark the current page as fully explored before going back.",
         )
         async def mark_page_completed() -> ActionResult:
-            """标记页面探索完成"""
-            logger.info("✅ mark_page_completed 被调用")
-            
             self.exploration_state.mark_page_completed()
-            
-            msg = "✅ 当前页面探索完成，请调用 go_back 返回上一页继续探索"
-            logger.info(msg)
-            return ActionResult(extracted_content=msg, include_in_memory=True)
-        
-        # Action 4: refresh_page（新增：刷新页面）
+            return ActionResult(
+                extracted_content="Current page is complete. Use go_back() to return to the parent page.",
+                include_in_memory=True,
+            )
+
         @self.registry.action(
-            description='刷新当前页面（页面显示异常或加载失败时使用）',
+            description="Refresh the current page when the UI is stuck or did not finish loading.",
         )
         async def refresh_page(browser_session: BrowserSession) -> ActionResult:
-            """刷新页面"""
-            logger.info("🔄 refresh_page 被调用")
-            
             try:
-                # 获取当前 URL
+                page = browser_session.context.pages[0] if browser_session.context and browser_session.context.pages else None
+                if not page:
+                    return ActionResult(error="current page is unavailable", include_in_memory=True)
+                await page.reload()
+                await asyncio.sleep(3)
                 current_url = await browser_session.get_current_page_url()
-                
-                # 重新导航到当前 URL（相当于刷新）
-                page = browser_session.context.pages[0] if browser_session.context.pages else None
-                if page:
-                    await page.reload()
-                    await asyncio.sleep(3)  # 等待页面加载
-                    
-                    msg = f"✅ 页面已刷新: {current_url}"
-                    logger.info(msg)
-                    return ActionResult(extracted_content=msg, include_in_memory=True)
-                else:
-                    return ActionResult(error="无法获取页面对象", include_in_memory=True)
-                    
-            except Exception as e:
-                error_msg = f"刷新页面失败: {str(e)}"
-                logger.error(f"❌ {error_msg}")
-                return ActionResult(error=error_msg, include_in_memory=True)
-        
-        # Action 5: complete_exploration（修改：移除硬性数量限制）
+                return ActionResult(
+                    extracted_content=f"Refreshed page: {current_url}",
+                    include_in_memory=True,
+                )
+            except Exception as exc:
+                return ActionResult(error=f"refresh failed: {exc}", include_in_memory=True)
+
         @self.registry.action(
-            description='完成探索（所有页面都探索完毕后调用，会验证探索深度和完整性）',
+            description="Complete exploration after all reachable pages and branches have been explored.",
         )
         async def complete_exploration() -> ActionResult:
-            """完成探索"""
-            logger.info("🏁 complete_exploration 被调用")
-            
-            # 验证完成条件
             validation = self.exploration_state.validate_completion()
-            if not validation['success']:
-                error_msg = f"探索未完成: {validation['message']}"
-                logger.warning(f"❌ {error_msg}")
-                return ActionResult(error=error_msg, include_in_memory=True)
-            
-            # 生成探索报告
+            if not validation["success"]:
+                return ActionResult(
+                    error=f"exploration is not complete: {validation['message']}",
+                    include_in_memory=True,
+                )
+
             report = self.exploration_state.generate_report()
-            logger.info("✅ 探索完成")
             return ActionResult(extracted_content=report, include_in_memory=True)
-        
-        logger.info("✅ 探索 actions 注册完成")
+
+        logger.info("[ExplorationController] actions registered")

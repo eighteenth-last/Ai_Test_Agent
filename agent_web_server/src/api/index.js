@@ -534,8 +534,11 @@ export const knowledgeAPI = {
     return api.post('/knowledge/collection-create', { force })
   },
   // 页面探索专用接口
-  explorePage(url, username = '', password = '', user_goal = '') {
-    return api.post('/knowledge/explore-page', { url, username, password, user_goal })
+  explorePage(urlOrPayload, username = '', password = '', user_goal = '') {
+    if (typeof urlOrPayload === 'object' && urlOrPayload !== null) {
+      return api.post('/knowledge/explore-page', urlOrPayload)
+    }
+    return api.post('/knowledge/explore-page', { url: urlOrPayload, username, password, user_goal })
   },
   // 停止页面探索
   stopExplore(task_id) {

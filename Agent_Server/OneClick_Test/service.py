@@ -53,6 +53,8 @@ from OneClick_Test.exploration_prompts import (
     EXPLORATION_SYSTEM_PROMPT,
     build_exploration_prompt
 )
+from Exploration.browser_use_agent_explorer import BrowserUseAgentExplorer
+from Exploration.orchestrator import ExplorationOrchestrator
 from Page_Knowledge.service import PageKnowledgeService
 from Page_Knowledge.schema import PageKnowledge
 
@@ -62,6 +64,11 @@ logger = logging.getLogger(__name__)
 # ========== 全局运行状态管理 ==========
 # session_id → { "cancel_event": asyncio.Event, "browser_session": BrowserSession|None, "loop_detector": LoopDetector|None }
 _running_sessions: Dict[int, Dict[str, Any]] = {}
+
+
+def _use_queue_exploration() -> bool:
+    """Short-term gray switch for the shared browser-use exploration engine."""
+    return os.getenv("ONECLICK_EXPLORATION_V2", "true").lower() == "true"
 
 
 class OneClickService:
@@ -177,6 +184,10 @@ class OneClickService:
             "cancel_event": cancel_event,
             "browser_session": None,
             "loop_detector": None,
+            "engine": "",
+            "current_task": "",
+            "events": [],
+            "artifact_summary": None,
         }
 
         def _is_cancelled() -> bool:
@@ -279,13 +290,47 @@ class OneClickService:
                         kb_hit = None  # 触发浏览器探索
             
             if not kb_hit or not kb_hit.get('hit'):
+                use_queue = _use_queue_exploration()
+
+                def _status_callback(event_type: str, payload: Dict[str, Any]):
+                    running_state = _running_sessions.get(session_id)
+                    if not running_state:
+                        return
+                    if event_type == "engine.selected":
+                        running_state["engine"] = payload.get("engine", running_state.get("engine", ""))
+                    elif event_type == "task.started":
+                        running_state["current_task"] = payload.get("title", "")
+                    elif event_type == "artifact.ready":
+                        running_state["artifact_summary"] = payload.get("summary")
+
+                    if payload:
+                        events = running_state.setdefault("events", [])
+                        events.append({
+                            "type": event_type,
+                            "payload": payload,
+                            "ts": int(time.time()),
+                        })
+                        if len(events) > 50:
+                            del events[:-50]
                 # ━━ 未命中 / 已老化 / 覆盖不足：执行浏览器探索 ━━
 
                 # 使用精准探索模式（OpenClaw 风格）
                 logger.info(f"[OneClick] 使用精准探索模式（OpenClaw 风格）")
-                explore_result = await OneClickService._explore_page_with_precision(
-                    db, session, user_input, env_info
-                )
+                if use_queue:
+                    logger.info("[OneClick] page exploration mode=browser_use")
+                    explore_result = await ExplorationOrchestrator.run(
+                        mode="oneclick",
+                        goal=user_input,
+                        env_info=env_info,
+                        session_ref=_running_sessions.get(session_id),
+                        cancel_event=cancel_event,
+                        status_callback=_status_callback,
+                    )
+                else:
+                    logger.info("[OneClick] page exploration mode=precision_browser_use")
+                    explore_result = await OneClickService._explore_page_with_precision(
+                        db, session, user_input, env_info
+                    )
 
                 if _is_cancelled():
                     logger.info(f"[OneClick] ⏹️ 后台任务已取消（探索后）: session_id={session_id}")
@@ -294,6 +339,7 @@ class OneClickService:
                 if explore_result.get("success"):
                     page_data = explore_result.get("page_data", {})
                     session.page_analysis = json.dumps(page_data, ensure_ascii=False)
+                    session.page_capabilities = json.dumps(page_data, ensure_ascii=False)
                     if not SessionManager.update_status(db, session, 'page_scanned'):
                         return
                     db.commit()
@@ -1138,6 +1184,100 @@ class OneClickService:
         return {"base_url": "", "_source": "未配置"}
 
     @staticmethod
+    def _resolve_environment(intent: Dict, db: Session) -> Dict:
+        """
+        Standardized environment resolver for browser exploration and downstream planning.
+        """
+        user_url = intent.get("user_provided_url")
+        user_username = intent.get("user_provided_username")
+        user_password = intent.get("user_provided_password")
+
+        if user_url:
+            return {
+                "base_url": user_url,
+                "target_url": user_url,
+                "login_url": user_url,
+                "username": user_username or "",
+                "password": user_password or "",
+                "extra_credentials": {},
+                "headless": os.getenv("HEADLESS", "false").lower() == "true",
+                "_source": "user_input",
+                "env_name": "user_input",
+            }
+
+        all_envs = db.query(TestEnvironment).filter(
+            TestEnvironment.is_active == 1,
+        ).all()
+
+        matched_env = None
+        preferred_name = intent.get("preferred_env_name")
+        if preferred_name and all_envs:
+            preferred_lower = preferred_name.lower()
+            for env in all_envs:
+                env_name_lower = (env.name or "").lower()
+                env_desc_lower = (env.description or "").lower()
+                if preferred_lower in env_name_lower or preferred_lower in env_desc_lower:
+                    matched_env = env
+                    break
+            if not matched_env and len(preferred_lower) > 1:
+                keywords = [preferred_lower[i:i + 2] for i in range(len(preferred_lower) - 1)]
+                for env in all_envs:
+                    env_name_lower = (env.name or "").lower()
+                    if any(keyword in env_name_lower for keyword in keywords):
+                        matched_env = env
+                        break
+
+        if not matched_env:
+            matched_env = next((env for env in all_envs if env.is_default == 1), None)
+        if not matched_env and all_envs:
+            matched_env = all_envs[0]
+
+        if matched_env:
+            extra_credentials = (
+                dict(matched_env.extra_credentials)
+                if isinstance(matched_env.extra_credentials, dict)
+                else {}
+            )
+            return {
+                "base_url": matched_env.base_url,
+                "target_url": matched_env.base_url,
+                "login_url": matched_env.login_url or matched_env.base_url,
+                "username": user_username or matched_env.username or "",
+                "password": user_password or matched_env.password or "",
+                "extra_credentials": extra_credentials,
+                "headless": os.getenv("HEADLESS", "false").lower() == "true",
+                "_source": f"test_env:{matched_env.name}",
+                "_env_id": matched_env.id,
+                "env_name": matched_env.name,
+            }
+
+        base_url = os.getenv("API_BASE_URL", "")
+        if base_url:
+            return {
+                "base_url": base_url,
+                "target_url": base_url,
+                "login_url": base_url,
+                "username": user_username or "",
+                "password": user_password or "",
+                "extra_credentials": {},
+                "headless": os.getenv("HEADLESS", "false").lower() == "true",
+                "_source": "env_var",
+                "env_name": "env_var",
+            }
+
+        return {
+            "base_url": "",
+            "target_url": "",
+            "login_url": "",
+            "username": "",
+            "password": "",
+            "extra_credentials": {},
+            "headless": os.getenv("HEADLESS", "false").lower() == "true",
+            "_source": "unknown",
+            "env_name": "unknown",
+        }
+
+    @staticmethod
     async def _parse_user_scope(user_input: str, db: Session) -> Dict:
         """
         解析用户的测试范围
@@ -1546,6 +1686,7 @@ class OneClickService:
             f"登录URL: {env.get('login_url') or env.get('base_url', '未配置')}\n"
             f"账号(username): {env.get('username', '未配置')}\n"
             f"密码(password): {env.get('password', '未配置')}\n"
+            f"额外凭据(extra_credentials): {json.dumps(env.get('extra_credentials', {}), ensure_ascii=False)}\n"
             f"环境名称: {env.get('env_name', env.get('_source', '默认环境'))}"
         )
 

@@ -10,6 +10,7 @@
 作者: Kiro AI Assistant
 日期: 2025-01-12
 """
+import json
 
 # ============================================
 # 系统提示词（参考 OpenClaw 的 buildAgentSystemPrompt）
@@ -115,6 +116,8 @@ EXPLORATION_TASK_TEMPLATE = """
 - URL: {target_url}
 - 登录账号: {username}
 - 登录密码: {password}
+- 额外测试数据: {extra_credentials}
+- 环境来源: {env_source}
 
 **目标解析**:
 {parsed_targets}
@@ -292,17 +295,31 @@ def parse_user_targets(user_input: str) -> str:
 
 def build_exploration_prompt(
     user_goal: str,
-    target_url: str,
-    username: str,
-    password: str,
-    pages: list = None  # 不再使用，保留参数兼容性
+    target_url: str = "",
+    username: str = "",
+    password: str = "",
+    pages: list = None,  # 保留参数兼容性
+    env_info: dict = None,
 ) -> str:
     """构建完整的探索提示词（深度优先）"""
+    env = env_info or {}
+    resolved_target_url = env.get("target_url") or env.get("base_url") or target_url
+    resolved_username = env.get("username") or username
+    resolved_password = env.get("password") or password
+    extra_credentials = env.get("extra_credentials") or {}
+    extra_credentials_text = "无"
+    if isinstance(extra_credentials, dict) and extra_credentials:
+        extra_credentials_text = json.dumps(extra_credentials, ensure_ascii=False)
+    elif extra_credentials:
+        extra_credentials_text = str(extra_credentials)
+
     return EXPLORATION_TASK_TEMPLATE.format(
         user_goal=user_goal,
-        target_url=target_url,
-        username=username,
-        password=password,
+        target_url=resolved_target_url,
+        username=resolved_username,
+        password=resolved_password,
+        extra_credentials=extra_credentials_text,
+        env_source=env.get("env_name") or env.get("_source", "默认环境"),
         parsed_targets=parse_user_targets(user_goal),
         user_constraints=format_user_constraints(user_goal)
     )

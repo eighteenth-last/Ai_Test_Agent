@@ -73,6 +73,9 @@ AI Test Agent 是一个基于人工智能的自动化测试平台，利用大语
 - **全链路闭环**：执行结果写入 `test_records` → 自动生成 `test_reports` → 失败用例创建 `bug_reports` → 自动邮件通知 `auto_receive_bug=1` 联系人
 
 ### 5. 一键测试（OneClick Test）
+- **统一环境上下文**：探索与用例生成统一消费标准化 `env_info`，包含 `target_url / login_url / username / password / extra_credentials / env_name`，避免重复拼装测试数据
+- **Browser-Use 探索执行主体**：默认由 FastAPI + 大模型系统提示词驱动 Browser-Use Agent 完成页面探索与交互，不再依赖项目内自定义 Playwright 点击执行器
+- **结构化探索产物**：探索阶段会记录页面快照与 DOM 摘要，提取 `forms / tables / buttons / links / page_sections / dialogs` 等结构化能力信息，用于后续子任务规划和用例生成
 - **全自主 AI 测试**：输入一句话任务（如"测试登录功能"），AI 全权执行：意图分析 → 自动获取环境 → 浏览器探索页面 → 生成子任务 → 生成用例 → 用户确认 → 执行测试
 - **测试环境管理**：在「测试环境」中配置被测系统的 URL、登录账号密码，一键测试时自动从数据库获取，无需每次手动输入
 - **智能环境解析**：优先使用用户指令中提供的 URL/凭据 → 数据库默认环境 → 环境变量兜底，三级降级策略
@@ -86,6 +89,7 @@ AI Test Agent 是一个基于人工智能的自动化测试平台，利用大语
 - **循环检测 (LoopDetector)**：实时监测 Agent 是否陷入重复操作，达到阈值自动熔断
 - **模型自动切换 (FailoverChatModel)**：当主模型遇到 429 限流或连续失败时，自动切换到备用模型
 - **真正的停止控制**：通过 asyncio.Event 取消机制 + 浏览器强制关闭，点击停止后立即生效
+- **探索取消状态收口**：无论是一键测试还是页面知识库探索，被用户中止后都会进入明确的 `cancelled / 已取消` 终态，停止轮询并关闭前端 loading
 - **429 限流智能熔断**：检测到 API 配额耗尽时立即停止后续用例
 - **自动邮件通知**：测试完成后自动将测试报告 + Bug 报告整合为 HTML 邮件，发送给 `auto_receive_bug=1` 的联系人
 - **Skills 知识注入**：执行时自动加载相关 Skills 作为"便签"注入 LLM 提示词
@@ -148,6 +152,8 @@ AI Test Agent 是一个基于人工智能的自动化测试平台，利用大语
 - **安全隔离**：扫描目标白名单、禁止公网 IP、限速、最大扫描时长、Docker 隔离运行 ZAP
 
 ### 11. 页面知识库（RAG 记忆层）
+- **共享探索执行器**：页面知识库与一键测试共用同一条 Browser-Use 探索链路，统一由 `Exploration.browser_use_agent_explorer` 执行
+- **结构化页面快照**：探索时会记录页面快照与 DOM 摘要，并沉淀 `forms / tables / buttons / links / page_sections / dialogs` 等字段，便于后续 RAG 检索与 Diff
 - **向量存储**：使用 Qdrant 向量数据库（Docker 部署）存储页面结构的 Embedding，MySQL 同步保存索引记录
 - **语义检索**：一键测试前先对目标 URL 做精确匹配，命中则跳过浏览器探索直接复用缓存知识，大幅节省 Token 消耗
 - **相似度兜底**：精确匹配未命中时，使用 Embedding 做余弦相似度语义检索（阈值 0.82），再次尝试匹配同域名页面的历史知识
@@ -200,7 +206,7 @@ AI Test Agent 是一个基于人工智能的自动化测试平台，利用大语
 - **框架**: FastAPI 0.115.0 + Uvicorn
 - **架构模式**: Adapter Pattern (LLM Layer), Factory Pattern
 - **数据库**: MySQL + SQLAlchemy 2.0.25
-- **核心引擎**: Browser-Use 0.11.1 (CDP 架构) + Playwright
+- **核心引擎**: Browser-Use 0.11.1（统一浏览器执行主体）+ FastAPI / LLM 编排
 - **LLM 集成**: 支持 OpenAI, Anthropic, Google GenAI, DeepSeek, Alibaba, MiniMax, Ollama 等多协议
 - **LLM 容错**: json-repair 库 + 多层 JSON 修复管线 + LLMWrapper 统一包装
 - **向量数据库**: Qdrant（页面知识库 RAG 记忆层，Docker 部署）
@@ -446,6 +452,8 @@ npm run dev
 - 执行完成后自动生成测试报告，失败用例自动创建 Bug 并邮件通知相关联系人。
 
 ### 4. 一键测试（OneClick Test）
+- 一键测试现在会先把环境标准化为 `target_url / login_url / username / password / extra_credentials / env_name`，再把这份上下文同时提供给探索与用例生成链路
+- 页面探索默认由 Browser-Use Agent 执行；FastAPI 服务负责提供系统提示词、环境数据和任务状态编排
 - 首先在"一键测试"页面点击「测试环境」按钮，配置被测系统的 URL 和登录账号密码
 - 输入自然语言指令，如"帮我测试登录功能"或"全面测试用户管理模块"
 - AI 自动分析意图，从数据库获取测试环境（URL + 凭据），拉起浏览器探索目标页面
@@ -489,6 +497,8 @@ npm run dev
 - **扩展新服务商**：在 `Email_manage/sender.py` 中实现 `_send_via_xxx(config, to_email, subject, html_body)` 函数，并在 `_PROVIDER_MAP` 注册一行，所有发送入口自动支持，无需改动其他代码
 
 ### 9. 页面知识库（RAG 记忆层）
+- 点击"探索页面"时，系统会复用与一键测试一致的 Browser-Use 探索执行链，并将 `extra_credentials` 一并提供给探索提示词
+- 如需中止探索，可点击停止；任务会进入"已取消"终态，后端浏览器会被关闭，前端轮询与 loading 也会同步结束
 - 在侧边栏进入"页面知识库"页面，查看统计面板（总记录数 / 向量数 / 老化数 / Qdrant 健康状态）
 - 点击"Collection 配置"按钮，配置 Qdrant 连接和 Embedding 服务参数，点击"保存配置"持久化到数据库
 - 点击"初始化 Collection"使配置生效；如需从零重建则点击"强制重建"（会删除旧 Collection 后重新创建）

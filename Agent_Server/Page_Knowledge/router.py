@@ -10,17 +10,19 @@
 """
 import asyncio
 import logging
+import os
 import time
 from typing import Optional, Dict, Any
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from database.connection import get_db, QdrantCollectionConfig, OneclickSession
+from database.connection import get_db, QdrantCollectionConfig, OneclickSession, TestEnvironment
 from Page_Knowledge.service import PageKnowledgeService
 from Page_Knowledge.vector_store import get_vector_store, apply_config_to_store
 from Page_Knowledge.embedding import reload_embedding_client
 from Page_Knowledge.schema import PageKnowledge
+from Exploration.orchestrator import ExplorationOrchestrator
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["页面知识库"])
@@ -388,15 +390,64 @@ async def create_collection(req: CollectionCreateRequest, db: Session = Depends(
 # task_id → {"cancel_event": asyncio.Event, "browser_session": BrowserSession|None, "temp_session_id": int}
 _explore_tasks: Dict[str, Dict[str, Any]] = {}
 
+
+def _use_queue_exploration() -> bool:
+    """Short-term gray switch for the shared browser-use exploration engine."""
+    return os.getenv("KNOWLEDGE_EXPLORATION_V2", "true").lower() == "true"
+
 class ExplorePageRequest(BaseModel):
     url: str
     username: str = ""
     password: str = ""
     user_goal: str = ""
+    env_id: Optional[int] = None
+    login_url: str = ""
+    extra_credentials: Optional[Dict[str, Any]] = None
 
 
 class StopExploreRequest(BaseModel):
     task_id: str
+
+
+def _resolve_explore_environment(req: ExplorePageRequest, db: Session) -> Dict[str, Any]:
+    matched_env = None
+    if req.env_id:
+        matched_env = db.query(TestEnvironment).filter(
+            TestEnvironment.id == req.env_id,
+            TestEnvironment.is_active == 1,
+        ).first()
+
+    target_url = (req.url or "").strip()
+    login_url = (req.login_url or "").strip()
+    username = req.username or ""
+    password = req.password or ""
+    extra_credentials = dict(req.extra_credentials or {})
+    source = "manual"
+
+    if matched_env:
+        target_url = target_url or (matched_env.base_url or "").strip()
+        login_url = login_url or (matched_env.login_url or matched_env.base_url or "").strip()
+        username = username or (matched_env.username or "")
+        password = password or (matched_env.password or "")
+        if isinstance(matched_env.extra_credentials, dict):
+            merged_credentials = dict(matched_env.extra_credentials)
+            merged_credentials.update(extra_credentials)
+            extra_credentials = merged_credentials
+        source = f"test_env:{matched_env.name}"
+
+    login_url = login_url or target_url
+    return {
+        "base_url": target_url,
+        "target_url": target_url,
+        "login_url": login_url,
+        "username": username,
+        "password": password,
+        "extra_credentials": extra_credentials,
+        "headless": os.getenv("HEADLESS", "false").lower() == "true",
+        "_env_id": matched_env.id if matched_env else None,
+        "_source": source,
+        "env_name": matched_env.name if matched_env else source,
+    }
 
 
 @router.post("/knowledge/explore-page")
@@ -413,28 +464,18 @@ async def explore_page(req: ExplorePageRequest, db: Session = Depends(get_db)):
     """
     try:
         import asyncio
-        from OneClick_Test.service import OneClickService
         
         # 构建探索环境信息
-        env_info = {
-            "base_url": req.url,
-            "username": req.username,
-            "password": req.password,
-        }
-        
-        # 构建意图信息（简化版）
-        intent = {
-            "target_module": req.user_goal or "页面探索",
-            "test_scope": req.user_goal or "探索页面结构",
-            "scope_type": "single_page",
-            "required_modules": [],
-        }
+        env_info = _resolve_explore_environment(req, db)
+        target_url = env_info.get("target_url", "")
+        if not target_url:
+            return {"success": False, "message": "未找到目标 URL，请选择测试环境或手动填写 URL"}
         
         # 创建临时会话（用于探索）
         from database.connection import OneclickSession
         temp_session = OneclickSession(
             user_input=req.user_goal or f"探索页面: {req.url}",
-            target_url=req.url,
+            target_url=target_url,
             status='exploring',
         )
         db.add(temp_session)
@@ -448,14 +489,18 @@ async def explore_page(req: ExplorePageRequest, db: Session = Depends(get_db)):
             "cancel_event": cancel_event,
             "browser_session": None,
             "temp_session_id": temp_session.id,
-            "url": req.url,
+            "url": target_url,
             "status": "running",
+            "engine": "",
+            "current_task": "",
+            "events": [],
+            "artifact_summary": None,
         }
         
         # 启动后台探索任务
         asyncio.create_task(
             _background_explore_task(
-                task_id, temp_session.id, req, intent, env_info, cancel_event
+                task_id, temp_session.id, req, env_info, cancel_event
             )
         )
         
@@ -466,6 +511,7 @@ async def explore_page(req: ExplorePageRequest, db: Session = Depends(get_db)):
                 "task_id": task_id,
                 "temp_session_id": temp_session.id,
                 "status": "running",
+                "env_source": env_info.get("_source", ""),
             }
         }
         
@@ -480,7 +526,6 @@ async def _background_explore_task(
     task_id: str,
     temp_session_id: int,
     req: ExplorePageRequest,
-    intent: Dict,
     env_info: Dict,
     cancel_event: asyncio.Event,
 ):
@@ -489,19 +534,55 @@ async def _background_explore_task(
     from OneClick_Test.service import OneClickService
     
     db = SessionLocal()
+    temp_session = None
     try:
         temp_session = db.query(OneclickSession).filter_by(id=temp_session_id).first()
         if not temp_session:
             logger.error(f"[PageKB API] 临时会话不存在: {temp_session_id}")
             _explore_tasks[task_id]["status"] = "failed"
             return
-        
-        # 使用精准探索模式（OpenClaw 风格）
-        logger.info(f"[PageKB API] 开始精准探索页面: {req.url}")
-        
-        explore_result = await OneClickService._explore_page_with_precision(
-            db, temp_session, req.user_goal or f"探索页面: {req.url}", env_info
+
+        def _status_callback(event_type: str, payload: Dict[str, Any]):
+            task_state = _explore_tasks.get(task_id)
+            if not task_state:
+                return
+            if event_type == "engine.selected":
+                task_state["engine"] = payload.get("engine", task_state.get("engine", ""))
+            elif event_type == "task.started":
+                task_state["current_task"] = payload.get("title", "")
+            elif event_type == "artifact.ready":
+                task_state["artifact_summary"] = payload.get("summary")
+
+            if payload:
+                events = task_state.setdefault("events", [])
+                events.append({
+                    "type": event_type,
+                    "payload": payload,
+                    "ts": int(time.time()),
+                })
+                if len(events) > 50:
+                    del events[:-50]
+
+        use_queue = _use_queue_exploration()
+        logger.info(
+            "[PageKB API] 开始页面探索: url=%s mode=%s",
+            env_info.get("target_url", req.url),
+            "browser_use" if use_queue else "precision_browser_use",
         )
+
+        if use_queue:
+            explore_result = await ExplorationOrchestrator.run(
+                mode="knowledge",
+                goal=req.user_goal or f"探索页面: {req.url}",
+                env_info=env_info,
+                session_ref=_explore_tasks[task_id],
+                cancel_event=cancel_event,
+                status_callback=_status_callback,
+            )
+        else:
+            explore_result = await OneClickService._explore_page_with_precision(
+                db, temp_session, req.user_goal or f"探索页面: {req.url}", env_info
+            )
         
         # 检查是否被取消
         if cancel_event.is_set():
@@ -534,7 +615,7 @@ async def _background_explore_task(
         # 存入知识库
         logger.info(f"[PageKB API] 正在存入知识库...")
         kb_result = await PageKnowledgeService.check_and_update(
-            url=req.url,
+            url=env_info.get("target_url", req.url),
             new_capabilities=page_capabilities,
             db=db,
         )
@@ -552,7 +633,11 @@ async def _background_explore_task(
             "page_data": page_data,
             "capabilities": page_capabilities,
             "diff": diff.to_dict() if diff else None,
-            "explore_mode": "precision",  # 固定使用精准模式
+            "explore_mode": "browser_use" if use_queue else "precision_browser_use",
+            "engine": _explore_tasks[task_id].get("engine", ""),
+            "current_task": _explore_tasks[task_id].get("current_task", ""),
+            "events": _explore_tasks[task_id].get("events", []),
+            "artifact_summary": _explore_tasks[task_id].get("artifact_summary"),
         }
         
         # 清理临时会话
@@ -568,8 +653,9 @@ async def _background_explore_task(
         _explore_tasks[task_id]["status"] = "failed"
         _explore_tasks[task_id]["error"] = str(e)
         try:
-            db.delete(temp_session)
-            db.commit()
+            if temp_session is not None:
+                db.delete(temp_session)
+                db.commit()
         except:
             pass
     finally:
@@ -637,6 +723,10 @@ async def get_explore_status(task_id: str):
                 "task_id": task_id,
                 "status": task_info["status"],
                 "url": task_info.get("url", ""),
+                "engine": task_info.get("engine", ""),
+                "current_task": task_info.get("current_task", ""),
+                "events": task_info.get("events", []),
+                "artifact_summary": task_info.get("artifact_summary"),
             }
         }
         
