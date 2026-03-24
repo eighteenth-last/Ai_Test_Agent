@@ -128,12 +128,17 @@ class BugAnalysisService:
         limit: int = 20,
         offset: int = 0,
         status: str = None,
-        severity: str = None
+        severity: str = None,
+        project_id: int = None
     ) -> Dict[str, Any]:
         """获取 Bug 报告列表"""
         from database.connection import BugReport
         
         query = db.query(BugReport)
+        
+        # 项目过滤
+        if project_id is not None:
+            query = query.filter(BugReport.project_id == project_id)
         
         if status:
             query = query.filter(BugReport.status == status)

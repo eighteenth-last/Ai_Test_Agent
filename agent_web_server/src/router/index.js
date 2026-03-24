@@ -81,12 +81,18 @@ const routes = [
     component: () => import('@/views/model/ProviderManage.vue'),
     meta: { title: '供应商管理', menu: 'model' }
   },
-  // 测试用例生成模块
+  // 测试测试资源模块
+  {
+    path: '/case/project',
+    name: 'ProjectManage',
+    component: () => import('@/views/case/ProjectManage.vue'),
+    meta: { title: '项目管理', menu: 'case' }
+  },
   {
     path: '/case/generate',
     name: 'CaseGenerate',
     component: () => import('@/views/case/CaseGenerate.vue'),
-    meta: { title: '用例生成模块', menu: 'case' }
+    meta: { title: '测试资源模块', menu: 'case' }
   },
   {
     path: '/case/manage',

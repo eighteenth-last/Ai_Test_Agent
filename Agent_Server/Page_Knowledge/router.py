@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from database.connection import get_db, QdrantCollectionConfig, OneclickSession, TestEnvironment
+from database.connection import get_db, get_default_project, QdrantCollectionConfig, OneclickSession, TestEnvironment
 from Page_Knowledge.service import PageKnowledgeService
 from Page_Knowledge.vector_store import get_vector_store, apply_config_to_store
 from Page_Knowledge.embedding import reload_embedding_client
@@ -129,8 +129,11 @@ async def knowledge_lookup(req: LookupRequest):
 async def knowledge_store(req: StoreRequest, db: Session = Depends(get_db)):
     """手动存储页面知识"""
     try:
+        # 获取默认项目
+        project = get_default_project(db)
+        
         knowledge = PageKnowledge.from_capabilities(req.url, req.capabilities)
-        result = await PageKnowledgeService.store(knowledge, db)
+        result = await PageKnowledgeService.store(knowledge, db, project_id=project.id)
         return {"success": True, "data": result}
     except Exception as e:
         logger.error(f"[PageKB API] store 失败: {e}")
@@ -165,11 +168,27 @@ async def knowledge_check_update(req: StoreRequest, db: Session = Depends(get_db
 
 
 @router.get("/knowledge/list")
-async def knowledge_list(domain: str = "", page_type: str = "", limit: int = 100):
+async def knowledge_list(domain: str = "", page_type: str = "", limit: int = 100, project_id: int = None, db: Session = Depends(get_db)):
     """列出所有页面知识"""
     try:
+        from database.connection import get_active_project_by_id
+        
+        # 如果未指定项目，使用默认项目
+        if project_id is None:
+            project = get_default_project(db)
+            if not project:
+                # 没有启用的项目，返回空列表
+                return {"success": True, "data": {"items": [], "total": 0}}
+            project_id = project.id
+        else:
+            # 验证指定的项目是否启用（不报错，只是过滤）
+            project = get_active_project_by_id(db, project_id)
+            if not project:
+                # 项目未启用，返回空列表
+                return {"success": True, "data": {"items": [], "total": 0}}
+        
         items = await PageKnowledgeService.list_all(
-            domain=domain, page_type=page_type, limit=limit,
+            domain=domain, page_type=page_type, limit=limit, project_id=project_id,
         )
         return {"success": True, "data": {"items": items, "total": len(items)}}
     except Exception as e:

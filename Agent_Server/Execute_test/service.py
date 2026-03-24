@@ -19,7 +19,9 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 
-load_dotenv()
+# 加载环境变量 - .env 文件在 Agent_Server 目录下
+env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
+load_dotenv(env_path)
 
 
 def find_chrome_path() -> Optional[str]:

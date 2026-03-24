@@ -471,10 +471,16 @@ async function loadStats() {
 async function loadList() {
   loading.value = true
   try {
-    const res = await knowledgeAPI.getList({
+    // 获取当前选中的项目ID
+    const projectId = localStorage.getItem('currentProjectId')
+    const params = {
       domain: filterDomain.value || undefined,
       page_type: filterPageType.value || undefined,
-    })
+    }
+    if (projectId) {
+      params.project_id = parseInt(projectId)
+    }
+    const res = await knowledgeAPI.getList(params)
     const list = res?.data?.items || res?.items || res?.data || res?.records || res
     knowledgeList.value = Array.isArray(list) ? list : []
     // 构建域名筛选项

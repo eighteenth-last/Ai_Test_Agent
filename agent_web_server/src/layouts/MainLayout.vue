@@ -29,6 +29,9 @@
       <header class="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 flex-shrink-0">
         <h2 class="text-lg font-bold text-slate-700">{{ currentTitle }}</h2>
         <div class="flex items-center gap-4">
+          <!-- 项目选择器 -->
+          <ProjectSelector @change="handleProjectChange" ref="projectSelectorRef" />
+          
           <div class="flex items-center gap-2 text-xs text-slate-500 bg-slate-100 px-3 py-1.5 rounded-full">
             <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
             Browser-use 引擎就绪
@@ -60,10 +63,12 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { NBadge, NButton } from 'naive-ui'
 import MenuItem from '@/components/MenuItem.vue'
+import ProjectSelector from '@/components/ProjectSelector.vue'
 import logo from '@/assets/logo.png'
 import { listActivePlatforms } from '@/api/project'
 
 const route = useRoute()
+const projectSelectorRef = ref(null)
 
 // 平台ID到路由映射
 const platformRouteMap = {
@@ -121,8 +126,9 @@ const menuList = ref([
   {
     id: 'case',
     icon: 'fa-clipboard-list',
-    label: '用例生成模块',
+    label: '测试资源模块',
     children: [
+      { label: '项目管理', path: '/case/project' },
       { label: '用例生成', path: '/case/generate' },
       { label: '用例管理', path: '/case/manage' },
       { label: '接口文件管理', path: '/case/api-spec' },
@@ -240,6 +246,11 @@ const toggleSubMenu = (subMenuId) => {
   } else {
     openSubMenus.value.push(subMenuId)
   }
+}
+
+const handleProjectChange = (projectId) => {
+  console.log('项目切换:', projectId)
+  // 项目切换后，ProjectSelector 组件会自动刷新页面
 }
 </script>
 

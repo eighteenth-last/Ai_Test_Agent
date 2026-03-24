@@ -5,21 +5,29 @@
 """
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON, inspect
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.dialects.mysql import LONGTEXT
 from datetime import datetime
 import os
 from dotenv import load_dotenv
 
-# 加载环境变量
-load_dotenv()
+# 加载环境变量 - .env 文件在 Agent_Server 目录下
+env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
+load_dotenv(env_path)
 
-# 数据库连接配置
-DB_HOST = os.getenv('DB_HOST', '127.0.0.1')
-DB_PORT = os.getenv('DB_PORT', '3306')
-DB_USER = os.getenv('DB_USER', 'root')
-DB_PASSWORD = os.getenv('DB_PASSWORD', 'qwer4321')
-DB_NAME = os.getenv('DB_NAME', 'ai_test_agent')
+# 数据库连接配置 - 必须从环境变量获取，不提供默认值
+DB_HOST = os.getenv('DB_HOST')
+DB_PORT = os.getenv('DB_PORT')
+DB_USER = os.getenv('DB_USER')
+DB_PASSWORD = os.getenv('DB_PASSWORD')
+DB_NAME = os.getenv('DB_NAME')
+
+# 验证必需的环境变量
+if not all([DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME]):
+    raise ValueError(
+        "数据库配置缺失！请在 .env 文件中配置以下环境变量：\n"
+        "DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME"
+    )
 
 DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}?charset=utf8mb4"
 
@@ -44,11 +52,26 @@ Base = declarative_base()
 # 数据库模型定义
 # ============================================
 
+class Project(Base):
+    """项目管理表"""
+    __tablename__ = 'projects'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    name = Column(String(100), nullable=False, unique=True, comment='项目名称')
+    code = Column(String(50), nullable=False, unique=True, comment='项目代码')
+    description = Column(Text, comment='项目描述')
+    is_default = Column(Integer, default=0, comment='是否默认项目（0:否 1:是）')
+    is_active = Column(Integer, default=1, comment='是否启用（0:否 1:是）')
+    created_at = Column(DateTime, default=datetime.now, comment='创建时间')
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
+
+
 class ExecutionCase(Base):
     """用例详情表 - 存储所有测试用例"""
     __tablename__ = 'execution_cases'
     
     id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    project_id = Column(Integer, default=1, index=True, comment='关联项目ID')
     title = Column(String(200), nullable=False, comment='用例标题')
     module = Column(String(100), comment='所属模块')
     precondition = Column(Text, comment='前置条件')
@@ -80,6 +103,7 @@ class TestRecord(Base):
     __tablename__ = 'test_records'
     
     id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    project_id = Column(Integer, default=1, index=True, comment='关联项目ID')
     batch_id = Column(Integer, nullable=False, index=True, comment='中间表ID')
     test_case_id = Column(Integer, comment='关联用例ID')
     execution_mode = Column(String(20), default='单量', comment='执行模式')
@@ -104,6 +128,7 @@ class TestReport(Base):
     __tablename__ = 'test_reports'
     
     id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    project_id = Column(Integer, default=1, index=True, comment='关联项目ID')
     title = Column(String(200), nullable=False, comment='报告标题')
     summary = Column(JSON, comment='测试统计摘要')
     details = Column(Text, comment='报告详细内容')
@@ -118,6 +143,7 @@ class BugReport(Base):
     __tablename__ = 'bug_reports'
     
     id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    project_id = Column(Integer, default=1, index=True, comment='关联项目ID')
     test_record_id = Column(Integer, comment='关联执行记录ID')
     bug_name = Column(String(200), nullable=False, comment='Bug名称')
     test_case_id = Column(Integer, comment='关联测试用例ID')
@@ -257,7 +283,9 @@ class ApiSpec(Base):
     __tablename__ = 'api_specs'
 
     id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    project_id = Column(Integer, default=1, index=True, comment='关联项目ID')
     service_name = Column(String(100), comment='服务名称')
+    base_url = Column(String(500), comment='测试地址/后端地址')
     created_at = Column(DateTime, default=datetime.now, comment='创建时间')
 
 
@@ -266,6 +294,7 @@ class ApiSpecVersion(Base):
     __tablename__ = 'api_spec_versions'
 
     id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    project_id = Column(Integer, default=1, index=True, comment='关联项目ID')
     spec_id = Column(Integer, nullable=False, comment='关联 api_specs.id')
     original_filename = Column(String(255), nullable=False, comment='原始文件名')
     minio_bucket = Column(String(100), nullable=False, comment='MinIO Bucket')
@@ -301,6 +330,7 @@ class OneclickSession(Base):
     __tablename__ = 'oneclick_sessions'
 
     id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    project_id = Column(Integer, default=1, index=True, comment='关联项目ID')
     user_input = Column(Text, nullable=False, comment='用户输入的自然语言指令')
     status = Column(String(20), default='init', comment='会话状态')
     target_url = Column(String(500), comment='目标测试地址')
@@ -324,6 +354,7 @@ class TestEnvironment(Base):
     __table_args__ = {'extend_existing': True}
 
     id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    project_id = Column(Integer, default=1, index=True, comment='关联项目ID')
     name = Column(String(100), nullable=False, comment='环境名称（如：开发环境、测试环境）')
     base_url = Column(String(500), nullable=False, comment='系统首页URL')
     login_url = Column(String(500), comment='登录页URL（为空则与base_url相同）')
@@ -346,6 +377,7 @@ class SecurityTarget(Base):
     __tablename__ = 'security_targets'
     
     id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    project_id = Column(Integer, default=1, index=True, comment='关联项目ID')
     name = Column(String(200), nullable=False, comment='目标名称')
     base_url = Column(String(500), nullable=False, comment='基础URL')
     description = Column(Text, comment='目标描述')
@@ -430,7 +462,8 @@ class PageKnowledgeRecord(Base):
     __tablename__ = 'page_knowledge'
 
     id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
-    url = Column(String(500), nullable=False, unique=True, comment='页面URL')
+    project_id = Column(Integer, default=1, index=True, comment='关联项目ID')
+    url = Column(String(500), nullable=False, comment='页面URL')
     domain = Column(String(200), comment='站点域名')
     page_type = Column(String(50), comment='页面类型: login/list/detail/form/dashboard/mixed')
     summary = Column(Text, comment='一句话能力摘要')
@@ -536,6 +569,7 @@ def init_db():
         existing_tables = inspector.get_table_names()
         
         tables_to_create = {
+            'projects': Project,
             'execution_cases': ExecutionCase,
             'execution_batches': ExecutionBatch,
             'test_records': TestRecord,
@@ -574,6 +608,9 @@ def init_db():
         # 自动迁移：为已有表添加缺失的列
         _upgrade_existing_tables(inspector)
         
+        # 创建默认项目
+        _create_default_project()
+        
         print("\n数据库初始化完成！")
     except Exception as e:
         print(f"数据库初始化出错：{str(e)}")
@@ -599,6 +636,17 @@ def _upgrade_existing_tables(inspector):
         ('llm_models', 'last_used_at', 'DATETIME DEFAULT NULL', None),
         ('llm_models', 'auto_switch_enabled', 'INT DEFAULT 1', None),
         ('execution_cases', 'security_status', "VARCHAR(20) DEFAULT '待测试'", None),
+        ('execution_cases', 'project_id', 'INT DEFAULT 1', 'INDEX'),
+        ('test_records', 'project_id', 'INT DEFAULT 1', 'INDEX'),
+        ('test_reports', 'project_id', 'INT DEFAULT 1', 'INDEX'),
+        ('bug_reports', 'project_id', 'INT DEFAULT 1', 'INDEX'),
+        ('api_specs', 'project_id', 'INT DEFAULT 1', 'INDEX'),
+        ('api_specs', 'base_url', 'VARCHAR(500) DEFAULT NULL', None),
+        ('api_spec_versions', 'project_id', 'INT DEFAULT 1', 'INDEX'),
+        ('oneclick_sessions', 'project_id', 'INT DEFAULT 1', 'INDEX'),
+        ('test_environments', 'project_id', 'INT DEFAULT 1', 'INDEX'),
+        ('security_targets', 'project_id', 'INT DEFAULT 1', 'INDEX'),
+        ('page_knowledge', 'project_id', 'INT DEFAULT 1', 'INDEX'),
         ('email_config', 'smtp_host', 'VARCHAR(200) DEFAULT NULL', None),
         ('email_config', 'smtp_port', 'INT DEFAULT 587', None),
         ('email_config', 'smtp_username', 'VARCHAR(200) DEFAULT NULL', None),
@@ -610,7 +658,7 @@ def _upgrade_existing_tables(inspector):
     ]
 
     with engine.connect() as conn:
-        for table_name, col_name, col_type, _ in new_columns:
+        for table_name, col_name, col_type, index_type in new_columns:
             try:
                 existing_cols = [c['name'] for c in inspector.get_columns(table_name)]
                 if col_name not in existing_cols:
@@ -618,8 +666,52 @@ def _upgrade_existing_tables(inspector):
                     conn.execute(text(sql))
                     conn.commit()
                     print(f"  ✓ 已添加列 {table_name}.{col_name}")
+                    
+                    # 如果需要添加索引
+                    if index_type == 'INDEX':
+                        try:
+                            index_sql = f"CREATE INDEX idx_{col_name} ON `{table_name}`(`{col_name}`)"
+                            conn.execute(text(index_sql))
+                            conn.commit()
+                            print(f"  ✓ 已添加索引 {table_name}.idx_{col_name}")
+                        except Exception as idx_e:
+                            # 索引可能已存在，忽略错误
+                            pass
             except Exception as e:
                 print(f"  ⚠ 添加列 {table_name}.{col_name} 失败: {e}")
+
+
+def _create_default_project():
+    """创建默认项目"""
+    db = SessionLocal()
+    try:
+        # 检查是否已有项目
+        existing = db.query(Project).first()
+        if not existing:
+            # 创建默认项目
+            default_project = Project(
+                name='默认项目',
+                code='default',
+                description='系统默认项目',
+                is_default=1,
+                is_active=1
+            )
+            db.add(default_project)
+            db.commit()
+            print("  ✓ 已创建默认项目")
+        else:
+            # 确保至少有一个默认项目
+            default = db.query(Project).filter(Project.is_default == 1).first()
+            if not default:
+                # 将第一个项目设为默认
+                existing.is_default = 1
+                db.commit()
+                print(f"  ✓ 已将项目 '{existing.name}' 设为默认项目")
+    except Exception as e:
+        print(f"  ⚠ 创建默认项目失败: {e}")
+        db.rollback()
+    finally:
+        db.close()
 
 
 def get_db():
@@ -629,6 +721,68 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def get_default_project(db: Session):
+    """
+    获取默认项目（必须是启用状态）
+    
+    返回:
+        Project: 启用的默认项目
+        None: 如果所有项目都被禁用
+    """
+    project = db.query(Project).filter(
+        Project.is_default == 1,
+        Project.is_active == 1  # 必须是启用状态
+    ).first()
+    
+    if not project:
+        # 如果没有默认项目，返回第一个激活的项目
+        project = db.query(Project).filter(Project.is_active == 1).first()
+    
+    if not project:
+        # 如果还是没有启用的项目，检查是否存在项目
+        any_project = db.query(Project).first()
+        
+        if any_project:
+            # 存在项目但都被禁用了，返回 None（让调用方决定如何处理）
+            return None
+        
+        # 真的不存在任何项目，创建一个新的默认项目
+        try:
+            project = Project(
+                name='默认项目',
+                code='default',
+                description='系统默认项目',
+                is_default=1,
+                is_active=1
+            )
+            db.add(project)
+            db.commit()
+            db.refresh(project)
+        except Exception:
+            # 如果创建失败（比如已存在），再次查询
+            db.rollback()
+            project = db.query(Project).filter(
+                (Project.name == '默认项目') | (Project.code == 'default')
+            ).first()
+            if not project:
+                # 仍然失败，返回 None
+                return None
+    
+    return project
+
+
+def get_active_project_by_id(db: Session, project_id: int):
+    """
+    根据 ID 获取项目（必须是启用状态）
+    
+    如果项目不存在或未启用，返回 None
+    """
+    return db.query(Project).filter(
+        Project.id == project_id,
+        Project.is_active == 1
+    ).first()
 
 
 if __name__ == "__main__":

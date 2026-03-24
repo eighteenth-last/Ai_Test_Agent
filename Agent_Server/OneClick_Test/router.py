@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Body, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
-from database.connection import get_db
+from database.connection import get_db, get_default_project
 from OneClick_Test.service import OneClickService
 from OneClick_Test.skill_manager import SkillManager
 from OneClick_Test.session import SessionManager
@@ -53,22 +53,49 @@ class TestEnvRequest(BaseModel):
 @router.post("/oneclick/start")
 async def start_oneclick(req: StartSessionRequest, db: Session = Depends(get_db)):
     """启动一键测试会话"""
-    result = await OneClickService.start_session(db, req.user_input, req.skill_ids)
+    # 获取默认项目
+    project = get_default_project(db)
+    if not project:
+        return {"success": False, "message": "没有可用的项目，请先创建并启用一个项目"}
+    
+    result = await OneClickService.start_session(db, req.user_input, req.skill_ids, project.id)
     return result
 
 
 @router.get("/oneclick/session/{session_id}")
 def get_session(session_id: int, db: Session = Depends(get_db)):
     """获取会话详情"""
+    from database.connection import OneclickSession, get_active_project_by_id
+    
     detail = OneClickService.get_session_detail(db, session_id)
     if not detail:
         return {"success": False, "message": "会话不存在"}
+    
+    # 验证会话所属项目是否启用
+    session = db.query(OneclickSession).filter(OneclickSession.id == session_id).first()
+    if session and session.project_id:
+        project = get_active_project_by_id(db, session.project_id)
+        if not project:
+            return {"success": False, "message": "会话所属项目未启用"}
+    
     return {"success": True, "data": detail}
 
 
 @router.post("/oneclick/confirm")
 async def confirm_execute(req: ConfirmRequest, db: Session = Depends(get_db)):
     """确认并执行测试（传统扁平模式）"""
+    from database.connection import OneclickSession, get_active_project_by_id
+    
+    # 验证会话所属项目是否启用
+    session = db.query(OneclickSession).filter(OneclickSession.id == req.session_id).first()
+    if not session:
+        return {"success": False, "message": "会话不存在"}
+    
+    if session.project_id:
+        project = get_active_project_by_id(db, session.project_id)
+        if not project:
+            return {"success": False, "message": "会话所属项目未启用"}
+    
     result = await OneClickService.confirm_and_execute(
         db, req.session_id, req.confirmed_cases
     )
@@ -83,6 +110,18 @@ async def confirm_tree_execute(req: ConfirmTreeRequest, db: Session = Depends(ge
     支持 L2 模块级勾选和 L3 用例级勾选。
     selections 为空时全部确认执行。
     """
+    from database.connection import OneclickSession, get_active_project_by_id
+    
+    # 验证会话所属项目是否启用
+    session = db.query(OneclickSession).filter(OneclickSession.id == req.session_id).first()
+    if not session:
+        return {"success": False, "message": "会话不存在"}
+    
+    if session.project_id:
+        project = get_active_project_by_id(db, session.project_id)
+        if not project:
+            return {"success": False, "message": "会话所属项目未启用"}
+    
     result = await OneClickService.confirm_task_tree(
         db, req.session_id, req.selections or {}
     )
@@ -92,13 +131,41 @@ async def confirm_tree_execute(req: ConfirmTreeRequest, db: Session = Depends(ge
 @router.post("/oneclick/stop")
 async def stop_session(session_id: int = Body(..., embed=True), db: Session = Depends(get_db)):
     """停止会话"""
+    from database.connection import OneclickSession, get_active_project_by_id
+    
+    # 验证会话所属项目是否启用
+    session = db.query(OneclickSession).filter(OneclickSession.id == session_id).first()
+    if not session:
+        return {"success": False, "message": "会话不存在"}
+    
+    if session.project_id:
+        project = get_active_project_by_id(db, session.project_id)
+        if not project:
+            return {"success": False, "message": "会话所属项目未启用"}
+    
     return await OneClickService.stop_session(db, session_id)
 
 
 @router.get("/oneclick/history")
-def get_history(page: int = 1, page_size: int = 20, db: Session = Depends(get_db)):
+def get_history(page: int = 1, page_size: int = 20, project_id: int = None, db: Session = Depends(get_db)):
     """获取历史会话列表"""
-    data = SessionManager.list_sessions(db, page, page_size)
+    from database.connection import get_active_project_by_id
+    
+    # 如果未指定项目，使用默认项目
+    if project_id is None:
+        project = get_default_project(db)
+        if not project:
+            # 没有启用的项目，返回空列表
+            return {"success": True, "data": {"items": [], "total": 0, "page": page, "page_size": page_size}}
+        project_id = project.id
+    else:
+        # 验证指定的项目是否启用（不报错，只是过滤）
+        project = get_active_project_by_id(db, project_id)
+        if not project:
+            # 项目未启用，返回空列表
+            return {"success": True, "data": {"items": [], "total": 0, "page": page, "page_size": page_size}}
+    
+    data = SessionManager.list_sessions(db, page, page_size, project_id)
     return {"success": True, "data": data}
 
 

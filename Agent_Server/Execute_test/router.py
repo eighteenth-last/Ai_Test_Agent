@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
-from database.connection import get_db
+from database.connection import get_db, get_default_project
 
 router = APIRouter(
     prefix="/api/test-code",
@@ -67,6 +67,17 @@ async def execute_browser_use(
     """使用 browser-use 执行测试"""
     try:
         from Execute_test.service import BrowserUseService
+        from database.connection import ExecutionCase, get_active_project_by_id
+        
+        # 验证用例所属项目是否启用
+        case = db.query(ExecutionCase).filter(ExecutionCase.id == request.test_case_id).first()
+        if not case:
+            raise HTTPException(status_code=404, detail="测试用例不存在")
+        
+        if case.project_id:
+            project = get_active_project_by_id(db, case.project_id)
+            if not project:
+                raise HTTPException(status_code=400, detail="用例所属项目未启用")
         
         result = await BrowserUseService.execute_test_with_browser_use(
             test_case_id=request.test_case_id,
@@ -77,6 +88,8 @@ async def execute_browser_use(
         )
         
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"执行测试失败: {str(e)}")
 
@@ -89,6 +102,17 @@ async def execute_single_test(
     """执行单条测试用例"""
     try:
         from Execute_test.service import BrowserUseService
+        from database.connection import ExecutionCase, get_active_project_by_id
+        
+        # 验证用例所属项目是否启用
+        case = db.query(ExecutionCase).filter(ExecutionCase.id == request.test_case_id).first()
+        if not case:
+            raise HTTPException(status_code=404, detail="测试用例不存在")
+        
+        if case.project_id:
+            project = get_active_project_by_id(db, case.project_id)
+            if not project:
+                raise HTTPException(status_code=400, detail="用例所属项目未启用")
         
         result = await BrowserUseService.execute_test_with_browser_use(
             test_case_id=request.test_case_id,
@@ -99,6 +123,8 @@ async def execute_single_test(
         )
         
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"执行测试失败: {str(e)}")
 
@@ -111,6 +137,18 @@ async def execute_batch_browser_use(
     """批量执行测试用例（browser-use 模式）"""
     try:
         from Execute_test.service import BrowserUseService
+        from database.connection import ExecutionCase, get_active_project_by_id
+        
+        # 验证所有用例所属项目是否启用
+        for case_id in request.test_case_ids:
+            case = db.query(ExecutionCase).filter(ExecutionCase.id == case_id).first()
+            if not case:
+                raise HTTPException(status_code=404, detail=f"测试用例 {case_id} 不存在")
+            
+            if case.project_id:
+                project = get_active_project_by_id(db, case.project_id)
+                if not project:
+                    raise HTTPException(status_code=400, detail=f"用例 {case_id} 所属项目未启用")
         
         result = await BrowserUseService.execute_batch_test_cases(
             test_case_ids=request.test_case_ids,
@@ -121,6 +159,8 @@ async def execute_batch_browser_use(
         )
         
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"批量执行测试失败: {str(e)}")
 
@@ -133,6 +173,18 @@ async def execute_batch_tests(
     """批量执行测试用例"""
     try:
         from Execute_test.service import BrowserUseService
+        from database.connection import ExecutionCase, get_active_project_by_id
+        
+        # 验证所有用例所属项目是否启用
+        for case_id in request.test_case_ids:
+            case = db.query(ExecutionCase).filter(ExecutionCase.id == case_id).first()
+            if not case:
+                raise HTTPException(status_code=404, detail=f"测试用例 {case_id} 不存在")
+            
+            if case.project_id:
+                project = get_active_project_by_id(db, case.project_id)
+                if not project:
+                    raise HTTPException(status_code=400, detail=f"用例 {case_id} 所属项目未启用")
         
         result = await BrowserUseService.execute_batch_test_cases(
             test_case_ids=request.test_case_ids,
@@ -143,6 +195,8 @@ async def execute_batch_tests(
         )
         
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"批量执行测试失败: {str(e)}")
 

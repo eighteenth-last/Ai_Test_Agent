@@ -12,7 +12,9 @@ from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 
-load_dotenv()
+# 加载环境变量 - .env 文件在 Agent_Server 目录下
+env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
+load_dotenv(env_path)
 
 SAVE_FOLDER_DIR = os.getenv('SAVE_FOLDER_DIR', '../save_floder')
 
@@ -29,7 +31,8 @@ class TestCaseService:
     @staticmethod
     async def generate_test_cases(
         requirement: str,
-        db: Session
+        db: Session,
+        project_id: int = None
     ) -> Dict[str, Any]:
         """
         根据需求生成测试用例
@@ -73,13 +76,14 @@ class TestCaseService:
                 }
             
             # 保存到数据库和 CSV
-            from database.connection import TestCase
+            from database.connection import ExecutionCase
             
             saved_cases = []
             csv_file_path = TestCaseService._save_to_csv(test_cases_data)
             
             for case_data in test_cases_data:
-                test_case = TestCase(
+                test_case = ExecutionCase(
+                    project_id=project_id or 1,  # 默认项目ID为1
                     module=case_data.get('module', ''),
                     title=case_data.get('title', ''),
                     precondition=case_data.get('precondition', ''),
@@ -176,24 +180,29 @@ class TestCaseService:
         module: str = None,
         search: str = None,
         priority: str = None,
-        case_type: str = None
+        case_type: str = None,
+        project_id: int = None
     ) -> Dict[str, Any]:
         """获取测试用例列表"""
-        from database.connection import TestCase
+        from database.connection import ExecutionCase
         
-        query = db.query(TestCase)
+        query = db.query(ExecutionCase)
+        
+        # 项目过滤
+        if project_id is not None:
+            query = query.filter(ExecutionCase.project_id == project_id)
         
         if module:
-            query = query.filter(TestCase.module.like(f"%{module}%"))
+            query = query.filter(ExecutionCase.module.like(f"%{module}%"))
         if search:
-            query = query.filter(TestCase.title.like(f"%{search}%"))
+            query = query.filter(ExecutionCase.title.like(f"%{search}%"))
         if priority:
-            query = query.filter(TestCase.priority == priority)
+            query = query.filter(ExecutionCase.priority == priority)
         if case_type:
-            query = query.filter(TestCase.case_type == case_type)
+            query = query.filter(ExecutionCase.case_type == case_type)
         
         total = query.count()
-        cases = query.order_by(TestCase.id.desc()).limit(limit).offset(offset).all()
+        cases = query.order_by(ExecutionCase.id.desc()).limit(limit).offset(offset).all()
         
         data = [
             {
@@ -218,9 +227,9 @@ class TestCaseService:
     @staticmethod
     def get_test_case_by_id(db: Session, case_id: int) -> Dict[str, Any]:
         """获取单个测试用例"""
-        from database.connection import TestCase
+        from database.connection import ExecutionCase
         
-        case = db.query(TestCase).filter(TestCase.id == case_id).first()
+        case = db.query(ExecutionCase).filter(ExecutionCase.id == case_id).first()
         
         if not case:
             return None
@@ -256,10 +265,10 @@ class TestCaseService:
         stage: str
     ) -> Dict[str, Any]:
         """更新测试用例"""
-        from database.connection import TestCase
+        from database.connection import ExecutionCase
         
         try:
-            case = db.query(TestCase).filter(TestCase.id == case_id).first()
+            case = db.query(ExecutionCase).filter(ExecutionCase.id == case_id).first()
             
             if not case:
                 return {
@@ -302,7 +311,8 @@ class TestCaseService:
     async def process_uploaded_file(
         filename: str,
         content: bytes,
-        db: Session
+        db: Session,
+        project_id: int = None
     ) -> Dict[str, Any]:
         """处理上传的文件并生成测试用例"""
         try:
@@ -340,7 +350,8 @@ class TestCaseService:
             # 使用解析的文本内容生成测试用例
             result = await TestCaseService.generate_test_cases(
                 requirement=text_content,
-                db=db
+                db=db,
+                project_id=project_id
             )
             
             if result.get('success'):

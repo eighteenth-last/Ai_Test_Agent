@@ -311,10 +311,38 @@ export const dashboardAPI = {
 
 // Spec API - 接口文件管理
 export const specAPI = {
-  importMd(file, serviceName) {
+  // 上传文件（支持多种格式）
+  import(file, serviceName, baseUrl) {
     const formData = new FormData()
     formData.append('file', file)
     if (serviceName) formData.append('service_name', serviceName)
+    if (baseUrl) formData.append('base_url', baseUrl)
+    return api.post('/specs/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  },
+  // 从 URL 导入
+  importFromUrl(url, serviceName, baseUrl) {
+    const data = { url, service_name: serviceName }
+    if (baseUrl) data.base_url = baseUrl
+    return api.post('/specs/import-from-url', data)
+  },
+  // 从文本导入
+  importFromText(content, formatHint, serviceName, baseUrl) {
+    const data = {
+      content,
+      format_hint: formatHint,
+      service_name: serviceName
+    }
+    if (baseUrl) data.base_url = baseUrl
+    return api.post('/specs/import-from-text', data)
+  },
+  // 旧接口（保持兼容）
+  importMd(file, serviceName, baseUrl) {
+    const formData = new FormData()
+    formData.append('file', file)
+    if (serviceName) formData.append('service_name', serviceName)
+    if (baseUrl) formData.append('base_url', baseUrl)
     return api.post('/specs/import-md', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })

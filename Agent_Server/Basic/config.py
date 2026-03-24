@@ -4,20 +4,32 @@
 import os
 from dotenv import load_dotenv
 
-# 加载环境变量
-load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
+# 加载环境变量 - .env 文件在 Agent_Server 目录下
+env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
+load_dotenv(env_path)
 
 
 class Config:
     """应用配置类"""
     
-    # 服务器配置
-    HOST = os.getenv('HOST', '0.0.0.0')
-    PORT = int(os.getenv('PORT', 8001))
-    DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
+    # 服务器配置 - 必须从环境变量获取
+    HOST = os.getenv('HOST')
+    PORT = os.getenv('PORT')
+    DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
+    
+    # 验证必需的环境变量
+    if not HOST:
+        raise ValueError("服务器配置缺失！请在 .env 文件中配置 HOST")
+    if not PORT:
+        raise ValueError("服务器配置缺失！请在 .env 文件中配置 PORT")
+    
+    PORT = int(PORT)
     
     # CORS 配置
-    CORS_ORIGINS = os.getenv('CORS_ORIGINS', 'http://localhost:5175').split(',')
+    CORS_ORIGINS_STR = os.getenv('CORS_ORIGINS')
+    if not CORS_ORIGINS_STR:
+        raise ValueError("CORS 配置缺失！请在 .env 文件中配置 CORS_ORIGINS")
+    CORS_ORIGINS = CORS_ORIGINS_STR.split(',')
     
     # 应用信息
     APP_TITLE = "AI Test Agent API"

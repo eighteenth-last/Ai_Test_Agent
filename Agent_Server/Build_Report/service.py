@@ -183,12 +183,18 @@ class TestReportService:
     def get_reports(
         db: Session,
         limit: int = 20,
-        offset: int = 0
+        offset: int = 0,
+        project_id: int = None
     ) -> Dict[str, Any]:
         """获取报告列表"""
         from database.connection import TestReport
         
         query = db.query(TestReport)
+        
+        # 项目过滤
+        if project_id is not None:
+            query = query.filter(TestReport.project_id == project_id)
+        
         total = query.count()
         reports = query.order_by(TestReport.id.desc()).limit(limit).offset(offset).all()
         

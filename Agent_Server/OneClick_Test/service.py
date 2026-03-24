@@ -77,7 +77,7 @@ class OneClickService:
     # ========== Phase 1: 启动会话 & 分析意图 ==========
 
     @staticmethod
-    async def start_session(db: Session, user_input: str, skill_ids: List[int] = None) -> Dict:
+    async def start_session(db: Session, user_input: str, skill_ids: List[int] = None, project_id: int = None) -> Dict:
         """
         启动一键测试会话（全自主流程）
 
@@ -89,7 +89,7 @@ class OneClickService:
         5. 前端通过轮询 session 获取进度
         """
         # 创建会话
-        session = SessionManager.create_session(db, user_input)
+        session = SessionManager.create_session(db, user_input, project_id=project_id)
         session_id = session.id
 
         try:

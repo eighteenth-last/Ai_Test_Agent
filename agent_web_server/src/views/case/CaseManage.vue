@@ -264,7 +264,12 @@ const filterPriorityOptions = computed(() => [
 ])
 
 // ── 筛选 ──────────────────────────────────────────────────────────────
-const filters = reactive({ module: '', search: '', priority: null })
+const filters = reactive({
+  module: '',
+  search: '',
+  priority: null,
+  project_id: parseInt(localStorage.getItem('currentProjectId')) || null
+})
 
 const {
   data: testCases, loading, currentPage, pageSize, total,
@@ -416,13 +421,20 @@ const columns = [
     }
   },
   {
-    title: '优先级', key: 'priority', width: 80,
+    title: '优先级', key: 'priority', width: 100,
     render(row) {
       return h(NTag, { type: getPriorityType(row.priority), size: 'small' },
         { default: () => formatPriorityLabel(row.priority) })
     }
   },
-  { title: '用例类型', key: 'case_type', width: 100 },
+  {
+    title: '用例类型', key: 'case_type', width: 120,
+    render(row) {
+      if (!row.case_type) return '-'
+      return h(NTag, { type: 'default', size: 'small' },
+        { default: () => row.case_type })
+    }
+  },
   {
     title: '操作', key: 'actions', width: 220, fixed: 'right',
     render(row) {

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import Optional
 
-from database.connection import get_db
+from database.connection import get_db, get_default_project
 from Bug_Analysis.service import BugAnalysisService
 
 router = APIRouter(
@@ -22,15 +22,41 @@ def get_bug_reports(
     offset: int = 0,
     status: str = None,
     severity: str = None,
+    project_id: int = None,
     db: Session = Depends(get_db)
 ):
     """获取 Bug 报告列表"""
+    from database.connection import get_active_project_by_id
+    
+    # 如果未指定项目，使用默认项目
+    if project_id is None:
+        project = get_default_project(db)
+        if not project:
+            # 没有启用的项目，返回空列表
+            return {
+                "success": True,
+                "data": [],
+                "total": 0
+            }
+        project_id = project.id
+    else:
+        # 验证指定的项目是否启用（不报错，只是过滤）
+        project = get_active_project_by_id(db, project_id)
+        if not project:
+            # 项目未启用，返回空列表
+            return {
+                "success": True,
+                "data": [],
+                "total": 0
+            }
+    
     result = BugAnalysisService.get_bug_reports(
         db=db,
         limit=limit,
         offset=offset,
         status=status,
-        severity=severity
+        severity=severity,
+        project_id=project_id
     )
     return {
         "success": True,
@@ -45,12 +71,18 @@ def get_bug_report(
     db: Session = Depends(get_db)
 ):
     """获取单个 Bug 报告"""
-    from database.connection import BugReport
+    from database.connection import BugReport, get_active_project_by_id
     
     bug = db.query(BugReport).filter(BugReport.id == bug_id).first()
     
     if not bug:
         raise HTTPException(status_code=404, detail="Bug 报告不存在")
+    
+    # 验证 Bug 所属项目是否启用
+    if bug.project_id:
+        project = get_active_project_by_id(db, bug.project_id)
+        if not project:
+            raise HTTPException(status_code=400, detail="Bug 所属项目未启用")
     
     return {
         "success": True,
@@ -85,12 +117,18 @@ def update_bug_status(
     db: Session = Depends(get_db)
 ):
     """更新 Bug 状态"""
-    from database.connection import BugReport
+    from database.connection import BugReport, get_active_project_by_id
     
     bug = db.query(BugReport).filter(BugReport.id == bug_id).first()
     
     if not bug:
         raise HTTPException(status_code=404, detail="Bug 报告不存在")
+    
+    # 验证 Bug 所属项目是否启用
+    if bug.project_id:
+        project = get_active_project_by_id(db, bug.project_id)
+        if not project:
+            raise HTTPException(status_code=400, detail="Bug 所属项目未启用")
     
     valid_statuses = ['待处理', '已确认', '已修复', '已关闭']
     if status not in valid_statuses:

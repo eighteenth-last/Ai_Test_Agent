@@ -9,12 +9,12 @@
         </div>
       </template>
       <template #header-extra>
-        <n-button type="primary" @click="showUploadModal = true">
+        <n-button type="primary" @click="showImportModal = true">
           <template #icon><i class="fas fa-cloud-upload-alt"></i></template>
-          上传接口文件
+          导入接口文档
         </n-button>
       </template>
-      <p class="text-gray-500">管理上传到 MinIO 的 Markdown 接口文档，系统自动解析接口信息用于智能匹配</p>
+      <p class="text-gray-500">支持多种格式导入：Postman、Swagger、Redoc、HAR、ApiFox、cURL、Markdown 等</p>
     </n-card>
 
     <!-- 筛选 -->
@@ -31,7 +31,7 @@
     <n-spin :show="loading">
       <div v-if="filteredList.length === 0 && !loading" class="text-center py-16 text-gray-400">
         <i class="fas fa-inbox text-5xl mb-4 block"></i>
-        <p>暂无接口文件，点击右上角上传</p>
+        <p>暂无接口文件，点击右上角导入</p>
       </div>
       <div v-else class="spec-grid">
         <div v-for="spec in filteredList" :key="spec.id" class="spec-card">
@@ -54,6 +54,10 @@
                 <span class="spec-stat-value">{{ formatSize(spec.file_size) }}</span>
                 <span class="spec-stat-label">文件大小</span>
               </div>
+            </div>
+            <div v-if="spec.base_url" class="spec-base-url">
+              <i class="fas fa-link"></i>
+              <span>{{ spec.base_url }}</span>
             </div>
             <div v-if="spec.parse_warnings && spec.parse_warnings.length > 0" class="spec-warning">
               <i class="fas fa-exclamation-triangle"></i>
@@ -79,32 +83,105 @@
       </div>
     </n-spin>
 
-    <!-- 上传弹窗 -->
-    <n-modal v-model:show="showUploadModal" preset="card" title="上传接口文件" style="width:520px">
-      <n-form label-placement="left" label-width="80">
-        <n-form-item label="服务名称">
-          <n-input v-model:value="uploadForm.serviceName" placeholder="可选，用于分组管理" />
-        </n-form-item>
-        <n-form-item label="Markdown">
-          <n-upload
-            :max="1"
-            accept=".md"
-            :default-upload="false"
-            @change="handleFileChange"
-          >
-            <n-button>
-              <template #icon><i class="fas fa-paperclip"></i></template>
-              选择 .md 文件
-            </n-button>
-          </n-upload>
-        </n-form-item>
-      </n-form>
+    <!-- 导入弹窗 -->
+    <n-modal v-model:show="showImportModal" preset="card" title="导入接口文档" style="width:600px">
+      <n-tabs v-model:value="importMode" type="segment" animated>
+        <n-tab-pane name="file" tab="📁 文件上传">
+          <n-form label-placement="left" label-width="90" class="mt-4">
+            <n-form-item label="服务名称">
+              <n-input v-model:value="uploadForm.serviceName" placeholder="可选，用于分组管理" />
+            </n-form-item>
+            <n-form-item label="测试地址">
+              <n-input v-model:value="uploadForm.baseUrl" placeholder="例如: https://api.example.com" clearable />
+              <div class="text-xs text-gray-400 mt-2">
+                用于接口测试时拼接完整URL
+              </div>
+            </n-form-item>
+            <n-form-item label="选择文件">
+              <n-upload
+                :max="1"
+                accept=".md,.json,.yaml,.yml,.har"
+                :default-upload="false"
+                @change="handleFileChange"
+              >
+                <n-button>
+                  <template #icon><i class="fas fa-paperclip"></i></template>
+                  选择文件
+                </n-button>
+              </n-upload>
+              <div class="text-xs text-gray-400 mt-2">
+                支持：Postman (.json)、Swagger (.json/.yaml)、HAR (.har)、ApiFox (.json)、Markdown (.md)
+              </div>
+            </n-form-item>
+          </n-form>
+        </n-tab-pane>
+
+        <n-tab-pane name="url" tab="🔗 URL 导入">
+          <n-form label-placement="left" label-width="90" class="mt-4">
+            <n-form-item label="服务名称">
+              <n-input v-model:value="urlForm.serviceName" placeholder="可选，用于分组管理" />
+            </n-form-item>
+            <n-form-item label="文档 URL">
+              <n-input
+                v-model:value="urlForm.url"
+                type="textarea"
+                placeholder="输入 API 文档 URL&#10;例如：https://api.example.com/swagger.json"
+                :autosize="{ minRows: 3, maxRows: 5 }"
+                @blur="extractBaseUrlFromUrl"
+              />
+              <div class="text-xs text-gray-400 mt-2">
+                支持：Swagger JSON/YAML、Swagger UI 页面、Redoc 页面、在线 Markdown
+              </div>
+            </n-form-item>
+            <n-form-item label="测试地址">
+              <n-input v-model:value="urlForm.baseUrl" placeholder="自动识别或手动输入" clearable />
+              <div class="text-xs text-gray-400 mt-2">
+                从URL自动提取，可手动修改
+              </div>
+            </n-form-item>
+          </n-form>
+        </n-tab-pane>
+
+        <n-tab-pane name="text" tab="📋 文本粘贴">
+          <n-form label-placement="left" label-width="90" class="mt-4">
+            <n-form-item label="服务名称">
+              <n-input v-model:value="textForm.serviceName" placeholder="可选，用于分组管理" />
+            </n-form-item>
+            <n-form-item label="测试地址">
+              <n-input v-model:value="textForm.baseUrl" placeholder="例如: https://api.example.com" clearable />
+              <div class="text-xs text-gray-400 mt-2">
+                用于接口测试时拼接完整URL
+              </div>
+            </n-form-item>
+            <n-form-item label="格式提示">
+              <n-select
+                v-model:value="textForm.formatHint"
+                :options="formatOptions"
+                placeholder="自动检测"
+                clearable
+              />
+            </n-form-item>
+            <n-form-item label="文本内容">
+              <n-input
+                v-model:value="textForm.content"
+                type="textarea"
+                placeholder="粘贴 cURL 命令、JSON 或 Markdown 内容"
+                :autosize="{ minRows: 8, maxRows: 15 }"
+              />
+              <div class="text-xs text-gray-400 mt-2">
+                支持：cURL 命令、Postman JSON、Swagger JSON、Markdown
+              </div>
+            </n-form-item>
+          </n-form>
+        </n-tab-pane>
+      </n-tabs>
+
       <template #footer>
         <div class="flex justify-end gap-2">
-          <n-button @click="showUploadModal = false">取消</n-button>
-          <n-button type="primary" :loading="uploading" :disabled="!uploadForm.file" @click="doUpload">
+          <n-button @click="showImportModal = false">取消</n-button>
+          <n-button type="primary" :loading="importing" :disabled="!canImport" @click="doImport">
             <template #icon><i class="fas fa-upload"></i></template>
-            上传并解析
+            导入并解析
           </n-button>
         </div>
       </template>
@@ -149,7 +226,7 @@
 <script setup>
 import { ref, computed, onMounted, h } from 'vue'
 import {
-  NCard, NButton, NInput, NSelect, NModal, NForm, NFormItem, NUpload,
+  NCard, NButton, NInput, NSelect, NModal, NForm, NFormItem, NUpload, NTabs, NTabPane,
   NDescriptions, NDescriptionsItem, NDataTable, NTag, NSpin, useMessage, useDialog
 } from 'naive-ui'
 import { specAPI } from '@/api'
@@ -162,10 +239,26 @@ const specList = ref([])
 const searchText = ref('')
 const filterService = ref(null)
 
-// 上传
-const showUploadModal = ref(false)
-const uploading = ref(false)
-const uploadForm = ref({ serviceName: '', file: null })
+// 导入
+const showImportModal = ref(false)
+const importing = ref(false)
+const importMode = ref('file')  // file, url, text
+
+// 文件上传表单
+const uploadForm = ref({ serviceName: '', baseUrl: '', file: null })
+
+// URL 导入表单
+const urlForm = ref({ serviceName: '', baseUrl: '', url: '' })
+
+// 文本粘贴表单
+const textForm = ref({ serviceName: '', baseUrl: '', formatHint: null, content: '' })
+
+// 格式选项
+const formatOptions = [
+  { label: 'cURL 命令', value: 'curl' },
+  { label: 'JSON', value: 'json' },
+  { label: 'Markdown', value: 'markdown' }
+]
 
 // 详情
 const showDetailModal = ref(false)
@@ -196,6 +289,18 @@ const filteredList = computed(() => {
   return list
 })
 
+// 是否可以导入
+const canImport = computed(() => {
+  if (importMode.value === 'file') {
+    return uploadForm.value.file !== null
+  } else if (importMode.value === 'url') {
+    return urlForm.value.url.trim() !== ''
+  } else if (importMode.value === 'text') {
+    return textForm.value.content.trim() !== ''
+  }
+  return false
+})
+
 // endpoint 表格列
 const endpointColumns = [
   {
@@ -212,7 +317,13 @@ const endpointColumns = [
 const loadList = async () => {
   loading.value = true
   try {
-    const res = await specAPI.getList({ limit: 200 })
+    // 获取当前选中的项目ID
+    const projectId = localStorage.getItem('currentProjectId')
+    const params = { limit: 200 }
+    if (projectId) {
+      params.project_id = parseInt(projectId)
+    }
+    const res = await specAPI.getList(params)
     if (res.success) specList.value = res.data
   } catch (e) {
     message.error('加载失败')
@@ -225,24 +336,63 @@ const handleFileChange = ({ fileList }) => {
   uploadForm.value.file = fileList.length > 0 ? fileList[0].file : null
 }
 
-const doUpload = async () => {
-  if (!uploadForm.value.file) return
-  uploading.value = true
+const extractBaseUrlFromUrl = () => {
+  if (!urlForm.value.url) return
   try {
-    const res = await specAPI.importMd(uploadForm.value.file, uploadForm.value.serviceName || undefined)
+    const url = new URL(urlForm.value.url.trim())
+    urlForm.value.baseUrl = `${url.protocol}//${url.host}`
+  } catch (e) {
+    // Invalid URL, do nothing
+  }
+}
+
+const doImport = async () => {
+  importing.value = true
+  try {
+    let res
+    
+    if (importMode.value === 'file') {
+      // 文件上传
+      res = await specAPI.import(
+        uploadForm.value.file, 
+        uploadForm.value.serviceName || undefined,
+        uploadForm.value.baseUrl || undefined
+      )
+    } else if (importMode.value === 'url') {
+      // URL 导入
+      res = await specAPI.importFromUrl(
+        urlForm.value.url, 
+        urlForm.value.serviceName || undefined,
+        urlForm.value.baseUrl || undefined
+      )
+    } else if (importMode.value === 'text') {
+      // 文本粘贴
+      res = await specAPI.importFromText(
+        textForm.value.content,
+        textForm.value.formatHint || undefined,
+        textForm.value.serviceName || undefined,
+        textForm.value.baseUrl || undefined
+      )
+    }
+    
     if (res.success) {
-      message.success(`上传成功，解析出 ${res.data.endpoint_count} 个接口`)
-      showUploadModal.value = false
-      uploadForm.value = { serviceName: '', file: null }
+      message.success(`导入成功，解析出 ${res.data.endpoint_count} 个接口`)
+      showImportModal.value = false
+      
+      // 重置表单
+      uploadForm.value = { serviceName: '', baseUrl: '', file: null }
+      urlForm.value = { serviceName: '', baseUrl: '', url: '' }
+      textForm.value = { serviceName: '', baseUrl: '', formatHint: null, content: '' }
+      
       await loadList()
     } else {
-      message.error(res.message || '上传失败')
+      message.error(res.message || '导入失败')
     }
   } catch (e) {
-    const msg = e.response?.data?.detail || e.message || '上传失败'
+    const msg = e.response?.data?.detail || e.message || '导入失败'
     message.error(msg)
   } finally {
-    uploading.value = false
+    importing.value = false
   }
 }
 
@@ -396,6 +546,25 @@ onMounted(loadList)
 .spec-stat-label {
   font-size: 11px;
   color: #94a3b8;
+}
+
+.spec-base-url {
+  font-size: 12px;
+  color: #007857;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.spec-base-url i {
+  font-size: 11px;
+}
+
+.spec-base-url span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .spec-warning {

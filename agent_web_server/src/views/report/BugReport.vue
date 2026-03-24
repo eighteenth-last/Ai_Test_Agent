@@ -313,7 +313,8 @@ const updateStats = (data) => {
 const filters = reactive({
   severity: null,
   status: null,
-  search: ''
+  search: '',
+  project_id: parseInt(localStorage.getItem('currentProjectId')) || null
 })
 
 // 包装 API 调用以适配 useLazyLoad

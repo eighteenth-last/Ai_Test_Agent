@@ -41,11 +41,12 @@ class SessionManager:
     """一键测试会话管理器"""
 
     @staticmethod
-    def create_session(db: Session, user_input: str) -> OneclickSession:
+    def create_session(db: Session, user_input: str, project_id: int = None) -> OneclickSession:
         """创建新会话"""
         session = OneclickSession(
             user_input=user_input,
             status='init',
+            project_id=project_id or 1,  # 默认项目ID为1
             messages=json.dumps([
                 {"role": "user", "content": user_input, "time": datetime.now().isoformat()}
             ], ensure_ascii=False)
@@ -103,9 +104,14 @@ class SessionManager:
         return json.loads(session.messages) if isinstance(session.messages, str) else session.messages
 
     @staticmethod
-    def list_sessions(db: Session, page: int = 1, page_size: int = 20) -> Dict:
+    def list_sessions(db: Session, page: int = 1, page_size: int = 20, project_id: int = None) -> Dict:
         """获取会话列表"""
         query = db.query(OneclickSession).order_by(OneclickSession.created_at.desc())
+        
+        # 项目过滤
+        if project_id is not None:
+            query = query.filter(OneclickSession.project_id == project_id)
+        
         total = query.count()
         items = query.offset((page - 1) * page_size).limit(page_size).all()
         return {

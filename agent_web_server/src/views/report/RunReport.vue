@@ -339,7 +339,8 @@ const fetchReportsWrapper = async (params) => {
 const filters = reactive({
   status: null,
   search: '',
-  dateRange: null
+  dateRange: null,
+  project_id: parseInt(localStorage.getItem('currentProjectId')) || null
 })
 
 // 使用懒加载

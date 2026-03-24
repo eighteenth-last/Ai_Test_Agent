@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import List
 
-from database.connection import get_db
+from database.connection import get_db, get_default_project
 from Build_Report.service import TestReportService
 
 router = APIRouter(
@@ -322,10 +322,35 @@ async def send_report_to_contacts(
 def get_reports(
     limit: int = 20,
     offset: int = 0,
+    project_id: int = None,
     db: Session = Depends(get_db)
 ):
     """获取报告列表"""
-    result = TestReportService.get_reports(db=db, limit=limit, offset=offset)
+    from database.connection import get_active_project_by_id
+    
+    # 如果未指定项目，使用默认项目
+    if project_id is None:
+        project = get_default_project(db)
+        if not project:
+            # 没有启用的项目，返回空列表
+            return {
+                "success": True,
+                "data": [],
+                "total": 0
+            }
+        project_id = project.id
+    else:
+        # 验证指定的项目是否启用（不报错，只是过滤）
+        project = get_active_project_by_id(db, project_id)
+        if not project:
+            # 项目未启用，返回空列表
+            return {
+                "success": True,
+                "data": [],
+                "total": 0
+            }
+    
+    result = TestReportService.get_reports(db=db, limit=limit, offset=offset, project_id=project_id)
     return {
         "success": True,
         "data": result['data'],
@@ -339,12 +364,18 @@ def get_report(
     db: Session = Depends(get_db)
 ):
     """获取单个报告详情"""
-    from database.connection import TestReport
+    from database.connection import TestReport, get_active_project_by_id
     
     report = db.query(TestReport).filter(TestReport.id == report_id).first()
     
     if not report:
         raise HTTPException(status_code=404, detail="报告不存在")
+    
+    # 验证报告所属项目是否启用
+    if report.project_id:
+        project = get_active_project_by_id(db, report.project_id)
+        if not project:
+            raise HTTPException(status_code=400, detail="报告所属项目未启用")
     
     return {
         "success": True,

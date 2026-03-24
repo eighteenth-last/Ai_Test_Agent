@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 import os
 
-from database.connection import get_db
+from database.connection import get_db, get_default_project
 from Build_Use_case.service import TestCaseService
 
 router = APIRouter(
@@ -63,9 +63,15 @@ async def generate_test_cases(
     db: Session = Depends(get_db)
 ):
     """根据需求生成测试用例"""
+    # 获取默认项目
+    project = get_default_project(db)
+    if not project:
+        raise HTTPException(status_code=400, detail="没有可用的项目，请先创建并启用一个项目")
+    
     result = await TestCaseService.generate_test_cases(
         requirement=request.requirement,
-        db=db
+        db=db,
+        project_id=project.id
     )
     
     if not result.get('success'):
@@ -82,9 +88,34 @@ def get_test_cases(
     search: str = None,
     priority: str = None,
     case_type: str = None,
+    project_id: int = None,
     db: Session = Depends(get_db)
 ):
     """获取测试用例列表"""
+    from database.connection import get_active_project_by_id
+    
+    # 如果未指定项目，使用默认项目
+    if project_id is None:
+        project = get_default_project(db)
+        if not project:
+            # 没有启用的项目，返回空列表
+            return {
+                "success": True,
+                "data": [],
+                "total": 0
+            }
+        project_id = project.id
+    else:
+        # 验证指定的项目是否启用（不报错，只是过滤）
+        project = get_active_project_by_id(db, project_id)
+        if not project:
+            # 项目未启用，返回空列表
+            return {
+                "success": True,
+                "data": [],
+                "total": 0
+            }
+    
     result = TestCaseService.get_test_cases(
         db=db,
         limit=limit,
@@ -92,7 +123,8 @@ def get_test_cases(
         module=module,
         search=search,
         priority=priority,
-        case_type=case_type
+        case_type=case_type,
+        project_id=project_id
     )
     return {
         "success": True,
@@ -107,10 +139,19 @@ def get_test_case(
     db: Session = Depends(get_db)
 ):
     """获取单个测试用例"""
+    from database.connection import ExecutionCase, get_active_project_by_id
+    
     case = TestCaseService.get_test_case_by_id(db=db, case_id=case_id)
     
     if not case:
         raise HTTPException(status_code=404, detail="测试用例不存在")
+    
+    # 验证用例所属项目是否启用
+    case_obj = db.query(ExecutionCase).filter(ExecutionCase.id == case_id).first()
+    if case_obj and case_obj.project_id:
+        project = get_active_project_by_id(db, case_obj.project_id)
+        if not project:
+            raise HTTPException(status_code=400, detail="用例所属项目未启用")
     
     return {
         "success": True,
@@ -125,6 +166,18 @@ def update_test_case(
     db: Session = Depends(get_db)
 ):
     """更新测试用例"""
+    from database.connection import ExecutionCase, get_active_project_by_id
+    
+    # 验证用例所属项目是否启用
+    case_obj = db.query(ExecutionCase).filter(ExecutionCase.id == case_id).first()
+    if not case_obj:
+        raise HTTPException(status_code=404, detail="测试用例不存在")
+    
+    if case_obj.project_id:
+        project = get_active_project_by_id(db, case_obj.project_id)
+        if not project:
+            raise HTTPException(status_code=400, detail="用例所属项目未启用")
+    
     result = TestCaseService.update_test_case(
         db=db,
         case_id=case_id,
@@ -168,10 +221,16 @@ async def upload_file_and_generate(
     if len(content) > max_size:
         raise HTTPException(status_code=400, detail="文件大小超过10MB限制")
     
+    # 获取默认项目
+    project = get_default_project(db)
+    if not project:
+        raise HTTPException(status_code=400, detail="没有可用的项目，请先创建并启用一个项目")
+    
     result = await TestCaseService.process_uploaded_file(
         filename=file.filename,
         content=content,
-        db=db
+        db=db,
+        project_id=project.id
     )
     
     if not result.get('success'):

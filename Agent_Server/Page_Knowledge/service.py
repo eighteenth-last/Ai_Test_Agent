@@ -281,6 +281,7 @@ class PageKnowledgeService:
     async def store(
         knowledge: PageKnowledge,
         db: Optional[Session] = None,
+        project_id: int = None,
     ) -> Dict:
         """
         存储或更新页面知识到向量数据库 + MySQL
@@ -323,6 +324,7 @@ class PageKnowledgeService:
             "summary": knowledge.summary,
             "embedding_text": embedding_text,
             "knowledge": knowledge.to_dict(),  # 完整结构
+            "project_id": project_id or 1,  # 添加项目ID
         }
 
         success = await asyncio.to_thread(store.upsert, point_id, vector, payload)
@@ -516,6 +518,7 @@ class PageKnowledgeService:
         domain: str = "",
         page_type: str = "",
         limit: int = 100,
+        project_id: int = None,
     ) -> List[Dict]:
         """列出知识库中所有页面知识"""
         store = get_vector_store()
@@ -525,6 +528,8 @@ class PageKnowledgeService:
             filter_cond["domain"] = domain
         if page_type:
             filter_cond["page_type"] = page_type
+        if project_id is not None:
+            filter_cond["project_id"] = project_id
 
         items = await asyncio.to_thread(
             store.scroll_all,

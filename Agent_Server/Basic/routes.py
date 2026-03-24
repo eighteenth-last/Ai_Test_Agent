@@ -20,6 +20,7 @@ from Page_Knowledge.router import router as knowledge_router
 from Project_manage.router import router as project_platform_router
 from Project_manage.platforms.zentao.router import router as project_router
 from Project_manage.case_template.router import router as case_template_router
+from Project_manage.project_router import router as project_manage_router
 
 
 def register_routes(app: FastAPI):
@@ -40,3 +41,4 @@ def register_routes(app: FastAPI):
     app.include_router(project_platform_router)
     app.include_router(project_router)
     app.include_router(case_template_router)
+    app.include_router(project_manage_router)

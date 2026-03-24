@@ -1187,7 +1187,13 @@ async function stopSession() {
 
 async function loadHistory() {
   try {
-    const res = await oneclickAPI.getHistory({ page: 1, page_size: 50 })
+    // 获取当前选中的项目ID
+    const projectId = localStorage.getItem('currentProjectId')
+    const params = { page: 1, page_size: 50 }
+    if (projectId) {
+      params.project_id = parseInt(projectId)
+    }
+    const res = await oneclickAPI.getHistory(params)
     if (res.success) {
       historyList.value = res.data.items || []
     }
