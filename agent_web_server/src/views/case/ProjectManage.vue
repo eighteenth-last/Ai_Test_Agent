@@ -265,6 +265,13 @@ const handleSetDefault = async (id) => {
   try {
     const res = await setDefaultProject(id)
     if (res.success) {
+      localStorage.setItem('currentProjectId', String(id))
+      window.dispatchEvent(new CustomEvent('project-changed', {
+        detail: {
+          projectId: id,
+          reason: 'set-default'
+        }
+      }))
       message.success('设置成功')
       loadProjects()
     } else {

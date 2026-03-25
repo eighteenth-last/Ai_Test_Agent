@@ -2,6 +2,10 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set
 
+from Exploration.cache_service import ExplorationCacheService
+from Exploration.dispatcher_service import ExplorationDispatcherService
+from Exploration.task_service import ExplorationTaskService
+
 logger = logging.getLogger(__name__)
 
 
@@ -17,14 +21,57 @@ class PageInfo:
 
 
 class ExplorationState:
-    def __init__(self):
+    def __init__(
+        self,
+        session_id: str = "",
+        entry_mode: str = "",
+        goal: str = "",
+        entry_url: str = "",
+        cache_service: Optional[ExplorationCacheService] = None,
+    ):
         self.pages: Dict[str, PageInfo] = {}
         self.current_page_id: Optional[str] = None
         self.navigation_history: List[str] = []
         self.total_links_explored: int = 0
         self.exploration_stack: List[str] = []
         self.max_depth: int = 0
+        self.session_id = session_id or ""
+        self.entry_mode = entry_mode or ""
+        self.goal = goal or ""
+        self.entry_url = entry_url or ""
+        self.cache_service = cache_service
+        self.dispatcher = (
+            ExplorationDispatcherService(self.cache_service)
+            if self.cache_service and self.session_id
+            else None
+        )
+        self.page_tasks: Dict[str, List[Dict[str, Any]]] = {}
+
+        if self.dispatcher:
+            self.dispatcher.start_exploration_session(
+                session_id=self.session_id,
+                entry_mode=self.entry_mode,
+                goal=self.goal,
+                entry_url=self.entry_url,
+            )
+        elif self.cache_service and self.session_id:
+            self.cache_service.start_session(
+                self.session_id,
+                {
+                    "session_id": self.session_id,
+                    "entry_mode": self.entry_mode,
+                    "goal": self.goal,
+                    "entry_url": self.entry_url,
+                    "status": "running",
+                    "current_page_key": "",
+                },
+            )
         logger.info("[ExplorationState] initialized")
+
+    def _cache_page_key(self, page_id: str) -> str:
+        if self.session_id:
+            return f"{self.session_id}:{page_id}"
+        return page_id
 
     def record_page(
         self,
@@ -56,6 +103,69 @@ class ExplorationState:
             len(page.elements),
             current_depth,
         )
+
+        if self.dispatcher:
+            cache_page_key = self._cache_page_key(page_id)
+            register_result = self.dispatcher.register_page_scan(
+                session_id=self.session_id,
+                page_key=cache_page_key,
+                page_url=page.url,
+                page_title=page.title,
+                interactive_elements=interactive,
+                dom_summary=summary,
+                depth=current_depth,
+            )
+            self.page_tasks[cache_page_key] = register_result.get("tasks", [])
+        elif self.cache_service and self.session_id:
+            cache_page_key = self._cache_page_key(page_id)
+            page_meta = {
+                "page_key": cache_page_key,
+                "session_id": self.session_id,
+                "url": page.url,
+                "title": page.title,
+                "depth": current_depth,
+                "status": "scanned",
+            }
+            self.cache_service.save_page_meta(cache_page_key, page_meta)
+            self.cache_service.save_page_scan(
+                cache_page_key,
+                {
+                    "page_id": page_id,
+                    "page_key": cache_page_key,
+                    "title": page.title,
+                    "url": page.url,
+                    "interactive_elements": interactive,
+                    "forms": summary.get("forms") or [],
+                    "tables": summary.get("tables") or [],
+                    "dialogs": summary.get("dialogs") or [],
+                    "page_sections": summary.get("page_sections") or [],
+                },
+            )
+            tasks = ExplorationTaskService.build_page_tasks(self.session_id, cache_page_key, interactive)
+            self.page_tasks[cache_page_key] = tasks
+            self.cache_service.save_page_tasks(cache_page_key, tasks)
+            self.cache_service.update_session(
+                self.session_id,
+                {
+                    "current_page_key": cache_page_key,
+                    "status": "running",
+                },
+            )
+            self.cache_service.append_page_artifact(
+                cache_page_key,
+                {
+                    "kind": "page_recorded",
+                    "page_id": page_id,
+                    "page_key": cache_page_key,
+                    "url": page.url,
+                    "title": page.title,
+                    "buttons": [self._label_from_interactive(item) for item in interactive if self._is_button_like(item)],
+                    "links": [self._label_from_interactive(item) for item in interactive if self._is_link_like(item)],
+                    "dynamic_elements": summary.get("dialogs") or [],
+                    "page_sections": summary.get("page_sections") or [],
+                },
+            )
+
         return {"success": True, "message": f"recorded {len(page.elements)} elements"}
 
     def validate_navigate(self) -> Dict[str, Any]:
@@ -77,6 +187,7 @@ class ExplorationState:
         return element_index in current_page.explored_links
 
     def mark_link_explored(self, element_index: int, target_page_name: str):
+        source_page_id = self.current_page_id
         if self.current_page_id:
             current_page = self.pages.get(self.current_page_id)
             if current_page:
@@ -94,7 +205,46 @@ class ExplorationState:
             depth,
         )
 
-    def mark_page_completed(self):
+        if self.dispatcher and self.session_id:
+            self.dispatcher.enqueue_navigation_page(
+                session_id=self.session_id,
+                source_page_key=self._cache_page_key(source_page_id or "") if source_page_id else "",
+                task_id=f"manual_nav_{element_index}",
+                target_page_name=target_page_name,
+                depth=depth,
+            )
+        elif self.cache_service and self.session_id:
+            navigation_payload = {
+                "source_page_key": self._cache_page_key(source_page_id or "") if source_page_id else "",
+                "target_page_name": target_page_name,
+                "element_index": element_index,
+                "depth": depth,
+            }
+            self.cache_service.append_navigation(self.session_id, navigation_payload)
+            if target_page_name:
+                self.cache_service.append_frontier(
+                    self.session_id,
+                    {
+                        "page_key": self._cache_page_key(target_page_name),
+                        "url": "",
+                        "depth": depth,
+                        "enqueue_reason": "navigation_task",
+                        "status": "pending",
+                    },
+                )
+
+    def mark_page_completed(self) -> Dict[str, Any]:
+        page_id = self.current_page_id
+        if self.dispatcher and self.session_id and page_id:
+            completion = self.dispatcher.finalize_page_if_ready(self.session_id, self._cache_page_key(page_id))
+            if not completion.get("completed"):
+                return {
+                    "success": False,
+                    "message": (
+                        f"page still has pending work: {completion.get('pending_tasks', 0)} task(s), "
+                        f"{completion.get('pending_navigation', 0)} navigation task(s)"
+                    ),
+                }
         if self.exploration_stack:
             completed_page = self.exploration_stack.pop()
             logger.info(
@@ -102,6 +252,12 @@ class ExplorationState:
                 completed_page,
                 len(self.exploration_stack),
             )
+        if self.cache_service and self.session_id and page_id and not self.dispatcher:
+            cache_page_key = self._cache_page_key(page_id)
+            page_meta = self.cache_service.get_page_meta(cache_page_key)
+            page_meta.update({"status": "completed"})
+            self.cache_service.save_page_meta(cache_page_key, page_meta)
+        return {"success": True, "message": "current page marked completed"}
 
     def validate_completion(self) -> Dict[str, Any]:
         if self.exploration_stack:
@@ -128,7 +284,118 @@ class ExplorationState:
                 "message": f"not enough links explored: {self.total_links_explored}",
             }
 
+        if self.cache_service and self.session_id:
+            self.cache_service.update_session(self.session_id, {"status": "completed"})
         return {"success": True}
+
+    def report_page_observation(
+        self,
+        page_id: str,
+        observation: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        if not page_id:
+            page_id = self.current_page_id or ""
+        if not page_id:
+            return {"success": False, "message": "page_id is required"}
+
+        if self.cache_service and self.session_id:
+            cache_page_key = self._cache_page_key(page_id)
+            self.cache_service.append_page_artifact(
+                cache_page_key,
+                {
+                    "kind": "page_observation",
+                    "page_id": page_id,
+                    "page_key": cache_page_key,
+                    "buttons": observation.get("buttons", []),
+                    "links": observation.get("links", []),
+                    "dynamic_elements": observation.get("dynamic_elements", []),
+                    "page_sections": observation.get("page_sections", []),
+                    "observation": observation,
+                },
+            )
+        return {"success": True, "message": "page observation recorded"}
+
+    def report_task_artifact(
+        self,
+        task_id: str,
+        task_group: str,
+        page_id: str,
+        artifact: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        resolved_page_id = page_id or self.current_page_id or ""
+        if not task_id or not resolved_page_id:
+            return {"success": False, "message": "task_id and page_id are required"}
+
+        if self.cache_service and self.session_id:
+            cache_page_key = self._cache_page_key(resolved_page_id)
+            if self.dispatcher:
+                dispatch_result = self.dispatcher.accept_task_result(
+                    session_id=self.session_id,
+                    page_key=cache_page_key,
+                    task_id=task_id,
+                    task_group=task_group,
+                    artifact=artifact,
+                )
+                self.page_tasks[cache_page_key] = self.cache_service.get_page_tasks(cache_page_key)
+                return {
+                    "success": True,
+                    "message": "task artifact recorded",
+                    "dispatch_result": dispatch_result,
+                }
+            tasks = self.page_tasks.get(cache_page_key)
+            if tasks is None:
+                tasks = self.cache_service.get_page_tasks(cache_page_key)
+                self.page_tasks[cache_page_key] = tasks
+            status = str(artifact.get("status") or "accepted")
+            ExplorationTaskService.update_task_status(tasks, task_id, "accepted" if status == "accepted" else status, artifact)
+            self.cache_service.save_page_tasks(cache_page_key, tasks)
+            self.cache_service.save_task_result(
+                task_id,
+                {
+                    "task_id": task_id,
+                    "page_key": cache_page_key,
+                    "task_group": task_group,
+                    "artifact": artifact,
+                },
+            )
+            self.cache_service.append_page_artifact(
+                cache_page_key,
+                {
+                    "kind": "task_artifact",
+                    "task_id": task_id,
+                    "task_group": task_group,
+                    "page_id": resolved_page_id,
+                    "page_key": cache_page_key,
+                    "buttons": artifact.get("buttons", []),
+                    "links": artifact.get("links", []),
+                    "dynamic_elements": artifact.get("dynamic_elements", []),
+                    "page_sections": artifact.get("page_sections", []),
+                    "artifact": artifact,
+                },
+            )
+            if artifact.get("navigated") and self.session_id:
+                self.cache_service.append_navigation(
+                    self.session_id,
+                    {
+                        "source_page_key": cache_page_key,
+                        "target_page_name": artifact.get("target_page_name", ""),
+                        "new_url": artifact.get("new_url", ""),
+                        "task_id": task_id,
+                        "task_group": task_group,
+                    },
+                )
+        return {"success": True, "message": "task artifact recorded"}
+
+    def dispatch_next_task(self, page_id: str = "") -> Dict[str, Any]:
+        resolved_page_id = page_id or self.current_page_id or ""
+        if not self.dispatcher or not self.session_id or not resolved_page_id:
+            return {"success": False, "message": "dispatcher or page context unavailable"}
+
+        cache_page_key = self._cache_page_key(resolved_page_id)
+        result = self.dispatcher.dispatch_next_task(self.session_id, cache_page_key)
+        if result.get("success"):
+            self.page_tasks[cache_page_key] = self.cache_service.get_page_tasks(cache_page_key)
+        return result
 
     def generate_report(self) -> str:
         report_lines = [
@@ -249,6 +516,7 @@ class ExplorationState:
             pages_payload.append(
                 {
                     "page_id": page.page_id,
+                    "cache_page_key": self._cache_page_key(page.page_id),
                     "title": page.title or str(summary.get("title") or ""),
                     "url": page.url,
                     "interactive_count": len(interactive),
@@ -349,3 +617,17 @@ class ExplorationState:
     def _contains_keyword(value: str, keywords: List[str]) -> bool:
         lower_value = str(value or "").lower()
         return any(keyword in lower_value for keyword in keywords)
+
+    @staticmethod
+    def _is_link_like(item: Dict[str, Any]) -> bool:
+        tag = str(item.get("tag") or "").lower()
+        role = str(item.get("role") or "").lower()
+        href = str(item.get("href") or "").strip()
+        return bool(href or tag == "a" or role == "link")
+
+    @staticmethod
+    def _is_button_like(item: Dict[str, Any]) -> bool:
+        tag = str(item.get("tag") or "").lower()
+        role = str(item.get("role") or "").lower()
+        element_type = str(item.get("element_type") or "").lower()
+        return bool(tag == "button" or role == "button" or element_type in {"button", "submit", "reset"})

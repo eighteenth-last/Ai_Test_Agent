@@ -11,6 +11,8 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .browser_use_runtime import ensure_browser_use_runtime_env
+
 logger = logging.getLogger(__name__)
 
 DOM_INTERACTIVE_THRESHOLD = int(os.getenv("EXPLORATION_DOM_INTERACTIVE_THRESHOLD", "10"))
@@ -245,6 +247,7 @@ async def detect_dom_richness(browser_session) -> Dict[str, Any]:
 
 
 async def create_browser_session(env_info: Dict[str, Any]):
+    ensure_browser_use_runtime_env()
     try:
         from browser_use import BrowserSession
     except ImportError:
@@ -256,6 +259,7 @@ async def create_browser_session(env_info: Dict[str, Any]):
         headless=headless,
         disable_security=os.getenv("DISABLE_SECURITY", "false").lower() == "true",
         executable_path=chrome_path if chrome_path else None,
+        enable_default_extensions=os.getenv("BROWSER_USE_ENABLE_DEFAULT_EXTENSIONS", "false").lower() == "true",
         minimum_wait_page_load_time=0.5,
         wait_between_actions=0.3,
         keep_alive=True,

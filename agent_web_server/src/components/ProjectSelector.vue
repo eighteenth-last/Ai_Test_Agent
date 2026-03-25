@@ -18,7 +18,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { NSelect } from 'naive-ui'
 import { getProjects } from '@/api/testProject'
 
@@ -67,8 +67,33 @@ const loadProjects = async () => {
   }
 }
 
+const syncProjectSelection = (projectId) => {
+  const numericProjectId = parseInt(projectId)
+  if (!numericProjectId) return
+  const matched = projects.value.find(p => p.id === numericProjectId && p.is_active)
+  if (!matched) return
+  currentProjectId.value = matched.id
+  localStorage.setItem('currentProjectId', String(matched.id))
+}
+
+const handleProjectChangedEvent = (event) => {
+  const nextProjectId = event?.detail?.projectId
+  if (!nextProjectId) return
+  syncProjectSelection(nextProjectId)
+}
+
+const handleStorageChange = (event) => {
+  if (event.key !== 'currentProjectId' || !event.newValue) return
+  syncProjectSelection(event.newValue)
+}
+
 const handleProjectChange = (projectId) => {
   localStorage.setItem('currentProjectId', projectId)
+  window.dispatchEvent(new CustomEvent('project-changed', {
+    detail: {
+      projectId
+    }
+  }))
   emit('change', projectId)
   // 刷新页面以重新加载数据
   window.location.reload()
@@ -76,6 +101,13 @@ const handleProjectChange = (projectId) => {
 
 onMounted(() => {
   loadProjects()
+  window.addEventListener('project-changed', handleProjectChangedEvent)
+  window.addEventListener('storage', handleStorageChange)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('project-changed', handleProjectChangedEvent)
+  window.removeEventListener('storage', handleStorageChange)
 })
 
 // 暴露方法供父组件调用

@@ -545,7 +545,8 @@ const dialog = useDialog()
 
 // 筛选条件
 const filters = reactive({
-  case_type: '功能测试'
+  case_type: '功能测试',
+  project_id: parseInt(localStorage.getItem('currentProjectId')) || null
 })
 
 // 使用懒加载

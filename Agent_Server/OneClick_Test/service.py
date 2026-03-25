@@ -48,17 +48,15 @@ from OneClick_Test.session import SessionManager
 from OneClick_Test.skill_manager import SkillManager
 from OneClick_Test.loop_detection import LoopDetector, LoopDetectionConfig
 from OneClick_Test.task_tree import TaskTree, TaskNode, NodeStatus
-# 新的探索模块（方案A）
-from OneClick_Test.exploration_prompts import (
-    EXPLORATION_SYSTEM_PROMPT,
-    build_exploration_prompt
-)
-from Exploration.browser_use_agent_explorer import BrowserUseAgentExplorer
+from Exploration.browser_use_runtime import ensure_browser_use_runtime_env
+from Exploration.cache_service import ExplorationCacheService
 from Exploration.orchestrator import ExplorationOrchestrator
 from Page_Knowledge.service import PageKnowledgeService
 from Page_Knowledge.schema import PageKnowledge
 
 logger = logging.getLogger(__name__)
+
+ensure_browser_use_runtime_env()
 
 
 # ========== 全局运行状态管理 ==========
@@ -69,6 +67,63 @@ _running_sessions: Dict[int, Dict[str, Any]] = {}
 def _use_queue_exploration() -> bool:
     """Short-term gray switch for the shared browser-use exploration engine."""
     return os.getenv("ONECLICK_EXPLORATION_V2", "true").lower() == "true"
+
+
+def _use_oneclick_engine_v2() -> bool:
+    """OneClick explorer engine switch. Defaults to follow the gray queue switch."""
+    default = "true" if _use_queue_exploration() else "false"
+    return os.getenv("ONECLICK_EXPLORATION_ENGINE_V2", default).lower() == "true"
+
+
+def _build_runtime_state(
+    cancel_event: asyncio.Event,
+    loop_detector: Any = None,
+) -> Dict[str, Any]:
+    return {
+        "cancel_event": cancel_event,
+        "browser_session": None,
+        "loop_detector": loop_detector,
+        "engine": "",
+        "current_task": "",
+        "events": [],
+        "artifact_summary": None,
+        "exploration_session_id": "",
+        "session_snapshot": None,
+        "session_completion": None,
+        "assigned_task": None,
+        "run_stalled": False,
+    }
+
+
+def _serialize_runtime_state(runtime_state: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not runtime_state:
+        return None
+
+    return {
+        "queue_exploration_enabled": _use_queue_exploration(),
+        "oneclick_engine_v2_enabled": _use_oneclick_engine_v2(),
+        "engine": runtime_state.get("engine", ""),
+        "current_task": runtime_state.get("current_task", ""),
+        "artifact_summary": runtime_state.get("artifact_summary"),
+        "exploration_session_id": runtime_state.get("exploration_session_id", ""),
+        "session_snapshot": runtime_state.get("session_snapshot"),
+        "session_completion": runtime_state.get("session_completion"),
+        "assigned_task": runtime_state.get("assigned_task"),
+        "run_stalled": bool(runtime_state.get("run_stalled", False)),
+        "events": list(runtime_state.get("events", [])[-20:]),
+    }
+
+
+def _cleanup_runtime_exploration_cache(runtime_state: Optional[Dict[str, Any]]) -> None:
+    if not runtime_state:
+        return
+    exploration_session_id = str(runtime_state.get("exploration_session_id") or "").strip()
+    if not exploration_session_id:
+        return
+    try:
+        ExplorationCacheService().cleanup_session(exploration_session_id)
+    except Exception as exc:
+        logger.debug("[OneClick] cleanup exploration cache failed: %s", exc)
 
 
 class OneClickService:
@@ -180,15 +235,10 @@ class OneClickService:
 
         # 注册 cancel_event，使 stop_session 能在探索阶段发送取消信号
         cancel_event = asyncio.Event()
-        _running_sessions[session_id] = {
-            "cancel_event": cancel_event,
-            "browser_session": None,
-            "loop_detector": None,
-            "engine": "",
-            "current_task": "",
-            "events": [],
-            "artifact_summary": None,
-        }
+        _running_sessions[session_id] = _build_runtime_state(
+            cancel_event=cancel_event,
+            loop_detector=None,
+        )
 
         def _is_cancelled() -> bool:
             """检查会话是否已被手动停止"""
@@ -300,8 +350,23 @@ class OneClickService:
                         running_state["engine"] = payload.get("engine", running_state.get("engine", ""))
                     elif event_type == "task.started":
                         running_state["current_task"] = payload.get("title", "")
+                    elif event_type == "task.assigned":
+                        running_state["assigned_task"] = payload.get("task")
                     elif event_type == "artifact.ready":
                         running_state["artifact_summary"] = payload.get("summary")
+                    elif event_type == "session.snapshot":
+                        snapshot = payload.get("snapshot")
+                        running_state["session_snapshot"] = snapshot
+                        if isinstance(snapshot, dict):
+                            running_state["exploration_session_id"] = str(
+                                (snapshot.get("session") or {}).get("session_id")
+                                or running_state.get("exploration_session_id", "")
+                            )
+                        session_completion = payload.get("session_completion")
+                        if session_completion is not None:
+                            running_state["session_completion"] = session_completion
+                    elif event_type == "run.stalled":
+                        running_state["run_stalled"] = True
 
                     if payload:
                         events = running_state.setdefault("events", [])
@@ -326,6 +391,34 @@ class OneClickService:
                         cancel_event=cancel_event,
                         status_callback=_status_callback,
                     )
+                    if not explore_result.get("success") and not _is_cancelled():
+                        fallback_message = explore_result.get("message", "未知原因")
+                        logger.warning(
+                            "[OneClick] exploration v2 failed, fallback to precision mode: %s",
+                            fallback_message,
+                        )
+                        SessionManager.add_message(
+                            db, session, 'assistant',
+                            f'⚠️ 新探索引擎未完成页面探索，已自动回退旧精准探索模式\n原因：{fallback_message}'
+                        )
+                        running_state = _running_sessions.get(session_id)
+                        if running_state is not None:
+                            running_state["engine"] = "precision_browser_use_fallback"
+                            events = running_state.setdefault("events", [])
+                            events.append({
+                                "type": "engine.fallback",
+                                "payload": {
+                                    "from": "browser_use_v2",
+                                    "to": "precision_browser_use",
+                                    "reason": fallback_message,
+                                },
+                                "ts": int(time.time()),
+                            })
+                            if len(events) > 50:
+                                del events[:-50]
+                        explore_result = await OneClickService._explore_page_with_precision(
+                            db, session, user_input, env_info
+                        )
                 else:
                     logger.info("[OneClick] page exploration mode=precision_browser_use")
                     explore_result = await OneClickService._explore_page_with_precision(
@@ -338,6 +431,14 @@ class OneClickService:
 
                 if explore_result.get("success"):
                     page_data = explore_result.get("page_data", {})
+                    running_state = _running_sessions.get(session_id)
+                    if running_state:
+                        if explore_result.get("exploration_session_id"):
+                            running_state["exploration_session_id"] = explore_result.get("exploration_session_id", "")
+                        artifact_summary = page_data.get("artifact_summary", {}) if isinstance(page_data, dict) else {}
+                        if artifact_summary:
+                            running_state["artifact_summary"] = artifact_summary
+                            running_state["session_completion"] = artifact_summary.get("session_completion")
                     session.page_analysis = json.dumps(page_data, ensure_ascii=False)
                     session.page_capabilities = json.dumps(page_data, ensure_ascii=False)
                     if not SessionManager.update_status(db, session, 'page_scanned'):
@@ -508,6 +609,7 @@ class OneClickService:
             except Exception:
                 pass
         finally:
+            _cleanup_runtime_exploration_cache(_running_sessions.get(session_id))
             _running_sessions.pop(session_id, None)
             db.close()
 
@@ -1381,10 +1483,7 @@ class OneClickService:
             from Execute_test.service import find_chrome_path
             from OneClick_Test.exploration_controller import ExplorationController
             from OneClick_Test.exploration_state import ExplorationState
-            from OneClick_Test.exploration_prompts import (
-                EXPLORATION_SYSTEM_PROMPT,
-                build_exploration_prompt
-            )
+            from OneClick_Test.exploration_prompts import build_exploration_prompt
 
             # 1. 创建探索状态管理
             state_manager = ExplorationState()
@@ -2177,6 +2276,7 @@ class OneClickService:
             headless=headless,
             disable_security=disable_security,
             executable_path=chrome_path if chrome_path else None,
+            enable_default_extensions=os.getenv("BROWSER_USE_ENABLE_DEFAULT_EXTENSIONS", "false").lower() == "true",
             minimum_wait_page_load_time=0.5,
             wait_between_actions=0.3,
             keep_alive=True,
@@ -2980,6 +3080,8 @@ class OneClickService:
             except Exception as e:
                 logger.warning(f"[OneClick] 解析任务树失败: {e}")
 
+        runtime_state = _serialize_runtime_state(_running_sessions.get(session_id))
+
         return {
             "id": session.id,
             "user_input": session.user_input,
@@ -2995,6 +3097,7 @@ class OneClickService:
             "execution_result": json.loads(session.execution_result) if session.execution_result else None,
             "messages": SessionManager.get_messages(session),
             "runtime_stats": SessionManager.get_runtime_stats(session_id),
+            "exploration_debug": runtime_state,
             "created_at": session.created_at.isoformat() if session.created_at else None,
             "updated_at": session.updated_at.isoformat() if session.updated_at else None,
         }
@@ -3044,6 +3147,7 @@ class OneClickService:
                 asyncio.create_task(
                     OneClickService._kill_browser_with_timeout(browser, session_id)
                 )
+            _cleanup_runtime_exploration_cache(running)
         else:
             logger.info(f"[OneClick] ℹ️ 会话 {session_id} 没有正在运行的任务")
 

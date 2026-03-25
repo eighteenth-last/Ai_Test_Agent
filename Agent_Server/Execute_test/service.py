@@ -18,10 +18,12 @@ from datetime import datetime
 from pathlib import Path
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
+from Exploration.browser_use_runtime import ensure_browser_use_runtime_env
 
 # 加载环境变量 - .env 文件在 Agent_Server 目录下
 env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
 load_dotenv(env_path)
+ensure_browser_use_runtime_env()
 
 
 def find_chrome_path() -> Optional[str]:
@@ -440,6 +442,7 @@ class BrowserUseService:
                     headless=headless,
                     disable_security=disable_security,
                     executable_path=chrome_path if chrome_path else None,
+                    enable_default_extensions=os.getenv("BROWSER_USE_ENABLE_DEFAULT_EXTENSIONS", "false").lower() == "true",
                     # 设置等待时间
                     minimum_wait_page_load_time=0.5,
                     wait_between_actions=0.3,
@@ -509,6 +512,7 @@ class BrowserUseService:
                                 headless=headless,
                                 disable_security=disable_security,
                                 executable_path=chrome_path if chrome_path else None,
+                                enable_default_extensions=os.getenv("BROWSER_USE_ENABLE_DEFAULT_EXTENSIONS", "false").lower() == "true",
                                 minimum_wait_page_load_time=0.5,
                                 wait_between_actions=0.3,
                             )

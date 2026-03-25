@@ -22,6 +22,9 @@ from Page_Knowledge.service import PageKnowledgeService
 from Page_Knowledge.vector_store import get_vector_store, apply_config_to_store
 from Page_Knowledge.embedding import reload_embedding_client
 from Page_Knowledge.schema import PageKnowledge
+from Exploration.cache_service import ExplorationCacheService
+from Exploration.dispatcher_service import ExplorationDispatcherService
+from Exploration.finalizer import ExplorationFinalizer
 from Exploration.orchestrator import ExplorationOrchestrator
 
 logger = logging.getLogger(__name__)
@@ -412,7 +415,7 @@ _explore_tasks: Dict[str, Dict[str, Any]] = {}
 
 def _use_queue_exploration() -> bool:
     """Short-term gray switch for the shared browser-use exploration engine."""
-    return os.getenv("KNOWLEDGE_EXPLORATION_V2", "true").lower() == "true"
+    return os.getenv("EXPLORATION_ENGINE_V2", os.getenv("KNOWLEDGE_EXPLORATION_V2", "true")).lower() == "true"
 
 class ExplorePageRequest(BaseModel):
     url: str
@@ -607,6 +610,9 @@ async def _background_explore_task(
         if cancel_event.is_set():
             logger.info(f"[PageKB API] 探索已取消: {task_id}")
             _explore_tasks[task_id]["status"] = "cancelled"
+            exploration_session_id = str(_explore_tasks[task_id].get("exploration_session_id") or "")
+            if exploration_session_id:
+                ExplorationFinalizer().cleanup_session_cache(exploration_session_id)
             db.delete(temp_session)
             db.commit()
             return
@@ -614,11 +620,19 @@ async def _background_explore_task(
         if not explore_result.get("success"):
             _explore_tasks[task_id]["status"] = "failed"
             _explore_tasks[task_id]["error"] = explore_result.get('message', '未知错误')
+            exploration_session_id = str(_explore_tasks[task_id].get("exploration_session_id") or "")
+            if exploration_session_id:
+                ExplorationFinalizer().cleanup_session_cache(exploration_session_id)
             db.delete(temp_session)
             db.commit()
             return
         
         page_data = explore_result.get("page_data", {})
+        exploration_session_id = str(
+            explore_result.get("exploration_session_id")
+            or _explore_tasks[task_id].get("exploration_session_id")
+            or ""
+        )
         
         # 精准模式：直接使用 page_data 作为 capabilities
         page_capabilities = page_data
@@ -627,17 +641,31 @@ async def _background_explore_task(
         if cancel_event.is_set():
             logger.info(f"[PageKB API] 探索已取消: {task_id}")
             _explore_tasks[task_id]["status"] = "cancelled"
+            if exploration_session_id:
+                ExplorationFinalizer().cleanup_session_cache(exploration_session_id)
             db.delete(temp_session)
             db.commit()
             return
         
         # 存入知识库
         logger.info(f"[PageKB API] 正在存入知识库...")
-        kb_result = await PageKnowledgeService.check_and_update(
-            url=env_info.get("target_url", req.url),
-            new_capabilities=page_capabilities,
-            db=db,
-        )
+        if use_queue and exploration_session_id:
+            finalizer = ExplorationFinalizer()
+            finalized = await finalizer.finalize_page_knowledge(
+                session_id=exploration_session_id,
+                url=env_info.get("target_url", req.url),
+                page_data=page_capabilities,
+                db=db,
+                cleanup=True,
+            )
+            page_capabilities = finalized.get("capabilities", page_capabilities)
+            kb_result = finalized.get("knowledge_result", {})
+        else:
+            kb_result = await PageKnowledgeService.check_and_update(
+                url=env_info.get("target_url", req.url),
+                new_capabilities=page_capabilities,
+                db=db,
+            )
         
         action = kb_result.get('action', 'created')
         knowledge = kb_result.get('knowledge')
@@ -657,6 +685,7 @@ async def _background_explore_task(
             "current_task": _explore_tasks[task_id].get("current_task", ""),
             "events": _explore_tasks[task_id].get("events", []),
             "artifact_summary": _explore_tasks[task_id].get("artifact_summary"),
+            "exploration_session_id": exploration_session_id,
         }
         
         # 清理临时会话
@@ -671,6 +700,9 @@ async def _background_explore_task(
         logger.error(traceback.format_exc())
         _explore_tasks[task_id]["status"] = "failed"
         _explore_tasks[task_id]["error"] = str(e)
+        exploration_session_id = str(_explore_tasks.get(task_id, {}).get("exploration_session_id") or "")
+        if exploration_session_id:
+            ExplorationFinalizer().cleanup_session_cache(exploration_session_id)
         try:
             if temp_session is not None:
                 db.delete(temp_session)
@@ -711,6 +743,9 @@ async def stop_explore(req: StopExploreRequest):
                 logger.warning(f"[PageKB API] 关闭浏览器失败: {e}")
         
         task_info["status"] = "cancelled"
+        exploration_session_id = str(task_info.get("exploration_session_id") or "")
+        if exploration_session_id:
+            ExplorationFinalizer().cleanup_session_cache(exploration_session_id)
         
         logger.info(f"[PageKB API] 已中止探索任务: {task_id}")
         
@@ -735,6 +770,12 @@ async def get_explore_status(task_id: str):
             return {"success": False, "message": "任务不存在"}
         
         task_info = _explore_tasks[task_id]
+        exploration_session_id = str(task_info.get("exploration_session_id", "") or "")
+        cache_debug: Dict[str, Any] = {}
+        if exploration_session_id:
+            dispatcher = ExplorationDispatcherService(ExplorationCacheService())
+            cache_debug = dispatcher.get_session_snapshot(exploration_session_id)
+            cache_debug["session_completion"] = dispatcher.finalize_session_if_ready(exploration_session_id)
         
         response = {
             "success": True,
@@ -742,10 +783,12 @@ async def get_explore_status(task_id: str):
                 "task_id": task_id,
                 "status": task_info["status"],
                 "url": task_info.get("url", ""),
+                "exploration_session_id": exploration_session_id,
                 "engine": task_info.get("engine", ""),
                 "current_task": task_info.get("current_task", ""),
                 "events": task_info.get("events", []),
                 "artifact_summary": task_info.get("artifact_summary"),
+                "cache_debug": cache_debug,
             }
         }
         

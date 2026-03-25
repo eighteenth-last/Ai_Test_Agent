@@ -3,6 +3,9 @@ import logging
 from typing import Any, Dict, List
 
 from pydantic import BaseModel, Field
+from Exploration.browser_use_runtime import ensure_browser_use_runtime_env
+
+ensure_browser_use_runtime_env()
 
 try:
     from browser_use.agent.views import ActionResult
@@ -25,6 +28,17 @@ class ExplorationController(Tools):
         self.exploration_state = exploration_state
         self._register_exploration_actions()
         logger.info("[ExplorationController] initialized")
+
+    @staticmethod
+    def _format_task_text(task: Dict[str, Any]) -> str:
+        return (
+            f"task_id={task.get('task_id', '')}; "
+            f"group={task.get('task_group', '')}; "
+            f"type={task.get('task_type', '')}; "
+            f"target={task.get('element_label', '')}; "
+            f"selector={task.get('action_payload', {}).get('selector', '')}; "
+            f"candidate_id={task.get('action_payload', {}).get('candidate_id', '')}"
+        )
 
     def _register_exploration_actions(self):
         class RecordPageParams(BaseModel):
@@ -84,6 +98,12 @@ class ExplorationController(Tools):
                 f"{len(dom_summary.get('interactive_elements') or params.elements)} interactive elements."
                 f"{dom_mode_hint}"
             )
+            next_task_result = self.exploration_state.dispatch_next_task(params.page_id)
+            if next_task_result.get("success") and next_task_result.get("has_task"):
+                task_text = self._format_task_text(next_task_result.get("task") or {})
+                msg += f"\nServer assigned next task: {task_text}"
+            else:
+                msg += "\nServer has no pending task for this page yet."
             return ActionResult(extracted_content=msg, include_in_memory=True)
 
         class ExploreLinkParams(BaseModel):
@@ -141,9 +161,112 @@ class ExplorationController(Tools):
             description="Mark the current page as fully explored before going back.",
         )
         async def mark_page_completed() -> ActionResult:
-            self.exploration_state.mark_page_completed()
+            result = self.exploration_state.mark_page_completed()
+            if not result["success"]:
+                return ActionResult(error=result["message"], include_in_memory=True)
             return ActionResult(
                 extracted_content="Current page is complete. Use go_back() to return to the parent page.",
+                include_in_memory=True,
+            )
+
+        class DispatchNextTaskParams(BaseModel):
+            page_id: str = Field(default="", description="Current page id; empty means use the recorded current page")
+
+        @self.registry.action(
+            description="Ask the server for the next exploration task of the current page. The server will prioritize in-page tasks before navigation tasks.",
+            param_model=DispatchNextTaskParams,
+        )
+        async def dispatch_next_task(params: DispatchNextTaskParams) -> ActionResult:
+            result = self.exploration_state.dispatch_next_task(params.page_id)
+            if not result["success"]:
+                return ActionResult(error=result["message"], include_in_memory=True)
+            if not result.get("has_task"):
+                return ActionResult(
+                    extracted_content="No pending task remains on the current page.",
+                    include_in_memory=True,
+                )
+
+            task = result.get("task") or {}
+            task_text = (
+                f"Next task: {self._format_task_text(task)}\n"
+                f"hint={task.get('completion_hint', '')}"
+            )
+            return ActionResult(extracted_content=task_text, include_in_memory=True)
+
+        class ReportPageObservationParams(BaseModel):
+            page_id: str = Field(description="Current page id")
+            buttons: List[str] = Field(default_factory=list, description="New buttons or button labels observed")
+            links: List[str] = Field(default_factory=list, description="New links observed")
+            dynamic_elements: List[str] = Field(default_factory=list, description="Dialogs, drawers, modals, toasts observed")
+            page_sections: List[str] = Field(default_factory=list, description="Page sections or modules observed")
+            note: str = Field(default="", description="Short note about the current observation")
+
+        @self.registry.action(
+            description="Report the latest page observation so the server can cache page artifacts outside the model context.",
+            param_model=ReportPageObservationParams,
+        )
+        async def report_page_observation(params: ReportPageObservationParams) -> ActionResult:
+            payload = params.model_dump()
+            result = self.exploration_state.report_page_observation(params.page_id, payload)
+            if not result["success"]:
+                return ActionResult(error=result["message"], include_in_memory=True)
+            return ActionResult(
+                extracted_content=f"Reported page observation for '{params.page_id}'.",
+                include_in_memory=True,
+            )
+
+        class ReportTaskArtifactParams(BaseModel):
+            task_id: str = Field(description="Current task identifier")
+            task_group: str = Field(default="in_page", description="Task group: in_page or navigation")
+            page_id: str = Field(default="", description="Current page id")
+            status: str = Field(default="accepted", description="Task result status")
+            observed_result: str = Field(default="", description="Short summary of the observed result")
+            navigated: bool = Field(default=False, description="Whether the task navigated to a new page")
+            new_url: str = Field(default="", description="New URL when navigation happened")
+            target_page_name: str = Field(default="", description="Target page name if known")
+            buttons: List[str] = Field(default_factory=list, description="New buttons observed after this task")
+            links: List[str] = Field(default_factory=list, description="New links observed after this task")
+            dynamic_elements: List[str] = Field(default_factory=list, description="Dialogs or transient UI observed")
+            page_sections: List[str] = Field(default_factory=list, description="Sections observed after task execution")
+            evidence: List[str] = Field(default_factory=list, description="Evidence strings proving the result")
+
+        @self.registry.action(
+            description="Report the artifact produced by a single exploration task so the server can cache task results.",
+            param_model=ReportTaskArtifactParams,
+        )
+        async def report_task_artifact(params: ReportTaskArtifactParams) -> ActionResult:
+            payload = params.model_dump()
+            result = self.exploration_state.report_task_artifact(
+                task_id=params.task_id,
+                task_group=params.task_group,
+                page_id=params.page_id,
+                artifact=payload,
+            )
+            if not result["success"]:
+                return ActionResult(error=result["message"], include_in_memory=True)
+            dispatch_result = result.get("dispatch_result") or {}
+            page_id = params.page_id or self.exploration_state.current_page_id or ""
+            if dispatch_result.get("page_completed"):
+                return ActionResult(
+                    extracted_content=(
+                        f"Reported task artifact for '{params.task_id}'. "
+                        "Current page has no pending server task. "
+                        "Call mark_page_completed() and then go_back() if this is a child page."
+                    ),
+                    include_in_memory=True,
+                )
+            next_task_result = self.exploration_state.dispatch_next_task(page_id)
+            if next_task_result.get("success") and next_task_result.get("has_task"):
+                task_text = self._format_task_text(next_task_result.get("task") or {})
+                return ActionResult(
+                    extracted_content=(
+                        f"Reported task artifact for '{params.task_id}'. "
+                        f"Server assigned next task: {task_text}"
+                    ),
+                    include_in_memory=True,
+                )
+            return ActionResult(
+                extracted_content=f"Reported task artifact for '{params.task_id}'.",
                 include_in_memory=True,
             )
 
