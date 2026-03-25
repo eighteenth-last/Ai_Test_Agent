@@ -108,14 +108,16 @@
 
 <script setup>
 import { ref, h, onMounted } from 'vue'
-import { useMessage, NButton } from 'naive-ui'
+import { useMessage, NButton, NSpace, NButtonGroup } from 'naive-ui'
 import { zentaoAPI } from '@/api/zentao'
+import { importPlatformProject } from '@/api/testProject'
 
 const message = useMessage()
 
 const loadingProducts = ref(false)
 const products = ref([])
 const importing = ref(false)
+const importingProjectId = ref(null)
 const showImportModal = ref(false)
 const importMode = ref('product')
 const caseIdsText = ref('')
@@ -134,12 +136,27 @@ const productColumns = [
   { title: '代号', key: 'code', width: 100 },
   { title: '状态', key: 'status', width: 80 },
   {
-    title: '操作', key: 'actions', width: 120,
-    render: (row) => h(NButton, {
-      size: 'small',
-      type: 'primary',
-      onClick: () => quickImport(row.id)
-    }, () => '导入全部用例')
+    title: '操作', key: 'actions', width: 240,
+    render: (row) => h(
+      NButtonGroup,
+      { size: 'small' },
+      {
+        default: () => [
+          h(NButton, {
+            size: 'small',
+            secondary: true,
+            type: 'success',
+            loading: importingProjectId.value === row.id,
+            onClick: () => handleImportProject(row)
+          }, () => '导入项目'),
+          h(NButton, {
+            size: 'small',
+            type: 'primary',
+            onClick: () => quickImport(row.id)
+          }, () => '导入全部用例'),
+        ]
+      }
+    )
   }
 ]
 
@@ -159,6 +176,24 @@ function quickImport(productId) {
   importMode.value = 'product'
   importForm.value.product_id = productId
   showImportModal.value = true
+}
+
+async function handleImportProject(product) {
+  importingProjectId.value = product.id
+  try {
+    const res = await importPlatformProject({
+      platform_id: 'zentao',
+      source_id: product.id,
+      source_name: product.name,
+      source_code: product.code || '',
+      description: `从禅道产品导入，本地项目可用于用例、报告、一键测试等模块。`
+    })
+    message.success(res.message || '项目导入成功')
+  } catch (e) {
+    message.error(e.response?.data?.detail || '导入项目失败')
+  } finally {
+    importingProjectId.value = null
+  }
 }
 
 async function handleImport() {

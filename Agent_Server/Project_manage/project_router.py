@@ -1,10 +1,11 @@
 """
 项目管理 API 路由
 
-提供项目的 CRUD 操作和默认项目设置
+提供项目的 CRUD 操作、默认项目设置，以及从项目管理平台导入项目。
 
 作者: 程序员Eighteen
 """
+import re
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -24,6 +25,8 @@ class ProjectCreate(BaseModel):
     name: str
     code: str
     description: Optional[str] = None
+    is_default: Optional[int] = 0
+    is_active: Optional[int] = 1
 
 
 class ProjectUpdate(BaseModel):
@@ -31,6 +34,18 @@ class ProjectUpdate(BaseModel):
     name: Optional[str] = None
     code: Optional[str] = None
     description: Optional[str] = None
+    is_default: Optional[int] = None
+    is_active: Optional[int] = None
+
+
+class PlatformProjectImportRequest(BaseModel):
+    """从项目管理平台导入项目请求"""
+    platform_id: str
+    source_id: str | int
+    source_name: str
+    source_code: Optional[str] = None
+    description: Optional[str] = None
+    is_default: Optional[int] = 0
     is_active: Optional[int] = None
 
 
@@ -47,6 +62,58 @@ class ProjectResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+def _sanitize_project_code(value: str) -> str:
+    """将外部平台代号规范化为本系统可用的项目代码。"""
+    if not value:
+        return ""
+
+    normalized = re.sub(r"[^a-zA-Z0-9_-]+", "_", value.strip().lower())
+    normalized = re.sub(r"_+", "_", normalized).strip("_-")
+    return normalized[:50]
+
+
+def _build_unique_project_name(db: Session, preferred_name: str, current_project_id: Optional[int] = None) -> str:
+    """生成唯一项目名，避免与现有项目冲突。"""
+    base_name = (preferred_name or "").strip()
+    if not base_name:
+        raise HTTPException(status_code=400, detail="项目名称不能为空")
+
+    candidate = base_name
+    suffix = 2
+    while True:
+        query = db.query(Project).filter(Project.name == candidate)
+        if current_project_id is not None:
+            query = query.filter(Project.id != current_project_id)
+        if not query.first():
+            return candidate
+        candidate = f"{base_name} ({suffix})"
+        suffix += 1
+
+
+def _build_platform_project_code(platform_id: str, source_id: str | int, source_code: Optional[str] = None) -> str:
+    """根据平台和外部产品信息生成稳定的项目代码。"""
+    platform_part = _sanitize_project_code(platform_id) or "platform"
+    source_part = _sanitize_project_code(source_code or str(source_id)) or str(source_id)
+    return _sanitize_project_code(f"{platform_part}_{source_part}")[:50]
+
+
+def _build_platform_project_description(
+    platform_id: str,
+    source_id: str | int,
+    source_code: Optional[str] = None,
+    description: Optional[str] = None,
+) -> str:
+    """拼装导入项目的来源描述。"""
+    lines: List[str] = []
+    if description and description.strip():
+        lines.append(description.strip())
+    lines.append(f"来源平台: {platform_id}")
+    lines.append(f"来源产品ID: {source_id}")
+    if source_code:
+        lines.append(f"来源代号: {source_code}")
+    return "\n".join(lines)
 
 
 @router.get("/list")
@@ -98,6 +165,87 @@ def get_default(db: Session = Depends(get_db)):
     }
 
 
+@router.post("/import-platform-product")
+def import_platform_product(
+    request: PlatformProjectImportRequest,
+    db: Session = Depends(get_db)
+):
+    """将项目管理平台中的产品导入为本地项目。"""
+    source_name = (request.source_name or "").strip()
+    if not source_name:
+        raise HTTPException(status_code=400, detail="来源产品名称不能为空")
+
+    requested_active = request.is_active
+    requested_default = request.is_default or 0
+    if requested_default == 1 and requested_active == 0:
+        raise HTTPException(status_code=400, detail="默认项目必须为启用状态")
+
+    stable_code = _build_platform_project_code(
+        request.platform_id,
+        request.source_id,
+        request.source_code,
+    )
+    if not stable_code:
+        raise HTTPException(status_code=400, detail="无法生成有效的项目代码")
+
+    existing_project = db.query(Project).filter(Project.code == stable_code).first()
+    description = _build_platform_project_description(
+        request.platform_id,
+        request.source_id,
+        request.source_code,
+        request.description,
+    )
+
+    if existing_project:
+        existing_project.name = source_name
+        existing_project.description = description
+        if requested_active is not None:
+            existing_project.is_active = requested_active
+        if requested_default == 1:
+            db.query(Project).update({Project.is_default: 0})
+            existing_project.is_default = 1
+        existing_project.updated_at = datetime.now()
+        db.commit()
+        db.refresh(existing_project)
+        return {
+            "success": True,
+            "message": f"项目已同步更新：{existing_project.name}",
+            "data": {
+                "id": existing_project.id,
+                "name": existing_project.name,
+                "code": existing_project.code,
+                "created": False,
+            }
+        }
+
+    project_name = _build_unique_project_name(db, source_name)
+    project = Project(
+        name=project_name,
+        code=stable_code,
+        description=description,
+        is_default=requested_default,
+        is_active=requested_active if requested_active is not None else 0,
+    )
+
+    if project.is_default == 1:
+        db.query(Project).update({Project.is_default: 0})
+
+    db.add(project)
+    db.commit()
+    db.refresh(project)
+
+    return {
+        "success": True,
+        "message": f"项目导入成功：{project.name}",
+        "data": {
+            "id": project.id,
+            "name": project.name,
+            "code": project.code,
+            "created": True,
+        }
+    }
+
+
 @router.get("/{project_id}")
 def get_project(
     project_id: int,
@@ -130,6 +278,9 @@ def create_project(
     db: Session = Depends(get_db)
 ):
     """创建项目"""
+    if request.is_default == 1 and request.is_active == 0:
+        raise HTTPException(status_code=400, detail="默认项目必须为启用状态")
+
     # 检查项目名称是否已存在
     existing_name = db.query(Project).filter(Project.name == request.name).first()
     if existing_name:
@@ -145,10 +296,13 @@ def create_project(
         name=request.name,
         code=request.code,
         description=request.description,
-        is_default=0,
-        is_active=1
+        is_default=request.is_default or 0,
+        is_active=request.is_active if request.is_active is not None else 1
     )
-    
+
+    if project.is_default == 1:
+        db.query(Project).update({Project.is_default: 0})
+
     db.add(project)
     db.commit()
     db.refresh(project)
@@ -199,10 +353,22 @@ def update_project(
     
     if request.description is not None:
         project.description = request.description
-    
+
     if request.is_active is not None:
         project.is_active = request.is_active
-    
+
+    if request.is_default is not None:
+        if request.is_default == 1 and project.is_active == 0:
+            raise HTTPException(status_code=400, detail="不能将未启用的项目设为默认")
+        if request.is_default == 1:
+            db.query(Project).update({Project.is_default: 0})
+            project.is_default = 1
+        else:
+            project.is_default = 0
+
+    if project.is_default == 1 and project.is_active == 0:
+        raise HTTPException(status_code=400, detail="默认项目必须为启用状态")
+
     project.updated_at = datetime.now()
     
     db.commit()
@@ -256,7 +422,7 @@ def delete_project(
     }
 
 
-@router.post("/{project_id}/set-default")
+@router.api_route("/{project_id}/set-default", methods=["POST", "PUT"])
 def set_default_project(
     project_id: int,
     db: Session = Depends(get_db)

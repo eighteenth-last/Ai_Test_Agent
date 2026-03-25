@@ -1,14 +1,18 @@
 """
 项目管理平台统一配置 API 路由
 """
+import json
+import logging
+
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from typing import Optional
 from sqlalchemy.orm import Session
-import logging
-import httpx
+from typing import Optional
 
 from database.connection import get_db
+from Project_manage.platforms.eightmanage.client import EightManageClient
+from Project_manage.platforms.msproject.client import MsProjectClient
 from Project_manage.service import ProjectPlatformService
 
 logger = logging.getLogger(__name__)
@@ -81,6 +85,16 @@ def list_platforms(db: Session = Depends(get_db)):
 def list_active_platforms(db: Session = Depends(get_db)):
     """获取已激活的项目管理平台列表（用于动态菜单）"""
     return {"success": True, "data": ProjectPlatformService.list_active(db)}
+
+
+@router.get("/{platform_id}/remote-projects")
+def list_remote_projects(platform_id: str, db: Session = Depends(get_db)):
+    """获取平台远端项目列表，供同步到本地项目管理使用。"""
+    try:
+        projects = ProjectPlatformService.list_remote_projects(db, platform_id)
+        return {"success": True, "data": projects}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/{platform_id}")
@@ -237,6 +251,68 @@ async def test_connection(body: TestConnectionRequest):
                     return {"success": False, "message": f"认证失败（HTTP {resp.status_code}）"}
 
             # ── PingCode：OAuth2 Client Credentials ──────────────
+            elif platform_id in {"8manage", "msproject"}:
+                extra = {}
+                if body.extra_config:
+                    try:
+                        extra = json.loads(body.extra_config) if isinstance(body.extra_config, str) else (body.extra_config or {})
+                    except Exception:
+                        extra = {}
+
+                if platform_id == "8manage":
+                    merged_extra = ProjectPlatformService._merge_generic_project_extra(
+                        ProjectPlatformService._default_eightmanage_extra(),
+                        extra,
+                    )
+                    runtime_client = EightManageClient(
+                        base_url=base_url,
+                        account=account,
+                        password=password,
+                        api_token=api_token,
+                        auth_type=merged_extra.get("auth_type", "basic"),
+                        auth_header_name=merged_extra.get("auth_header_name", "Authorization"),
+                        auth_header_prefix=merged_extra.get("auth_header_prefix", ""),
+                        project_path=merged_extra.get("project_path", "/api/projects"),
+                        response_list_path=merged_extra.get("response_list_path", "data.items"),
+                        id_field=merged_extra.get("id_field", "id"),
+                        name_field=merged_extra.get("name_field", "name"),
+                        code_field=merged_extra.get("code_field", "code"),
+                        status_field=merged_extra.get("status_field", "status"),
+                        scope_field=merged_extra.get("scope_field", ""),
+                        description_field=merged_extra.get("description_field", "description"),
+                        custom_headers=merged_extra.get("custom_headers") or {},
+                        query_params=merged_extra.get("query_params") or {},
+                    )
+                else:
+                    merged_extra = ProjectPlatformService._merge_generic_project_extra(
+                        ProjectPlatformService._default_msproject_extra(),
+                        extra,
+                    )
+                    runtime_client = MsProjectClient(
+                        base_url=base_url,
+                        account=account,
+                        password=password,
+                        api_token=api_token,
+                        auth_type=merged_extra.get("auth_type", "bearer"),
+                        auth_header_name=merged_extra.get("auth_header_name", "Authorization"),
+                        auth_header_prefix=merged_extra.get("auth_header_prefix", "Bearer"),
+                        project_path=merged_extra.get("project_path", "/v1.0/me/planner/plans"),
+                        response_list_path=merged_extra.get("response_list_path", "value"),
+                        id_field=merged_extra.get("id_field", "id"),
+                        name_field=merged_extra.get("name_field", "title"),
+                        code_field=merged_extra.get("code_field", "id"),
+                        status_field=merged_extra.get("status_field", "owner"),
+                        scope_field=merged_extra.get("scope_field", ""),
+                        description_field=merged_extra.get("description_field", "container.url"),
+                        custom_headers=merged_extra.get("custom_headers") or {},
+                        query_params=merged_extra.get("query_params") or {},
+                    )
+
+                try:
+                    return runtime_client.test_connection()
+                finally:
+                    runtime_client.close()
+
             elif platform_id == "pingcode":
                 import json as _json
                 extra = {}

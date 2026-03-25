@@ -430,25 +430,6 @@ ONECLICK_INTENT_ANALYSIS_V2_USER_TEMPLATE = """用户输入: {user_input}
 请分析用户的测试意图。如果用户没有明确提供URL和账号密码，对应字段返回null。"""
 
 # ============================================
-# 页面探索功能已迁移
-# ============================================
-# 
-# 旧的页面探索提示词已废弃，请使用新版本：
-# - 系统提示词: OneClick_Test.exploration_prompts.EXPLORATION_SYSTEM_PROMPT
-# - 任务模板: OneClick_Test.exploration_prompts.build_exploration_prompt()
-# - 探索系统: OneClick_Test.exploration_system.ExplorationSystem
-#
-# 新版本基于 OpenClaw 的精准执行机制，提供：
-# 1. 强制验证机制（before_tool_call）
-# 2. 循环检测和防护
-# 3. 结构化状态追踪
-# 4. 清晰的工具定义和约束
-#
-# 详见: OneClick_Test/EXPLORATION_REFACTOR.md
-# ============================================
-
-
-# ============================================
 # 一键测试 - 子任务生成提示词（基于页面探索结果）
 # ============================================
 

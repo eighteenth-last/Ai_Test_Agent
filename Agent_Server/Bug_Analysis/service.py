@@ -133,6 +133,9 @@ class BugAnalysisService:
     ) -> Dict[str, Any]:
         """获取 Bug 报告列表"""
         from database.connection import BugReport
+        from Project_manage.platforms.jira.models import JiraBugLink, ensure_jira_bug_links_table
+
+        ensure_jira_bug_links_table()
         
         query = db.query(BugReport)
         
@@ -147,6 +150,10 @@ class BugAnalysisService:
         
         total = query.count()
         bugs = query.order_by(BugReport.id.desc()).limit(limit).offset(offset).all()
+        jira_links = db.query(JiraBugLink).filter(
+            JiraBugLink.bug_id.in_([bug.id for bug in bugs]) if bugs else False
+        ).all() if bugs else []
+        jira_key_map = {link.bug_id: link.issue_key for link in jira_links}
         
         data = [
             {
@@ -157,6 +164,7 @@ class BugAnalysisService:
                 "severity_level": bug.severity_level,
                 "status": bug.status,
                 "zentao_bug_id": bug.zentao_bug_id,
+                "jira_issue_key": jira_key_map.get(bug.id),
                 "location_url": bug.location_url,
                 "expected_result": bug.expected_result,
                 "actual_result": bug.actual_result,

@@ -1,15 +1,5 @@
 <template>
   <div class="case-manage-view">
-    <n-card>
-      <template #header>
-        <div class="flex items-center gap-2">
-          <i class="fas fa-list-check text-xl text-primary"></i>
-          <span class="text-lg font-bold">用例管理</span>
-        </div>
-      </template>
-      <p class="text-gray-500">管理所有测试用例，支持增删改查操作</p>
-    </n-card>
-
     <!-- 操作栏 -->
     <n-card style="margin-top: 20px">
       <n-form inline :model="filters" label-placement="left">

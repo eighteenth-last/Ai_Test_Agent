@@ -1,5 +1,5 @@
 <template>
-  <PlatformRemoteProjects platform-id="yunxiao" platform-name="云效" />
+  <PlatformRemoteProjects platform-id="jira" platform-name="Jira" />
 </template>
 
 <script setup>

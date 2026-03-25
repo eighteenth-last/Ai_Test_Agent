@@ -6,18 +6,21 @@
           选择项目管理平台并配置连接信息，激活后即可在左侧菜单中使用。
         </n-alert>
 
-        <!-- 平台选择卡片 -->
         <n-grid :cols="3" :x-gap="16" :y-gap="16">
           <n-grid-item v-for="platform in supportedPlatforms" :key="platform.platform_id">
             <n-card
               :title="platform.platform_name"
               size="small"
               hoverable
-              @click="selectPlatform(platform)"
               style="cursor: pointer"
+              @click="selectPlatform(platform)"
             >
               <template #header-extra>
-                <n-tag v-if="getPlatformStatus(platform.platform_id)" :type="getPlatformStatus(platform.platform_id).type" size="small">
+                <n-tag
+                  v-if="getPlatformStatus(platform.platform_id)"
+                  :type="getPlatformStatus(platform.platform_id).type"
+                  size="small"
+                >
                   {{ getPlatformStatus(platform.platform_id).text }}
                 </n-tag>
               </template>
@@ -28,12 +31,11 @@
       </n-space>
     </n-card>
 
-    <!-- 配置表单弹窗 -->
     <n-modal
       v-model:show="showConfigModal"
       preset="card"
       :title="`${selectedPlatform?.platform_name || ''} 配置`"
-      style="width: 700px"
+      style="width: 760px"
       :bordered="false"
       :segmented="{ content: 'soft', footer: 'soft' }"
     >
@@ -45,70 +47,137 @@
           <n-input v-model:value="formData.platform_name" placeholder="可自定义显示名称" />
         </n-form-item>
         <n-form-item label="配置名称" path="config_name">
-          <n-input v-model:value="formData.config_name" placeholder="如: 生产环境配置" />
+          <n-input v-model:value="formData.config_name" placeholder="例如：生产环境配置" />
         </n-form-item>
         <n-form-item label="平台地址" path="base_url">
           <n-input v-model:value="formData.base_url" placeholder="https://example.com" />
         </n-form-item>
         <n-form-item label="登录账号" path="account">
-          <n-input v-model:value="formData.account" placeholder="用户名或邮箱" />
+          <n-input v-model:value="formData.account" placeholder="用户名、邮箱或租户账号" />
         </n-form-item>
         <n-form-item label="登录密码" path="password">
-          <n-input v-model:value="formData.password" type="password" placeholder="密码" show-password-on="click" />
+          <n-input
+            v-model:value="formData.password"
+            type="password"
+            placeholder="密码；如不修改可留空"
+            show-password-on="click"
+          />
         </n-form-item>
 
-        <!-- 禅道特有字段 -->
         <template v-if="selectedPlatform?.platform_id === 'zentao'">
-          <n-form-item label="默认产品ID" path="default_product_id">
-            <n-input-number v-model:value="formData.default_product_id" placeholder="可选" :show-button="false" style="width: 100%" />
+          <n-form-item label="默认产品 ID" path="default_product_id">
+            <n-input-number v-model:value="formData.default_product_id" :show-button="false" style="width: 100%" />
           </n-form-item>
-          <n-form-item label="API版本" path="api_version">
+          <n-form-item label="API 版本" path="api_version">
             <n-select v-model:value="formData.api_version" :options="apiVersionOptions" />
           </n-form-item>
         </template>
 
-        <!-- PingCode 特有字段 -->
         <template v-if="selectedPlatform?.platform_id === 'pingcode'">
-          <n-form-item label="鉴权方式" path="pingcode_auth_type">
-            <n-select
-              v-model:value="pingcodeExtra.auth_type"
-              :options="pingcodeAuthOptions"
-              @update:value="pingcodeExtra.auth_type = $event"
-            />
+          <n-form-item label="鉴权方式">
+            <n-select v-model:value="pingcodeExtra.auth_type" :options="pingcodeAuthOptions" />
           </n-form-item>
-          <n-form-item label="Client ID" path="pingcode_client_id">
+          <n-form-item label="Client ID">
             <n-input v-model:value="pingcodeExtra.client_id" placeholder="OAuth2 Client ID" />
           </n-form-item>
-          <n-form-item label="Client Secret" path="pingcode_client_secret">
-            <n-input v-model:value="pingcodeExtra.client_secret" type="password" placeholder="OAuth2 Client Secret" show-password-on="click" />
+          <n-form-item label="Client Secret">
+            <n-input
+              v-model:value="pingcodeExtra.client_secret"
+              type="password"
+              placeholder="OAuth2 Client Secret"
+              show-password-on="click"
+            />
           </n-form-item>
-          <n-form-item v-if="pingcodeExtra.auth_type === 'authorization_code'" label="回调地址" path="pingcode_redirect_uri">
+          <n-form-item v-if="pingcodeExtra.auth_type === 'authorization_code'" label="回调地址">
             <n-input v-model:value="pingcodeExtra.redirect_uri" placeholder="https://your-app.com/oauth/callback" />
           </n-form-item>
         </template>
 
-        <!-- Worktile 特有字段 -->
         <template v-if="selectedPlatform?.platform_id === 'worktile'">
-          <n-form-item label="鉴权方式">
-            <n-text depth="3" style="font-size: 13px">Authorization Code（需要用户在浏览器完成授权，token 端点：dev.worktile.com）</n-text>
+          <n-form-item label="鉴权说明">
+            <n-text depth="3" style="font-size: 13px">
+              Worktile 采用 Authorization Code 流程，请先在平台申请 Client ID / Client Secret。
+            </n-text>
           </n-form-item>
-          <n-form-item label="Client ID" path="worktile_client_id">
+          <n-form-item label="Client ID">
             <n-input v-model:value="worktileExtra.client_id" placeholder="OAuth2 Client ID" />
           </n-form-item>
-          <n-form-item label="Client Secret" path="worktile_client_secret">
-            <n-input v-model:value="worktileExtra.client_secret" type="password" placeholder="OAuth2 Client Secret" show-password-on="click" />
+          <n-form-item label="Client Secret">
+            <n-input
+              v-model:value="worktileExtra.client_secret"
+              type="password"
+              placeholder="OAuth2 Client Secret"
+              show-password-on="click"
+            />
           </n-form-item>
-          <n-form-item label="回调地址" path="worktile_redirect_uri">
-            <n-input v-model:value="worktileExtra.redirect_uri" placeholder="https://your-app.com/oauth/callback（可选）" />
+          <n-form-item label="回调地址">
+            <n-input v-model:value="worktileExtra.redirect_uri" placeholder="https://your-app.com/oauth/callback" />
           </n-form-item>
         </template>
 
-        <!-- 其他平台可能需要API Token -->
-        <n-form-item v-if="needsApiToken(selectedPlatform?.platform_id)" label="API Token" path="api_token">
-          <n-input v-model:value="formData.api_token" placeholder="可选，某些平台使用" />
+        <template v-if="isGenericProjectPlatform(selectedPlatform?.platform_id)">
+          <n-form-item label="鉴权方式">
+            <n-select v-model:value="genericProjectExtra.auth_type" :options="genericProjectAuthOptions" />
+          </n-form-item>
+          <n-form-item v-if="genericProjectExtra.auth_type === 'header'" label="认证头名称">
+            <n-input v-model:value="genericProjectExtra.auth_header_name" placeholder="例如：X-API-Key" />
+          </n-form-item>
+          <n-form-item
+            v-if="genericProjectExtra.auth_type === 'header' || genericProjectExtra.auth_type === 'bearer'"
+            label="认证前缀"
+          >
+            <n-input v-model:value="genericProjectExtra.auth_header_prefix" placeholder="例如：Bearer" />
+          </n-form-item>
+          <n-form-item label="项目接口路径">
+            <n-input v-model:value="genericProjectExtra.project_path" placeholder="/api/projects 或 /v1.0/me/planner/plans" />
+          </n-form-item>
+          <n-form-item label="列表结果路径">
+            <n-input v-model:value="genericProjectExtra.response_list_path" placeholder="data.items 或 value" />
+          </n-form-item>
+          <n-form-item label="ID 字段">
+            <n-input v-model:value="genericProjectExtra.id_field" placeholder="id" />
+          </n-form-item>
+          <n-form-item label="名称字段">
+            <n-input v-model:value="genericProjectExtra.name_field" placeholder="name / title" />
+          </n-form-item>
+          <n-form-item label="代号字段">
+            <n-input v-model:value="genericProjectExtra.code_field" placeholder="code / key / id" />
+          </n-form-item>
+          <n-form-item label="状态字段">
+            <n-input v-model:value="genericProjectExtra.status_field" placeholder="status / state / owner" />
+          </n-form-item>
+          <n-form-item label="范围字段">
+            <n-input v-model:value="genericProjectExtra.scope_field" placeholder="可选，支持点路径" />
+          </n-form-item>
+          <n-form-item label="描述字段">
+            <n-input v-model:value="genericProjectExtra.description_field" placeholder="description 或 container.url" />
+          </n-form-item>
+          <n-form-item label="自定义请求头">
+            <n-input
+              v-model:value="genericProjectExtra.custom_headers_text"
+              type="textarea"
+              :autosize="{ minRows: 2, maxRows: 4 }"
+              placeholder='JSON，例如 {"X-Tenant":"demo"}'
+            />
+          </n-form-item>
+          <n-form-item label="查询参数">
+            <n-input
+              v-model:value="genericProjectExtra.query_params_text"
+              type="textarea"
+              :autosize="{ minRows: 2, maxRows: 4 }"
+              placeholder='JSON，例如 {"pageSize":100}'
+            />
+          </n-form-item>
+          <n-alert type="info" :bordered="false" class="mb-2">
+            {{ genericPlatformHint }}
+          </n-alert>
+        </template>
+
+        <n-form-item v-if="needsApiToken(selectedPlatform?.platform_id)" label="API Token">
+          <n-input v-model:value="formData.api_token" placeholder="某些平台使用 token 认证，可与密码二选一" />
         </n-form-item>
 
-        <n-form-item label="备注说明" path="description">
+        <n-form-item label="备注说明">
           <n-input v-model:value="formData.description" type="textarea" placeholder="可选" />
         </n-form-item>
 
@@ -123,7 +192,7 @@
               <template #unchecked>在菜单中隐藏</template>
             </n-switch>
             <n-text depth="3" style="font-size: 12px">
-              {{ formData.is_enabled ? '启用后将显示在左侧菜单' : '禁用后不会显示在菜单中' }}
+              {{ formData.is_enabled ? '启用后会显示在左侧菜单' : '禁用后不会显示在左侧菜单' }}
             </n-text>
           </n-space>
         </n-form-item>
@@ -141,10 +210,10 @@
           </n-space>
           <n-space>
             <n-button @click="showConfigModal = false">取消</n-button>
-            <n-button @click="handleTestConnection" :loading="testing">
+            <n-button :loading="testing" @click="handleTestConnection">
               测试连接
             </n-button>
-            <n-button type="primary" @click="handleSubmit" :loading="submitting">
+            <n-button type="primary" :loading="submitting" @click="handleSubmit">
               {{ isEdit ? '保存配置' : '创建配置' }}
             </n-button>
           </n-space>
@@ -155,17 +224,34 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { NCard, NButton, NSpace, NAlert, NGrid, NGridItem, NModal, NForm, NFormItem, NInput, NInputNumber, NSelect, NSwitch, NTag, NText, useMessage } from 'naive-ui'
+import { computed, onMounted, ref } from 'vue'
 import {
+  NAlert,
+  NButton,
+  NCard,
+  NForm,
+  NFormItem,
+  NGrid,
+  NGridItem,
+  NInput,
+  NInputNumber,
+  NModal,
+  NSelect,
+  NSpace,
+  NSwitch,
+  NTag,
+  NText,
+  useMessage
+} from 'naive-ui'
+import {
+  activatePlatform,
+  createPlatform,
+  deletePlatform,
+  getPlatform,
   getSupportedPlatforms,
   listPlatforms,
-  getPlatform,
-  createPlatform,
-  updatePlatform,
-  deletePlatform,
-  activatePlatform,
-  testConnection
+  testConnection,
+  updatePlatform
 } from '@/api/project'
 
 const message = useMessage()
@@ -178,7 +264,6 @@ const testing = ref(false)
 const isEdit = ref(false)
 const formRef = ref(null)
 
-// PingCode OAuth2 额外配置
 const pingcodeExtra = ref({
   auth_type: 'client_credentials',
   client_id: '',
@@ -186,16 +271,60 @@ const pingcodeExtra = ref({
   redirect_uri: ''
 })
 
-// Worktile OAuth2 额外配置（Authorization Code 流程）
 const worktileExtra = ref({
   client_id: '',
   client_secret: '',
   redirect_uri: ''
 })
 
+const createGenericProjectExtra = (platformId = '') => {
+  if (platformId === 'msproject') {
+    return {
+      auth_type: 'bearer',
+      auth_header_name: 'Authorization',
+      auth_header_prefix: 'Bearer',
+      project_path: '/v1.0/me/planner/plans',
+      response_list_path: 'value',
+      id_field: 'id',
+      name_field: 'title',
+      code_field: 'id',
+      status_field: 'owner',
+      scope_field: '',
+      description_field: 'container.url',
+      custom_headers_text: '',
+      query_params_text: ''
+    }
+  }
+
+  return {
+    auth_type: 'basic',
+    auth_header_name: 'Authorization',
+    auth_header_prefix: '',
+    project_path: '/api/projects',
+    response_list_path: 'data.items',
+    id_field: 'id',
+    name_field: 'name',
+    code_field: 'code',
+    status_field: 'status',
+    scope_field: '',
+    description_field: 'description',
+    custom_headers_text: '',
+    query_params_text: ''
+  }
+}
+
+const genericProjectExtra = ref(createGenericProjectExtra())
+
 const pingcodeAuthOptions = [
-  { label: 'Client Credentials（推荐，服务端直接调用）', value: 'client_credentials' },
-  { label: 'Authorization Code（需要用户授权）', value: 'authorization_code' }
+  { label: 'Client Credentials', value: 'client_credentials' },
+  { label: 'Authorization Code', value: 'authorization_code' }
+]
+
+const genericProjectAuthOptions = [
+  { label: 'Basic Auth', value: 'basic' },
+  { label: 'Bearer Token', value: 'bearer' },
+  { label: 'Custom Header', value: 'header' },
+  { label: 'No Auth', value: 'none' }
 ]
 
 const formData = ref({
@@ -213,12 +342,33 @@ const formData = ref({
   is_active: 0
 })
 
+const isGenericProjectPlatform = (platformId) => ['8manage', 'msproject'].includes(platformId)
+
 const rules = {
   platform_name: { required: true, message: '请输入平台名称', trigger: 'blur' },
   config_name: { required: true, message: '请输入配置名称', trigger: 'blur' },
   base_url: { required: true, message: '请输入平台地址', trigger: 'blur' },
-  account: { required: true, message: '请输入登录账号', trigger: 'blur' },
-  password: { required: true, message: '请输入登录密码', trigger: 'blur' }
+  account: {
+    trigger: 'blur',
+    validator: () => {
+      const platformId = selectedPlatform.value?.platform_id
+      if (isGenericProjectPlatform(platformId) && genericProjectExtra.value.auth_type !== 'basic') return true
+      return formData.value.account ? true : new Error('请输入登录账号')
+    }
+  },
+  password: {
+    trigger: 'blur',
+    validator: () => {
+      const platformId = selectedPlatform.value?.platform_id
+      if (isGenericProjectPlatform(platformId)) {
+        if (genericProjectExtra.value.auth_type === 'basic') {
+          return formData.value.password ? true : new Error('请输入登录密码')
+        }
+        return true
+      }
+      return formData.value.password || formData.value.api_token ? true : new Error('请输入登录密码')
+    }
+  }
 }
 
 const apiVersionOptions = [
@@ -226,27 +376,137 @@ const apiVersionOptions = [
   { label: 'API v2', value: 'v2' }
 ]
 
+const genericPlatformHint = computed(() => {
+  if (selectedPlatform.value?.platform_id === 'msproject') {
+    return 'Microsoft Project 默认按 Microsoft Graph Planner 接口预填。如果你们接的是自建服务，可以直接改项目接口路径、列表结果路径和字段映射。'
+  }
+  return '8Manage 默认按通用 REST 项目接口预填。若是私有化接口，只要把路径、列表结果路径和字段映射改成实际值即可。'
+})
+
 const needsApiToken = (platformId) => {
-  return ['pingcode', 'worktile', 'ones', 'jira', 'asana', 'clickup'].includes(platformId)
+  return ['pingcode', 'worktile', 'ones', 'jira', 'asana', 'clickup', '8manage', 'msproject'].includes(platformId)
 }
 
 const getPlatformStatus = (platformId) => {
-  const config = configuredPlatforms.value.find(p => p.platform_id === platformId)
+  const config = configuredPlatforms.value.find(item => item.platform_id === platformId)
   if (!config) return null
   if (config.is_active) return { type: 'success', text: '已激活' }
   if (config.is_enabled) return { type: 'info', text: '已配置' }
   return { type: 'default', text: '已禁用' }
 }
 
+const parseJsonText = (text, fallback = {}) => {
+  if (!text || !String(text).trim()) return fallback
+  try {
+    return JSON.parse(text)
+  } catch {
+    return fallback
+  }
+}
+
+const stringifyJsonText = (value) => {
+  if (!value || (typeof value === 'object' && Object.keys(value).length === 0)) return ''
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return ''
+  }
+}
+
+const serializeGenericProjectExtra = () => ({
+  auth_type: genericProjectExtra.value.auth_type,
+  auth_header_name: genericProjectExtra.value.auth_header_name,
+  auth_header_prefix: genericProjectExtra.value.auth_header_prefix,
+  project_path: genericProjectExtra.value.project_path,
+  response_list_path: genericProjectExtra.value.response_list_path,
+  id_field: genericProjectExtra.value.id_field,
+  name_field: genericProjectExtra.value.name_field,
+  code_field: genericProjectExtra.value.code_field,
+  status_field: genericProjectExtra.value.status_field,
+  scope_field: genericProjectExtra.value.scope_field,
+  description_field: genericProjectExtra.value.description_field,
+  custom_headers: parseJsonText(genericProjectExtra.value.custom_headers_text, {}),
+  query_params: parseJsonText(genericProjectExtra.value.query_params_text, {})
+})
+
+const applyExtraConfigToState = (platformId, extra) => {
+  if (platformId === 'pingcode') {
+    pingcodeExtra.value = {
+      auth_type: 'client_credentials',
+      client_id: '',
+      client_secret: '',
+      redirect_uri: '',
+      ...(extra || {})
+    }
+    return
+  }
+
+  if (platformId === 'worktile') {
+    worktileExtra.value = {
+      client_id: '',
+      client_secret: '',
+      redirect_uri: '',
+      ...(extra || {})
+    }
+    return
+  }
+
+  if (isGenericProjectPlatform(platformId)) {
+    const defaults = createGenericProjectExtra(platformId)
+    genericProjectExtra.value = {
+      ...defaults,
+      ...(extra || {}),
+      custom_headers_text: stringifyJsonText(extra?.custom_headers),
+      query_params_text: stringifyJsonText(extra?.query_params)
+    }
+    return
+  }
+
+  genericProjectExtra.value = createGenericProjectExtra(platformId)
+}
+
 const getExtraConfig = (platformId) => {
   if (platformId === 'pingcode') return JSON.stringify(pingcodeExtra.value)
   if (platformId === 'worktile') return JSON.stringify(worktileExtra.value)
+  if (isGenericProjectPlatform(platformId)) return JSON.stringify(serializeGenericProjectExtra())
   return formData.value.extra_config
+}
+
+const resetForm = (platformId = '') => {
+  formData.value = {
+    platform_id: platformId,
+    platform_name: '',
+    config_name: '',
+    base_url: '',
+    account: '',
+    password: '',
+    api_token: '',
+    default_product_id: null,
+    api_version: 'v2',
+    description: '',
+    is_enabled: 1,
+    is_active: 0
+  }
+  pingcodeExtra.value = {
+    auth_type: 'client_credentials',
+    client_id: '',
+    client_secret: '',
+    redirect_uri: ''
+  }
+  worktileExtra.value = {
+    client_id: '',
+    client_secret: '',
+    redirect_uri: ''
+  }
+  genericProjectExtra.value = createGenericProjectExtra(platformId)
+  isEdit.value = false
 }
 
 const selectPlatform = async (platform) => {
   selectedPlatform.value = platform
   showConfigModal.value = true
+  resetForm(platform.platform_id)
+  formData.value.platform_name = platform.platform_name
 
   try {
     const res = await getPlatform(platform.platform_id)
@@ -258,36 +518,17 @@ const selectPlatform = async (platform) => {
         is_enabled: res.data.is_enabled || 0,
         is_active: res.data.is_active || 0
       }
-      // 回显 extra_config
-      if (res.data.extra_config) {
-        try {
-          const extra = typeof res.data.extra_config === 'string'
-            ? JSON.parse(res.data.extra_config)
-            : res.data.extra_config
-          if (platform.platform_id === 'pingcode') {
-            pingcodeExtra.value = { auth_type: 'client_credentials', client_id: '', client_secret: '', redirect_uri: '', ...extra }
-          } else if (platform.platform_id === 'worktile') {
-            worktileExtra.value = { client_id: '', client_secret: '', redirect_uri: '', ...extra }
-          }
-        } catch (e) { /* ignore */ }
-      }
-    } else {
-      isEdit.value = false
-      resetForm()
-      formData.value.platform_id = platform.platform_id
-      formData.value.platform_name = platform.platform_name
-      if (platform.platform_id === 'pingcode') {
-        pingcodeExtra.value = { auth_type: 'client_credentials', client_id: '', client_secret: '', redirect_uri: '' }
-      } else if (platform.platform_id === 'worktile') {
-        worktileExtra.value = { client_id: '', client_secret: '', redirect_uri: '' }
-      }
+      const extra = typeof res.data.extra_config === 'string'
+        ? parseJsonText(res.data.extra_config, {})
+        : (res.data.extra_config || {})
+      applyExtraConfigToState(platform.platform_id, extra)
+      return
     }
+
+    applyExtraConfigToState(platform.platform_id, {})
   } catch (error) {
     console.error('加载平台配置失败:', error)
-    isEdit.value = false
-    resetForm()
-    formData.value.platform_id = platform.platform_id
-    formData.value.platform_name = platform.platform_name
+    applyExtraConfigToState(platform.platform_id, {})
   }
 }
 
@@ -296,7 +537,7 @@ const loadSupportedPlatforms = async () => {
     const res = await getSupportedPlatforms()
     if (res.success) supportedPlatforms.value = res.data
   } catch (error) {
-    message.error('加载平台列表失败：' + error.message)
+    message.error(`加载平台列表失败：${error.message}`)
   }
 }
 
@@ -345,7 +586,7 @@ const handleSubmit = async () => {
     }
   } catch (error) {
     if (error.message) {
-      message.error((isEdit.value ? '更新' : '创建') + '失败：' + error.message)
+      message.error(`${isEdit.value ? '更新' : '创建'}失败：${error.message}`)
     }
   } finally {
     submitting.value = false
@@ -362,7 +603,7 @@ const handleActivate = async () => {
       window.location.reload()
     }
   } catch (error) {
-    message.error('激活失败：' + error.message)
+    message.error(`激活失败：${error.message}`)
   }
 }
 
@@ -371,6 +612,7 @@ const handleTestConnection = async () => {
     message.warning('请先填写平台地址')
     return
   }
+
   testing.value = true
   try {
     const res = await testConnection({
@@ -388,7 +630,7 @@ const handleTestConnection = async () => {
       message.error(res.message || '连接失败')
     }
   } catch (error) {
-    message.error('测试失败：' + error.message)
+    message.error(`测试失败：${error.message}`)
   } finally {
     testing.value = false
   }
@@ -396,6 +638,7 @@ const handleTestConnection = async () => {
 
 const handleDelete = async () => {
   if (!confirm(`确定要删除 "${formData.value.platform_name}" 的配置吗？`)) return
+
   try {
     const res = await deletePlatform(formData.value.id)
     if (res.success) {
@@ -406,26 +649,8 @@ const handleDelete = async () => {
       window.location.reload()
     }
   } catch (error) {
-    message.error('删除失败：' + error.message)
+    message.error(`删除失败：${error.message}`)
   }
-}
-
-const resetForm = () => {
-  formData.value = {
-    platform_id: '',
-    platform_name: '',
-    config_name: '',
-    base_url: '',
-    account: '',
-    password: '',
-    api_token: '',
-    default_product_id: null,
-    api_version: 'v2',
-    description: '',
-    is_enabled: 1,
-    is_active: 0
-  }
-  isEdit.value = false
 }
 
 onMounted(() => {

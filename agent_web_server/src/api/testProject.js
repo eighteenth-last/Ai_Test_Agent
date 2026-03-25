@@ -51,3 +51,10 @@ export const setDefaultProject = (id) => {
 export const toggleProjectStatus = (id, isActive) => {
   return request.put(`/projects/${id}/toggle`, { is_active: isActive })
 }
+
+/**
+ * 从项目管理平台导入项目
+ */
+export const importPlatformProject = (data) => {
+  return request.post('/projects/import-platform-product', data)
+}

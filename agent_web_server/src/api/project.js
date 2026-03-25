@@ -100,3 +100,11 @@ export const testConnection = async (data) => {
   const response = await axios.post(`${API_BASE}/api/project-platform/test-connection`, data)
   return response.data
 }
+
+/**
+ * 获取指定平台的远端项目列表
+ */
+export const getRemoteProjects = async (platformId) => {
+  const response = await axios.get(`${API_BASE}/api/project-platform/${platformId}/remote-projects`)
+  return response.data
+}

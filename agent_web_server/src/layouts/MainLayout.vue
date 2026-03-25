@@ -81,7 +81,8 @@ const platformRouteMap = {
   '8manage': { label: '8Manage PM', id: '8manage' },
   msproject: { label: 'Microsoft Project', id: 'msproject' },
   asana: { label: 'Asana', id: 'asana' },
-  clickup: { label: 'ClickUp', id: 'clickup' }
+  clickup: { label: 'ClickUp', id: 'clickup' },
+  jira: { label: 'Jira', id: 'jira' }
 }
 
 const menuList = ref([

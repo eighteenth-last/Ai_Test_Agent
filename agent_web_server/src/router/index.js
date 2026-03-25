@@ -263,38 +263,38 @@ const routes = [
   {
     path: '/project/8manage/config',
     name: '8ManageConfig',
-    component: () => import('@/views/project/8ManageConfig.vue'),
+    component: () => import('@/views/project/8manageConfig.vue'),
     meta: { title: '8Manage配置', menu: 'project' }
   },
   {
     path: '/project/8manage/cases',
     name: '8ManageCases',
-    component: () => import('@/views/project/8ManageCases.vue'),
+    component: () => import('@/views/project/8manageCases.vue'),
     meta: { title: '8Manage用例导入', menu: 'project' }
   },
   {
     path: '/project/8manage/bugs',
     name: '8ManageBugs',
-    component: () => import('@/views/project/8ManageBugs.vue'),
+    component: () => import('@/views/project/8manageBugs.vue'),
     meta: { title: '8Manage Bug推送与同步', menu: 'project' }
   },
   // 企业项目管理模块 - Microsoft Project
   {
     path: '/project/msproject/config',
     name: 'MsProjectConfig',
-    component: () => import('@/views/project/MsProjectConfig.vue'),
+    component: () => import('@/views/project/MsprojectConfig.vue'),
     meta: { title: 'Microsoft Project配置', menu: 'project' }
   },
   {
     path: '/project/msproject/cases',
     name: 'MsProjectCases',
-    component: () => import('@/views/project/MsProjectCases.vue'),
+    component: () => import('@/views/project/MsprojectCases.vue'),
     meta: { title: 'Microsoft Project用例导入', menu: 'project' }
   },
   {
     path: '/project/msproject/bugs',
     name: 'MsProjectBugs',
-    component: () => import('@/views/project/MsProjectBugs.vue'),
+    component: () => import('@/views/project/MsprojectBugs.vue'),
     meta: { title: 'Microsoft Project Bug推送与同步', menu: 'project' }
   },
   // 企业项目管理模块 - Asana
@@ -336,6 +336,18 @@ const routes = [
     meta: { title: 'ClickUp Bug推送与同步', menu: 'project' }
   },
   // 兼容旧路由（重定向到新路由）
+  {
+    path: '/project/jira/cases',
+    name: 'JiraCases',
+    component: () => import('@/views/project/JiraCases.vue'),
+    meta: { title: 'Jira鐢ㄤ緥瀵煎叆', menu: 'project' }
+  },
+  {
+    path: '/project/jira/bugs',
+    name: 'JiraBugs',
+    component: () => import('@/views/project/JiraBugs.vue'),
+    meta: { title: 'Jira Bug鎺ㄩ€佷笌鍚屾', menu: 'project' }
+  },
   {
     path: '/zentao/cases',
     redirect: '/project/zentao/cases'

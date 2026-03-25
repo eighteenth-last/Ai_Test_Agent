@@ -72,6 +72,9 @@ def get_bug_report(
 ):
     """获取单个 Bug 报告"""
     from database.connection import BugReport, get_active_project_by_id
+    from Project_manage.platforms.jira.models import JiraBugLink, ensure_jira_bug_links_table
+
+    ensure_jira_bug_links_table()
     
     bug = db.query(BugReport).filter(BugReport.id == bug_id).first()
     
@@ -84,6 +87,8 @@ def get_bug_report(
         if not project:
             raise HTTPException(status_code=400, detail="Bug 所属项目未启用")
     
+    jira_link = db.query(JiraBugLink).filter(JiraBugLink.bug_id == bug.id).first()
+
     return {
         "success": True,
         "data": {
@@ -95,6 +100,7 @@ def get_bug_report(
             "severity_level": bug.severity_level,
             "status": bug.status,
             "zentao_bug_id": bug.zentao_bug_id,
+            "jira_issue_key": jira_link.issue_key if jira_link else None,
             "location_url": bug.location_url,
             "reproduce_steps": bug.reproduce_steps,
             "result_feedback": bug.result_feedback,
