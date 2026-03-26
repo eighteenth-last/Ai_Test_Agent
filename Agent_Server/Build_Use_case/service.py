@@ -45,6 +45,12 @@ class TestCaseService:
             生成的测试用例数据
         """
         try:
+            if project_id is None:
+                return {
+                    "success": False,
+                    "message": "project_id is required when generating test cases",
+                    "test_cases": []
+                }
             # 使用新的 LLM 模块
             from llm import get_llm_client
             
@@ -83,7 +89,7 @@ class TestCaseService:
             
             for case_data in test_cases_data:
                 test_case = ExecutionCase(
-                    project_id=project_id or 1,  # 默认项目ID为1
+                    project_id=project_id,
                     module=case_data.get('module', ''),
                     title=case_data.get('title', ''),
                     precondition=case_data.get('precondition', ''),

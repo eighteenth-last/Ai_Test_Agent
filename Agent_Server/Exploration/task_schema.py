@@ -38,7 +38,7 @@ class PageSnapshot:
     title: str = ""
     page_type: str = "mixed"
     page_signature: str = ""
-    dom_richness: str = "vision"
+    dom_richness: str = "dom"
     interactive_count: int = 0
     total_dom_nodes: int = 0
     buttons: List[str] = field(default_factory=list)

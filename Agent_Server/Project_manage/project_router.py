@@ -151,6 +151,12 @@ def list_projects(
 def get_default(db: Session = Depends(get_db)):
     """获取默认项目"""
     project = get_default_project(db)
+    if not project:
+        return {
+            "success": False,
+            "message": "没有可用的默认项目，请先创建并启用一个项目",
+            "data": None,
+        }
     
     return {
         "success": True,

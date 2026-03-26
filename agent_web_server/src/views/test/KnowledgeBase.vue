@@ -694,11 +694,13 @@ async function startExplore() {
 
   try {
     const selectedEnv = envList.value.find(e => e.id === selectedEnvId.value)
+    const projectId = localStorage.getItem('currentProjectId')
     const res = await knowledgeAPI.explorePage({
       url: exploreForm.value.url,
       username: exploreForm.value.username,
       password: exploreForm.value.password,
       user_goal: exploreForm.value.user_goal,
+      project_id: projectId ? parseInt(projectId, 10) : null,
       env_id: selectedEnvId.value || null,
       login_url: selectedEnv?.login_url || '',
       extra_credentials: selectedEnv?.extra_credentials || null

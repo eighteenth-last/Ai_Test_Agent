@@ -80,6 +80,13 @@ class ExplorationState:
         url: str,
         dom_summary: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        cache_page_key = self._cache_page_key(page_id)
+        if self.dispatcher and not self.dispatcher.can_record_page(self.session_id, cache_page_key):
+            return {
+                "success": False,
+                "message": "session is restoring validation context; do not record_page yet",
+            }
+
         if page_id not in self.pages:
             self.pages[page_id] = PageInfo(page_id=page_id, url=url)
 
@@ -105,7 +112,6 @@ class ExplorationState:
         )
 
         if self.dispatcher:
-            cache_page_key = self._cache_page_key(page_id)
             register_result = self.dispatcher.register_page_scan(
                 session_id=self.session_id,
                 page_key=cache_page_key,
@@ -141,7 +147,12 @@ class ExplorationState:
                     "page_sections": summary.get("page_sections") or [],
                 },
             )
-            tasks = ExplorationTaskService.build_page_tasks(self.session_id, cache_page_key, interactive)
+            tasks = ExplorationTaskService.build_page_tasks(
+                self.session_id,
+                cache_page_key,
+                interactive,
+                summary,
+            )
             self.page_tasks[cache_page_key] = tasks
             self.cache_service.save_page_tasks(cache_page_key, tasks)
             self.cache_service.update_session(
@@ -260,6 +271,11 @@ class ExplorationState:
         return {"success": True, "message": "current page marked completed"}
 
     def validate_completion(self) -> Dict[str, Any]:
+        if self.dispatcher and self.session_id:
+            finalize = self.dispatcher.finalize_session_if_ready(self.session_id)
+            if finalize.get("completed"):
+                return {"success": True}
+
         if self.exploration_stack:
             return {
                 "success": False,
@@ -336,7 +352,30 @@ class ExplorationState:
                     task_group=task_group,
                     artifact=artifact,
                 )
+                if not dispatch_result.get("success"):
+                    logger.warning(
+                        "[ExplorationState] report_task_artifact rejected session_id=%s page_key=%s task_id=%s reason=%s",
+                        self.session_id,
+                        cache_page_key,
+                        task_id,
+                        dispatch_result.get("message", ""),
+                    )
+                    return {
+                        "success": False,
+                        "message": str(dispatch_result.get("message") or "failed to accept task result"),
+                        "dispatch_result": dispatch_result,
+                    }
+
                 self.page_tasks[cache_page_key] = self.cache_service.get_page_tasks(cache_page_key)
+                logger.info(
+                    "[ExplorationState] report_task_artifact accepted session_id=%s page_key=%s task_id=%s status=%s effect=%s session_status=%s",
+                    self.session_id,
+                    cache_page_key,
+                    task_id,
+                    dispatch_result.get("task_status", ""),
+                    dispatch_result.get("effect_type", ""),
+                    dispatch_result.get("session_status", ""),
+                )
                 return {
                     "success": True,
                     "message": "task artifact recorded",
@@ -392,9 +431,28 @@ class ExplorationState:
             return {"success": False, "message": "dispatcher or page context unavailable"}
 
         cache_page_key = self._cache_page_key(resolved_page_id)
+        if not self.dispatcher.can_dispatch_next_task(self.session_id, cache_page_key):
+            return {
+                "success": False,
+                "message": "session is restoring validation context; do not dispatch next task yet",
+            }
         result = self.dispatcher.dispatch_next_task(self.session_id, cache_page_key)
         if result.get("success"):
             self.page_tasks[cache_page_key] = self.cache_service.get_page_tasks(cache_page_key)
+            logger.info(
+                "[ExplorationState] dispatch_next_task session_id=%s page_key=%s has_task=%s session_status=%s",
+                self.session_id,
+                cache_page_key,
+                bool(result.get("has_task")),
+                result.get("session_status", ""),
+            )
+        else:
+            logger.warning(
+                "[ExplorationState] dispatch_next_task blocked session_id=%s page_key=%s message=%s",
+                self.session_id,
+                cache_page_key,
+                result.get("message", ""),
+            )
         return result
 
     def generate_report(self) -> str:

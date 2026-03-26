@@ -17,7 +17,14 @@ from pydantic import BaseModel
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from database.connection import get_db, get_default_project, QdrantCollectionConfig, OneclickSession, TestEnvironment
+from database.connection import (
+    get_db,
+    resolve_project_context,
+    get_active_project_by_id,
+    QdrantCollectionConfig,
+    OneclickSession,
+    TestEnvironment,
+)
 from Page_Knowledge.service import PageKnowledgeService
 from Page_Knowledge.vector_store import get_vector_store, apply_config_to_store
 from Page_Knowledge.embedding import reload_embedding_client
@@ -42,6 +49,7 @@ class LookupRequest(BaseModel):
 class StoreRequest(BaseModel):
     url: str
     capabilities: dict
+    project_id: Optional[int] = None
 
 
 class DeleteRequest(BaseModel):
@@ -133,8 +141,10 @@ async def knowledge_store(req: StoreRequest, db: Session = Depends(get_db)):
     """手动存储页面知识"""
     try:
         # 获取默认项目
-        project = get_default_project(db)
-        
+        project = resolve_project_context(db, req.project_id)
+        if not project:
+            return {"success": False, "message": "没有可用的项目，请先创建并启用一个项目"}
+
         knowledge = PageKnowledge.from_capabilities(req.url, req.capabilities)
         result = await PageKnowledgeService.store(knowledge, db, project_id=project.id)
         return {"success": True, "data": result}
@@ -147,10 +157,16 @@ async def knowledge_store(req: StoreRequest, db: Session = Depends(get_db)):
 async def knowledge_check_update(req: StoreRequest, db: Session = Depends(get_db)):
     """版本检查并自动更新"""
     try:
+        project = resolve_project_context(db, req.project_id)
+        if not project:
+            return {"success": False, "message": "没有可用的项目，请先创建并启用一个项目"}
+        if not project:
+            return {"success": False, "message": "没有可用的项目，请先创建并启用一个项目"}
         result = await PageKnowledgeService.check_and_update(
             url=req.url,
             new_capabilities=req.capabilities,
             db=db,
+            project_id=project.id,
         )
         diff_data = None
         if result.get("diff"):
@@ -178,20 +194,20 @@ async def knowledge_list(domain: str = "", page_type: str = "", limit: int = 100
         
         # 如果未指定项目，使用默认项目
         if project_id is None:
-            project = get_default_project(db)
+            project = resolve_project_context(db, project_id)
             if not project:
                 # 没有启用的项目，返回空列表
                 return {"success": True, "data": {"items": [], "total": 0}}
             project_id = project.id
         else:
             # 验证指定的项目是否启用（不报错，只是过滤）
-            project = get_active_project_by_id(db, project_id)
+            project = resolve_project_context(db, project_id)
             if not project:
                 # 项目未启用，返回空列表
                 return {"success": True, "data": {"items": [], "total": 0}}
         
         items = await PageKnowledgeService.list_all(
-            domain=domain, page_type=page_type, limit=limit, project_id=project_id,
+            domain=domain, page_type=page_type, limit=limit, project_id=project.id,
         )
         return {"success": True, "data": {"items": items, "total": len(items)}}
     except Exception as e:
@@ -422,6 +438,7 @@ class ExplorePageRequest(BaseModel):
     username: str = ""
     password: str = ""
     user_goal: str = ""
+    project_id: Optional[int] = None
     env_id: Optional[int] = None
     login_url: str = ""
     extra_credentials: Optional[Dict[str, Any]] = None
@@ -472,6 +489,11 @@ def _resolve_explore_environment(req: ExplorePageRequest, db: Session) -> Dict[s
     }
 
 
+def _resolve_project_id(req: ExplorePageRequest, db: Session) -> Optional[int]:
+    project = resolve_project_context(db, req.project_id)
+    return project.id if project else None
+
+
 @router.post("/knowledge/explore-page")
 async def explore_page(req: ExplorePageRequest, db: Session = Depends(get_db)):
     """
@@ -489,6 +511,9 @@ async def explore_page(req: ExplorePageRequest, db: Session = Depends(get_db)):
         
         # 构建探索环境信息
         env_info = _resolve_explore_environment(req, db)
+        project_id = _resolve_project_id(req, db)
+        if project_id is None:
+            return {"success": False, "message": "没有可用的项目，请先创建并启用一个项目"}
         target_url = env_info.get("target_url", "")
         if not target_url:
             return {"success": False, "message": "未找到目标 URL，请选择测试环境或手动填写 URL"}
@@ -496,6 +521,7 @@ async def explore_page(req: ExplorePageRequest, db: Session = Depends(get_db)):
         # 创建临时会话（用于探索）
         from database.connection import OneclickSession
         temp_session = OneclickSession(
+            project_id=project_id,
             user_input=req.user_goal or f"探索页面: {req.url}",
             target_url=target_url,
             status='exploring',
@@ -534,6 +560,7 @@ async def explore_page(req: ExplorePageRequest, db: Session = Depends(get_db)):
                 "temp_session_id": temp_session.id,
                 "status": "running",
                 "env_source": env_info.get("_source", ""),
+                "project_id": project_id,
             }
         }
         
@@ -656,6 +683,7 @@ async def _background_explore_task(
                 url=env_info.get("target_url", req.url),
                 page_data=page_capabilities,
                 db=db,
+                project_id=temp_session.project_id,
                 cleanup=True,
             )
             page_capabilities = finalized.get("capabilities", page_capabilities)
@@ -665,6 +693,7 @@ async def _background_explore_task(
                 url=env_info.get("target_url", req.url),
                 new_capabilities=page_capabilities,
                 db=db,
+                project_id=temp_session.project_id,
             )
         
         action = kb_result.get('action', 'created')

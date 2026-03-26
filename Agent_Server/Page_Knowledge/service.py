@@ -295,6 +295,9 @@ class PageKnowledgeService:
         store = get_vector_store()
         embed_client = get_embedding_client()
 
+        if project_id is None:
+            raise ValueError("project_id is required when storing page knowledge")
+
         # 刷新签名和时间戳
         knowledge.refresh_hash()
         knowledge.last_accessed = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -324,7 +327,7 @@ class PageKnowledgeService:
             "summary": knowledge.summary,
             "embedding_text": embedding_text,
             "knowledge": knowledge.to_dict(),  # 完整结构
-            "project_id": project_id or 1,  # 添加项目ID
+            "project_id": project_id,
         }
 
         success = await asyncio.to_thread(store.upsert, point_id, vector, payload)
@@ -333,7 +336,12 @@ class PageKnowledgeService:
         mysql_id = None
         if db and success:
             try:
-                mysql_id = PageKnowledgeService._save_to_mysql(db, knowledge, point_id)
+                mysql_id = PageKnowledgeService._save_to_mysql(
+                    db,
+                    knowledge,
+                    point_id,
+                    project_id=project_id,
+                )
             except Exception as e:
                 logger.warning(f"[PageKB] MySQL 写入失败（不影响向量库）: {e}")
 
@@ -359,6 +367,7 @@ class PageKnowledgeService:
         url: str,
         new_capabilities: Dict,
         db: Optional[Session] = None,
+        project_id: int | None = None,
     ) -> Dict:
         """
         版本检查机制（每次探索后调用）
@@ -382,7 +391,7 @@ class PageKnowledgeService:
         if not existing or not existing.get("payload"):
             # 全新页面 → 直接存储
             new_knowledge.version = 1
-            result = await PageKnowledgeService.store(new_knowledge, db)
+            result = await PageKnowledgeService.store(new_knowledge, db, project_id=project_id)
             return {
                 "action": "created",
                 "diff": None,
@@ -415,7 +424,7 @@ class PageKnowledgeService:
 
         # 更新版本
         new_knowledge.version = old_knowledge.version + 1
-        result = await PageKnowledgeService.store(new_knowledge, db)
+        result = await PageKnowledgeService.store(new_knowledge, db, project_id=project_id)
 
         return {
             "action": "updated",
@@ -652,13 +661,22 @@ class PageKnowledgeService:
             return False
 
     @staticmethod
-    def _save_to_mysql(db: Session, knowledge: PageKnowledge, point_id: str) -> Optional[int]:
+    def _save_to_mysql(
+        db: Session,
+        knowledge: PageKnowledge,
+        point_id: str,
+        project_id: int | None = None,
+    ) -> Optional[int]:
         """写入 MySQL 元数据表"""
         from database.connection import PageKnowledgeRecord
+
+        if project_id is None:
+            raise ValueError("project_id is required when saving page knowledge")
 
         # 查找或创建
         record = db.query(PageKnowledgeRecord).filter_by(url=knowledge.url).first()
         if record:
+            record.project_id = project_id
             record.page_type = knowledge.page_type
             record.summary = knowledge.summary
             record.hash_signature = knowledge.hash_signature
@@ -670,6 +688,7 @@ class PageKnowledgeService:
             record.updated_at = datetime.now()
         else:
             record = PageKnowledgeRecord(
+                project_id=project_id,
                 url=knowledge.url,
                 domain=knowledge.domain,
                 page_type=knowledge.page_type,

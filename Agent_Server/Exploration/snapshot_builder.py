@@ -140,7 +140,7 @@ def build_snapshot(
         title=dom_summary.get("title", ""),
         page_type=page_type,
         page_signature=page_signature,
-        dom_richness=detect_result.get("mode", "vision"),
+        dom_richness=detect_result.get("mode", "dom"),
         interactive_count=detect_result.get("interactive", len(candidates)),
         total_dom_nodes=detect_result.get("total", dom_summary.get("total_dom_nodes", 0)),
         buttons=buttons,

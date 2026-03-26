@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import List
 
-from database.connection import get_db, get_default_project
+from database.connection import get_db, resolve_project_context
 from Build_Report.service import TestReportService
 
 router = APIRouter(
@@ -326,31 +326,16 @@ def get_reports(
     db: Session = Depends(get_db)
 ):
     """获取报告列表"""
-    from database.connection import get_active_project_by_id
-    
-    # 如果未指定项目，使用默认项目
-    if project_id is None:
-        project = get_default_project(db)
-        if not project:
-            # 没有启用的项目，返回空列表
-            return {
-                "success": True,
-                "data": [],
-                "total": 0
-            }
-        project_id = project.id
-    else:
-        # 验证指定的项目是否启用（不报错，只是过滤）
-        project = get_active_project_by_id(db, project_id)
-        if not project:
-            # 项目未启用，返回空列表
-            return {
-                "success": True,
-                "data": [],
-                "total": 0
-            }
-    
-    result = TestReportService.get_reports(db=db, limit=limit, offset=offset, project_id=project_id)
+    project = resolve_project_context(db, project_id)
+
+    if not project:
+        return {
+            "success": True,
+            "data": [],
+            "total": 0
+        }
+
+    result = TestReportService.get_reports(db=db, limit=limit, offset=offset, project_id=project.id)
     return {
         "success": True,
         "data": result['data'],

@@ -1,9 +1,10 @@
 """
-DOM 模式子包
+DOM mode package.
 
-提供基于 agent-browser CLI 的 DOM 驱动测试执行能力。
-当页面 DOM 节点丰富时，自动切换到 DOM 模式，替代视觉大模型。
+DOM is the primary execution path. Vision models are kept only as an
+auxiliary fallback when DOM-driven execution cannot proceed.
 """
+
 from .detector import DomRichnessDetector
 from .agent_browser_client import AgentBrowserClient
 from .dom_executor import DomExecutor

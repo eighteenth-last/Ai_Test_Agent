@@ -174,6 +174,10 @@ class ExplorationCacheService:
         return f"exploration:session:{session_id}:pages"
 
     @staticmethod
+    def session_artifacts_key(session_id: str) -> str:
+        return f"exploration:session:{session_id}:artifacts"
+
+    @staticmethod
     def page_meta_key(page_key: str) -> str:
         return f"exploration:page:{page_key}:meta"
 
@@ -242,6 +246,12 @@ class ExplorationCacheService:
     def list_session_pages(self, session_id: str) -> List[str]:
         pages = self._get_json(self.session_pages_key(session_id), [])
         return [str(item) for item in pages] if isinstance(pages, list) else []
+
+    def append_session_artifact(self, session_id: str, payload: Dict[str, Any]):
+        self._append_json(self.session_artifacts_key(session_id), payload)
+
+    def list_session_artifacts(self, session_id: str) -> List[Dict[str, Any]]:
+        return self._list_json(self.session_artifacts_key(session_id))
 
     def save_page_meta(self, page_key: str, payload: Dict[str, Any]):
         self._set_json(self.page_meta_key(page_key), payload)

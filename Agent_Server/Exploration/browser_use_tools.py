@@ -15,8 +15,6 @@ from .browser_use_runtime import ensure_browser_use_runtime_env
 
 logger = logging.getLogger(__name__)
 
-DOM_INTERACTIVE_THRESHOLD = int(os.getenv("EXPLORATION_DOM_INTERACTIVE_THRESHOLD", "10"))
-DOM_TOTAL_THRESHOLD = int(os.getenv("EXPLORATION_DOM_TOTAL_THRESHOLD", "50"))
 MAX_INTERACTIVE_ELEMENTS = int(os.getenv("EXPLORATION_MAX_INTERACTIVE", "60"))
 
 
@@ -49,19 +47,6 @@ def find_chrome_path() -> Optional[str]:
         if os.path.exists(path):
             return path
     return None
-
-_DOM_RICHNESS_SCRIPT = """
-() => {
-  const interactive = document.querySelectorAll(
-    'button, a[href], input, select, textarea, summary, ' +
-    '[role="button"], [role="link"], [role="menuitem"], ' +
-    '[onclick], [tabindex]:not([tabindex="-1"])'
-  ).length;
-  const total = document.querySelectorAll('*').length;
-  const rich = interactive >= %d && total >= %d;
-  return { interactive, total, rich };
-}
-""" % (DOM_INTERACTIVE_THRESHOLD, DOM_TOTAL_THRESHOLD)
 
 _DOM_SUMMARY_SCRIPT = """
 () => {
@@ -213,22 +198,18 @@ class DomRichnessDetector:
         if page is None:
             return _fallback_result("cannot_get_page")
         try:
-            data = await evaluate_script(page, _DOM_RICHNESS_SCRIPT)
-            if not isinstance(data, dict):
-                raise RuntimeError(f"invalid_dom_richness:{type(data).__name__}")
-            interactive = int(data.get("interactive", 0))
-            total = int(data.get("total", 0))
-            rich = bool(data.get("rich", False))
-            mode = "dom" if rich else "vision"
+            summary = await extract_dom_summary(browser_session)
+            interactive = len(summary.get("interactive_elements") or [])
+            total = int(summary.get("total_dom_nodes") or 0)
             return {
-                "rich": rich,
+                "rich": True,
                 "interactive": interactive,
                 "total": total,
-                "mode": mode,
+                "mode": "dom",
                 "error": None,
             }
         except Exception as exc:
-            logger.warning(f"[Exploration] DOM richness detect failed: {exc}")
+            logger.warning(f"[Exploration] DOM-first inspection failed, fallback to vision: {exc}")
             return _fallback_result(str(exc))
 
 

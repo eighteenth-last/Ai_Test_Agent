@@ -31,13 +31,19 @@ class ExplorationController(Tools):
 
     @staticmethod
     def _format_task_text(task: Dict[str, Any]) -> str:
+        candidate_pool = task.get("candidate_pool") or []
+        top_candidate = candidate_pool[0] if candidate_pool else {}
         return (
             f"task_id={task.get('task_id', '')}; "
             f"group={task.get('task_group', '')}; "
             f"type={task.get('task_type', '')}; "
+            f"goal={task.get('task_goal', '')}; "
+            f"validation={bool(task.get('is_validation_task'))}; "
             f"target={task.get('element_label', '')}; "
             f"selector={task.get('action_payload', {}).get('selector', '')}; "
-            f"candidate_id={task.get('action_payload', {}).get('candidate_id', '')}"
+            f"candidate_id={task.get('action_payload', {}).get('candidate_id', '')}; "
+            f"top_candidate={top_candidate.get('label', '')}; "
+            f"success_criteria={len(task.get('success_criteria', []) or [])}"
         )
 
     def _register_exploration_actions(self):
@@ -66,20 +72,12 @@ class ExplorationController(Tools):
             dom_summary: Dict[str, Any] = {}
 
             try:
-                from Execute_test.dom_mode.detector import DomRichnessDetector
-
-                detect_result = await DomRichnessDetector.detect(browser_session)
-                mode = detect_result.get("mode", "vision")
-                interactive = detect_result.get("interactive", 0)
-                total = detect_result.get("total", 0)
-                dom_mode_hint = f" DOM detect: interactive={interactive}, total={total}, mode={mode}"
-            except Exception as exc:
-                logger.debug("[ExplorationController] DOM richness detection skipped: %s", exc)
-
-            try:
                 from Exploration.browser_use_tools import extract_dom_summary
 
                 dom_summary = await extract_dom_summary(browser_session)
+                interactive = len(dom_summary.get("interactive_elements") or params.elements)
+                total = int(dom_summary.get("total_dom_nodes") or 0)
+                dom_mode_hint = f" DOM primary: interactive={interactive}, total={total}, mode=dom"
             except Exception as exc:
                 logger.warning("[ExplorationController] failed to extract DOM summary: %s", exc)
 
@@ -90,7 +88,14 @@ class ExplorationController(Tools):
                 dom_summary=dom_summary,
             )
             if not result["success"]:
-                return ActionResult(error=result["message"], include_in_memory=True)
+                return ActionResult(
+                    error=result["message"],
+                    extracted_content=(
+                        "Do not rescan the page right now. If the current task is a validation task, "
+                        "finish restoring the original session/context and then report the same task again."
+                    ),
+                    include_in_memory=True,
+                )
 
             title = str(dom_summary.get("title") or params.page_id)
             msg = (
@@ -179,10 +184,21 @@ class ExplorationController(Tools):
         async def dispatch_next_task(params: DispatchNextTaskParams) -> ActionResult:
             result = self.exploration_state.dispatch_next_task(params.page_id)
             if not result["success"]:
-                return ActionResult(error=result["message"], include_in_memory=True)
+                return ActionResult(
+                    error=result["message"],
+                    extracted_content=(
+                        "Do not request the next task yet. Finish restoring the validation context first, "
+                        "then call `report_task_artifact()` again for the same task. "
+                        f"session_status={result.get('session_status', '')}"
+                    ),
+                    include_in_memory=True,
+                )
             if not result.get("has_task"):
                 return ActionResult(
-                    extracted_content="No pending task remains on the current page.",
+                    extracted_content=(
+                        "No pending task remains on the current page. "
+                        f"session_status={result.get('session_status', '')}"
+                    ),
                     include_in_memory=True,
                 )
 
@@ -220,22 +236,51 @@ class ExplorationController(Tools):
             task_group: str = Field(default="in_page", description="Task group: in_page or navigation")
             page_id: str = Field(default="", description="Current page id")
             status: str = Field(default="accepted", description="Task result status")
+            validation_status: str = Field(default="", description="Structured validation result: accepted/retry_pending/failed/skipped")
+            effect_type: str = Field(default="", description="Structured effect type after the action")
             observed_result: str = Field(default="", description="Short summary of the observed result")
+            replan_reason: str = Field(default="", description="Why the task should be replanned when the action had no effect or hit a wrong target")
             navigated: bool = Field(default=False, description="Whether the task navigated to a new page")
             new_url: str = Field(default="", description="New URL when navigation happened")
             target_page_name: str = Field(default="", description="Target page name if known")
+            executed_target: Dict[str, Any] = Field(default_factory=dict, description="The actual clicked or operated target")
+            before_state: Dict[str, Any] = Field(default_factory=dict, description="State summary before executing the action")
+            after_state: Dict[str, Any] = Field(default_factory=dict, description="State summary after executing the action")
             buttons: List[str] = Field(default_factory=list, description="New buttons observed after this task")
             links: List[str] = Field(default_factory=list, description="New links observed after this task")
             dynamic_elements: List[str] = Field(default_factory=list, description="Dialogs or transient UI observed")
             page_sections: List[str] = Field(default_factory=list, description="Sections observed after task execution")
             evidence: List[str] = Field(default_factory=list, description="Evidence strings proving the result")
+            is_validation_task: bool = Field(default=False, description="Whether this task is validation-only")
+            validation_passed: bool = Field(default=False, description="Whether the validation goal passed")
+            session_restored: bool = Field(default=False, description="Whether the pre-validation session was restored")
+            resume_note: str = Field(default="", description="Short note about the restore step")
 
         @self.registry.action(
             description="Report the artifact produced by a single exploration task so the server can cache task results.",
             param_model=ReportTaskArtifactParams,
         )
-        async def report_task_artifact(params: ReportTaskArtifactParams) -> ActionResult:
+        async def report_task_artifact(params: ReportTaskArtifactParams, browser_session: BrowserSession) -> ActionResult:
             payload = params.model_dump()
+            payload["runtime_state_available"] = False
+            try:
+                from Exploration.browser_use_tools import extract_dom_summary
+
+                current_url = await browser_session.get_current_page_url()
+                dom_summary = await extract_dom_summary(browser_session)
+                fields = [
+                    field
+                    for form in dom_summary.get("forms", [])
+                    for field in form.get("fields", [])
+                ]
+                login_form_present = any((field.get("type") or "").lower() == "password" for field in fields)
+                payload["runtime_state_available"] = True
+                payload["runtime_current_url"] = current_url
+                payload["runtime_page_title"] = str(dom_summary.get("title") or "")
+                payload["runtime_login_form_present"] = login_form_present
+            except Exception as exc:
+                logger.warning("[ExplorationController] failed to inspect runtime state for task artifact: %s", exc)
+
             result = self.exploration_state.report_task_artifact(
                 task_id=params.task_id,
                 task_group=params.task_group,
@@ -243,7 +288,16 @@ class ExplorationController(Tools):
                 artifact=payload,
             )
             if not result["success"]:
-                return ActionResult(error=result["message"], include_in_memory=True)
+                dispatch_result = result.get("dispatch_result") or {}
+                return ActionResult(
+                    error=result["message"],
+                    extracted_content=(
+                        f"Task artifact for '{params.task_id}' was rejected by the server. "
+                        f"reason={result.get('message', '')}; "
+                        f"session_status={dispatch_result.get('session_status', '')}"
+                    ),
+                    include_in_memory=True,
+                )
             dispatch_result = result.get("dispatch_result") or {}
             page_id = params.page_id or self.exploration_state.current_page_id or ""
             if dispatch_result.get("page_completed"):
@@ -255,18 +309,44 @@ class ExplorationController(Tools):
                     ),
                     include_in_memory=True,
                 )
+            if dispatch_result.get("is_validation_task") and not dispatch_result.get("session_restored"):
+                return ActionResult(
+                    extracted_content=(
+                        f"Validation task '{params.task_id}' is not committed yet because the session/context "
+                        "has not been restored. Restore the previous session first, then call "
+                        "`report_task_artifact()` again for the same task_id. Do not call `record_page()` or "
+                        "`dispatch_next_task()` yet. "
+                        f"session_status={dispatch_result.get('session_status', '')}"
+                    ),
+                    include_in_memory=True,
+                )
             next_task_result = self.exploration_state.dispatch_next_task(page_id)
             if next_task_result.get("success") and next_task_result.get("has_task"):
-                task_text = self._format_task_text(next_task_result.get("task") or {})
+                task = next_task_result.get("task") or {}
+                task_text = self._format_task_text(task)
                 return ActionResult(
                     extracted_content=(
                         f"Reported task artifact for '{params.task_id}'. "
-                        f"Server assigned next task: {task_text}"
+                        f"Server assigned next task: {task_text}. "
+                        f"session_status={next_task_result.get('session_status', '')}"
+                    ),
+                    include_in_memory=True,
+                )
+            if not next_task_result.get("success"):
+                return ActionResult(
+                    extracted_content=(
+                        f"Reported task artifact for '{params.task_id}', but the next task is not available yet. "
+                        f"reason={next_task_result.get('message', '')}; "
+                        f"session_status={next_task_result.get('session_status', '')}"
                     ),
                     include_in_memory=True,
                 )
             return ActionResult(
-                extracted_content=f"Reported task artifact for '{params.task_id}'.",
+                extracted_content=(
+                    f"Reported task artifact for '{params.task_id}'. "
+                    f"session_status={dispatch_result.get('session_status', '')}; "
+                    f"next_dispatch_status={next_task_result.get('session_status', '')}"
+                ),
                 include_in_memory=True,
             )
 

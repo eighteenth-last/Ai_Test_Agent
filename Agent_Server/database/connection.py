@@ -3,9 +3,10 @@
 
 作者: 程序员Eighteen
 """
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON, inspect
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON, inspect, or_
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects.mysql import LONGTEXT
 from datetime import datetime
 import os
@@ -612,6 +613,17 @@ def init_db():
         _create_default_project()
         
         print("\n数据库初始化完成！")
+    except IntegrityError:
+        db.rollback()
+        existing = db.query(Project).filter(
+            or_(Project.code == 'default', Project.name == '榛樿椤圭洰')
+        ).order_by(Project.id.asc()).first()
+        if existing:
+            if existing.is_default != 1:
+                existing.is_default = 1
+            if existing.is_active != 1:
+                existing.is_active = 1
+            db.commit()
     except Exception as e:
         print(f"数据库初始化出错：{str(e)}")
         raise
@@ -686,7 +698,10 @@ def _create_default_project():
     db = SessionLocal()
     try:
         # 检查是否已有项目
-        existing = db.query(Project).first()
+        named_default = db.query(Project).filter(
+            or_(Project.code == 'default', Project.name == '榛樿椤圭洰')
+        ).order_by(Project.id.asc()).first()
+        existing = named_default or db.query(Project).order_by(Project.id.asc()).first()
         if not existing:
             # 创建默认项目
             default_project = Project(
@@ -701,7 +716,7 @@ def _create_default_project():
             print("  ✓ 已创建默认项目")
         else:
             # 确保至少有一个默认项目
-            default = db.query(Project).filter(Project.is_default == 1).first()
+            default = db.query(Project).filter(Project.is_default == 1).order_by(Project.id.asc()).first()
             if not default:
                 # 将第一个项目设为默认
                 existing.is_default = 1
@@ -725,52 +740,29 @@ def get_db():
 
 def get_default_project(db: Session):
     """
-    获取默认项目（必须是启用状态）
-    
-    返回:
-        Project: 启用的默认项目
-        None: 如果所有项目都被禁用
+    获取默认项目。
+
+    这是一个纯查询函数，严禁在读接口里隐式创建、更新或提交项目记录。
+    解析顺序：
+    1. 启用状态的默认项目
+    2. 任意启用项目（按默认标记、ID 升序兜底）
+    3. 返回 None
+
+    默认项目初始化职责只保留在启动初始化流程 `_create_default_project()`。
     """
-    project = db.query(Project).filter(
+    default_project = db.query(Project).filter(
         Project.is_default == 1,
-        Project.is_active == 1  # 必须是启用状态
+        Project.is_active == 1,
+    ).order_by(Project.id.asc()).first()
+    if default_project:
+        return default_project
+
+    return db.query(Project).filter(
+        Project.is_active == 1
+    ).order_by(
+        Project.is_default.desc(),
+        Project.id.asc(),
     ).first()
-    
-    if not project:
-        # 如果没有默认项目，返回第一个激活的项目
-        project = db.query(Project).filter(Project.is_active == 1).first()
-    
-    if not project:
-        # 如果还是没有启用的项目，检查是否存在项目
-        any_project = db.query(Project).first()
-        
-        if any_project:
-            # 存在项目但都被禁用了，返回 None（让调用方决定如何处理）
-            return None
-        
-        # 真的不存在任何项目，创建一个新的默认项目
-        try:
-            project = Project(
-                name='默认项目',
-                code='default',
-                description='系统默认项目',
-                is_default=1,
-                is_active=1
-            )
-            db.add(project)
-            db.commit()
-            db.refresh(project)
-        except Exception:
-            # 如果创建失败（比如已存在），再次查询
-            db.rollback()
-            project = db.query(Project).filter(
-                (Project.name == '默认项目') | (Project.code == 'default')
-            ).first()
-            if not project:
-                # 仍然失败，返回 None
-                return None
-    
-    return project
 
 
 def get_active_project_by_id(db: Session, project_id: int):
@@ -783,6 +775,22 @@ def get_active_project_by_id(db: Session, project_id: int):
         Project.id == project_id,
         Project.is_active == 1
     ).first()
+
+
+def resolve_project_context(db: Session, project_id: int = None, required: bool = False):
+    """
+    缁熶竴瑙ｆ瀽褰撳墠涓婁笅鏂囬」鐩€?
+
+    瑙ｆ瀽椤哄簭锛?
+    1. 濡傛灉浼犲叆浜?project_id锛屼粎杩斿洖瀵瑰簲鐨勫惎鐢ㄩ」鐩?
+    2. 鍚﹀垯鍥為€€鍒?get_default_project(db)
+
+    杩欐槸涓€涓函鏌ヨ鍏ュ彛锛屼弗绂佸湪璇诲彇涓婁笅鏂囨椂闅愬紡鍒涘缓銆佹洿鏂版垨鎻愪氦椤圭洰璁板綍銆?
+    """
+    project = get_active_project_by_id(db, project_id) if project_id is not None else get_default_project(db)
+    if required and project is None:
+        raise ValueError("娌℃湁鍙敤鐨勯」鐩紝璇峰厛鍒涘缓骞跺惎鐢ㄤ竴涓」鐩?")
+    return project
 
 
 if __name__ == "__main__":

@@ -28,6 +28,7 @@ from .browser_use_tools import (
     navigate_to,
     read_url,
     stop_browser,
+    try_basic_login,
 )
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,37 @@ def _format_runtime_error(exc: Exception) -> str:
             "请先启动项目数据库，或修正 Agent_Server/.env 中的数据库配置。"
         )
     return raw_message
+
+
+async def _attempt_env_login(browser_session, env_info: Dict[str, Any], emit) -> Dict[str, Any]:
+    username = str(env_info.get("username") or "")
+    password = str(env_info.get("password") or "")
+    if not username or not password:
+        return {"success": False, "attempted": False, "detected_login": False, "reason": "missing_credentials"}
+
+    login_result = await try_basic_login(browser_session, username, password)
+    if not isinstance(login_result, dict):
+        login_result = {"success": bool(login_result), "attempted": True, "detected_login": bool(login_result)}
+
+    emit("login.attempted", result=login_result)
+
+    if login_result.get("success"):
+        target_url = str(env_info.get("target_url") or "")
+        login_url = str(env_info.get("login_url") or "")
+        current_url = await read_url(browser_session)
+        if target_url and login_url and target_url != login_url and current_url != target_url:
+            try:
+                await navigate_to(browser_session, target_url)
+                emit("login.redirected", from_url=current_url, to_url=target_url)
+            except Exception as redirect_err:
+                logger.warning("[BrowserUseExplorer] post-login navigate to target failed: %s", redirect_err)
+                emit(
+                    "login.redirect_failed",
+                    from_url=current_url,
+                    to_url=target_url,
+                    error=str(redirect_err),
+                )
+    return login_result
 
 
 class BrowserUseAgentExplorer:
@@ -169,6 +201,18 @@ class BrowserUseAgentExplorer:
             )
             if start_url:
                 await navigate_to(browser_session, start_url)
+
+            login_result = await _attempt_env_login(browser_session, env_info, emit)
+            if login_result.get("success"):
+                logger.info(
+                    "[BrowserUseExplorer] environment login submitted successfully: env=%s",
+                    env_info.get("env_name") or env_info.get("_source") or "manual",
+                )
+            elif login_result.get("attempted"):
+                logger.info(
+                    "[BrowserUseExplorer] environment login attempted but not completed: %s",
+                    login_result.get("reason"),
+                )
 
             if exploration_session_id:
                 session_snapshot = dispatcher.get_session_snapshot(exploration_session_id)
@@ -375,6 +419,18 @@ class BrowserUseAgentExplorer:
             )
             assigned_task = assigned_task_result.get("task") if assigned_task_result.get("has_task") else None
             if assigned_task:
+                logger.info(
+                    "[BrowserUseExplorer] task round assigned session=%s round=%s page=%s task_id=%s group=%s type=%s goal=%s attempts=%s/%s",
+                    exploration_session_id,
+                    round_index,
+                    current_page_key,
+                    assigned_task.get("task_id", ""),
+                    assigned_task.get("task_group", ""),
+                    assigned_task.get("task_type", ""),
+                    assigned_task.get("task_goal", ""),
+                    assigned_task.get("attempt_count", 0),
+                    assigned_task.get("max_attempts", 0),
+                )
                 emit("task.assigned", task=assigned_task, round=round_index)
                 task = build_single_task_round_prompt(
                     user_goal=goal,
@@ -408,6 +464,15 @@ class BrowserUseAgentExplorer:
             total_steps += round_steps_used
             if final_result:
                 final_results.append(final_result)
+            logger.info(
+                "[BrowserUseExplorer] round completed session=%s round=%s page=%s assigned_task=%s steps=%s final_result_present=%s",
+                exploration_session_id,
+                round_index,
+                current_page_key,
+                bool(assigned_task),
+                round_steps_used,
+                bool(final_result),
+            )
 
             session_completion = dispatcher.finalize_session_if_ready(exploration_session_id)
             BrowserUseAgentExplorer._emit_session_snapshot(
@@ -439,6 +504,13 @@ class BrowserUseAgentExplorer:
                 stalled_rounds = 0
                 last_signature = signature
             if stalled_rounds >= 2:
+                logger.warning(
+                    "[BrowserUseExplorer] round stalled session=%s round=%s page=%s signature=%s",
+                    exploration_session_id,
+                    round_index,
+                    (snapshot.get("session") or {}).get("current_page_key", ""),
+                    signature,
+                )
                 emit("run.stalled", round=round_index, snapshot=snapshot)
                 break
 

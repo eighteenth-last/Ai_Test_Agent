@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from typing import Any, Dict, List, Optional
 
 from Page_Knowledge.service import PageKnowledgeService
@@ -49,7 +50,10 @@ class ExplorationFinalizer:
 
         frontier = self.cache.list_frontier(session_id)
         navigation = self.cache.list_navigation(session_id)
+        session_artifacts = self.cache.list_session_artifacts(session_id)
         session_meta = self.cache.get_session(session_id)
+        effect_counter: Counter[str] = Counter()
+        artifact_events: Counter[str] = Counter()
 
         for page in pages:
             page_key = str(page.get("cache_page_key") or page.get("page_id") or "").strip()
@@ -79,6 +83,18 @@ class ExplorationFinalizer:
                 links = self._merge_items(links, artifact.get("links", []))
                 dynamic_elements = self._merge_items(dynamic_elements, artifact.get("dynamic_elements", []))
                 page_sections = self._merge_items(page_sections, artifact.get("page_sections", []))
+                artifact_payload = artifact.get("artifact") or {}
+                effect_type = str(artifact_payload.get("effect_type") or artifact.get("effect_type") or "").strip()
+                if effect_type:
+                    effect_counter[effect_type] += 1
+
+        for session_artifact in session_artifacts:
+            event_type = str(session_artifact.get("event_type") or "").strip()
+            if event_type:
+                artifact_events[event_type] += 1
+            effect_type = str(session_artifact.get("effect_type") or "").strip()
+            if effect_type:
+                effect_counter[effect_type] += 1
 
         page_data["buttons"] = self._dedupe_strings(buttons)
         page_data["links"] = self._dedupe_strings(links)
@@ -87,11 +103,15 @@ class ExplorationFinalizer:
         page_data["pages"] = pages
         page_data["frontier_pages"] = frontier
         page_data["navigation_events"] = navigation
+        page_data["session_artifacts"] = session_artifacts[-120:]
 
         summary = dict(page_data.get("artifact_summary") or {})
         summary["cached_navigation"] = len(navigation)
         summary["frontier_size"] = len(frontier)
         summary["cache_enabled"] = self.cache.enabled
+        summary["session_artifact_count"] = len(session_artifacts)
+        summary["effect_summary"] = dict(effect_counter)
+        summary["event_summary"] = dict(artifact_events)
         if session_meta:
             summary["session_status"] = session_meta.get("status", "")
         page_data["artifact_summary"] = summary
@@ -103,6 +123,7 @@ class ExplorationFinalizer:
         url: str,
         page_data: Dict[str, Any],
         db,
+        project_id: int | None = None,
         cleanup: bool = True,
     ) -> Dict[str, Any]:
         enriched = self.enrich_page_data(session_id, page_data)
@@ -110,6 +131,7 @@ class ExplorationFinalizer:
             url=url,
             new_capabilities=enriched,
             db=db,
+            project_id=project_id,
         )
         if cleanup:
             self.cleanup_session_cache(session_id)

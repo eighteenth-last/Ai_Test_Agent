@@ -43,10 +43,13 @@ class SessionManager:
     @staticmethod
     def create_session(db: Session, user_input: str, project_id: int = None) -> OneclickSession:
         """创建新会话"""
+        if project_id is None:
+            raise ValueError("project_id is required when creating one-click test sessions")
+
         session = OneclickSession(
             user_input=user_input,
             status='init',
-            project_id=project_id or 1,  # 默认项目ID为1
+            project_id=project_id,
             messages=json.dumps([
                 {"role": "user", "content": user_input, "time": datetime.now().isoformat()}
             ], ensure_ascii=False)

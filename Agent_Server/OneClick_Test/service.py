@@ -468,6 +468,7 @@ class OneClickService:
                             url=target_url,
                             new_capabilities=caps_to_store,
                             db=db,
+                            project_id=session.project_id,
                         )
                         action = kb_result.get('action', 'created')
                         ver = kb_result.get('knowledge', PageKnowledge(url='')).version
@@ -1542,20 +1543,13 @@ class OneClickService:
 
             logger.info(f"[OneClick v2] 🌐 开始精准探索")
 
-            # ── 探索前 DOM 检测 ──────────────────────────────────────
-            # 先导航到目标页面，再检测 DOM 丰富度
-            try:
-                from Execute_test.dom_mode.detector import DomRichnessDetector
-                # 等待浏览器会话就绪后再检测（此时还未导航，先跳过，在 Agent 每步后检测）
-                # 探索阶段的 DOM 检测通过 exploration_controller 的 record_page 触发
-                # 这里仅记录日志，实际切换在 _execute_browser_test 中处理
-                logger.info("[OneClick v2] DOM 模式已启用，将在每次页面访问时自动检测")
-                SessionManager.add_message(db, session, 'assistant',
-                    "🔍 开始深度探索（DOM 自适应模式已启用）...")
-            except ImportError:
-                SessionManager.add_message(db, session, 'assistant',
-                    "🔍 开始深度探索，将严格遵守探索规则...")
-            # ── DOM 检测结束 ─────────────────────────────────────────
+            logger.info("[OneClick v2] DOM 优先模式已启用，视觉模型仅作辅助与兜底")
+            SessionManager.add_message(
+                db,
+                session,
+                'assistant',
+                "🔍 开始深度探索（DOM 优先，视觉辅助模式已启用）..."
+            )
 
             # 6. 执行探索（增加步数限制）
             max_steps = int(os.getenv("EXPLORE_MAX_STEPS", "200"))
@@ -2373,63 +2367,42 @@ class OneClickService:
         # 如果有共享浏览器会话，先检测当前页面 DOM 丰富度
         if browser_session is not None:
             try:
-                from Execute_test.dom_mode.detector import DomRichnessDetector
                 from Execute_test.dom_mode.agent_browser_client import AgentBrowserClient
                 from Execute_test.dom_mode.dom_executor import DomExecutor
+                logger.info("[OneClick] DOM 优先执行已启用，先尝试 DOM 执行器")
+                cdp_port = None
+                raw_cdp = None
+                for attr in ("cdp_url", "_cdp_url", "ws_url"):
+                    val = getattr(browser_session, attr, None)
+                    if val:
+                        raw_cdp = val
+                        break
 
-                detect_result = await DomRichnessDetector.detect(browser_session)
-                logger.info(
-                    f"[OneClick] DOM 检测: interactive={detect_result.get('interactive')}, "
-                    f"total={detect_result.get('total')}, mode={detect_result.get('mode')}"
-                )
+                if raw_cdp:
+                    import re as _re
+                    m = _re.search(r":(\d{4,5})/", raw_cdp)
+                    if m:
+                        cdp_port = int(m.group(1))
 
-                if detect_result.get("rich"):
-                    # DOM 丰富 → 尝试使用 DOM 模式
-                    logger.info("[OneClick] 🌐 DOM 节点丰富，切换到 DOM 模式执行")
-                    try:
-                        # 从 BrowserSession 提取 CDP 端口号
-                        # browser-use 的 cdp_url 格式: ws://127.0.0.1:PORT/devtools/browser/...
-                        # agent-browser --cdp 接受端口号或完整 ws URL
-                        cdp_port = None
-                        raw_cdp = None
-                        for attr in ("cdp_url", "_cdp_url", "ws_url"):
-                            val = getattr(browser_session, attr, None)
-                            if val:
-                                raw_cdp = val
-                                break
-
-                        if raw_cdp:
-                            import re as _re
-                            m = _re.search(r":(\d{4,5})/", raw_cdp)
-                            if m:
-                                cdp_port = int(m.group(1))
-
-                        if cdp_port:
-                            ab_client = AgentBrowserClient.from_cdp_port(cdp_port)
-                        else:
-                            # 无法获取 CDP 端口，回退到视觉模式
-                            logger.warning("[OneClick] 无法获取 CDP 端口，回退到视觉模式")
-                            raise RuntimeError("CDP 端口不可用")
-
-                        dom_executor = DomExecutor(ab_client)
-                        dom_result = await dom_executor.execute_test_case(
-                            case=case,
-                            target_url=target_url,
-                            cancel_event=cancel_event,
-                        )
-                        logger.info(f"[OneClick] DOM 模式执行完成: {dom_result.get('status')}")
+                if cdp_port:
+                    ab_client = AgentBrowserClient.from_cdp_port(cdp_port)
+                    dom_executor = DomExecutor(ab_client)
+                    dom_result = await dom_executor.execute_test_case(
+                        case=case,
+                        target_url=target_url,
+                        cancel_event=cancel_event,
+                    )
+                    logger.info(f"[OneClick] DOM 模式执行完成: {dom_result.get('status')}")
+                    if dom_result.get("status") != "error":
                         return dom_result
-
-                    except Exception as dom_err:
-                        logger.warning(f"[OneClick] DOM 模式执行失败，回退到视觉模式: {dom_err}")
-                        # 继续走视觉模式
+                    logger.warning("[OneClick] DOM 执行器返回 error，回退到视觉辅助链路")
                 else:
-                    logger.info("[OneClick] DOM 节点不丰富，使用视觉大模型模式")
+                    logger.warning("[OneClick] 无法获取 CDP 端口，回退到视觉辅助链路")
 
             except ImportError as ie:
-                logger.debug(f"[OneClick] DOM 模式模块未加载，跳过检测: {ie}")
-            except Exception as detect_err:
-                logger.warning(f"[OneClick] DOM 检测异常，回退到视觉模式: {detect_err}")
+                logger.debug(f"[OneClick] DOM 模式模块未加载，回退到视觉辅助链路: {ie}")
+            except Exception as dom_err:
+                logger.warning(f"[OneClick] DOM 优先执行失败，回退到视觉辅助链路: {dom_err}")
         # ── DOM 模式检测结束 ──────────────────────────────────────────
 
         try:

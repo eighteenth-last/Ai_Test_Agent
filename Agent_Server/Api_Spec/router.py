@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, HttpUrl
 
-from database.connection import get_db, ApiSpec, ApiSpecVersion, ApiEndpoint, get_default_project, get_active_project_by_id
+from database.connection import get_db, ApiSpec, ApiSpecVersion, ApiEndpoint, resolve_project_context, get_active_project_by_id
 from Api_Spec.minio_client import get_minio_client, get_bucket_name, ensure_bucket
 from Api_Spec.parser import parse_api_markdown
 from Api_Spec.importers import PostmanImporter, OpenAPIImporter, HARImporter, CurlImporter, ApiFoxImporter, URLImporter
@@ -33,6 +33,7 @@ class ImportFromURLRequest(BaseModel):
     service_name: Optional[str] = None
     base_url: Optional[str] = None
     enable_llm_enhance: bool = False
+    project_id: Optional[int] = None
 
 
 class ImportFromTextRequest(BaseModel):
@@ -41,6 +42,7 @@ class ImportFromTextRequest(BaseModel):
     format_hint: Optional[str] = None  # curl, json, markdown
     service_name: Optional[str] = None
     base_url: Optional[str] = None
+    project_id: Optional[int] = None
 
 
 @router.get("/list")
@@ -54,7 +56,7 @@ def list_spec_versions(
     """获取接口文件列表"""
     # 如果没有指定项目，使用默认项目
     if project_id is None:
-        default_project = get_default_project(db)
+        default_project = resolve_project_context(db, project_id)
         if not default_project:
             # 没有启用的项目，返回空列表
             return {"success": True, "data": [], "total": 0}
@@ -224,7 +226,7 @@ async def import_from_url(
 ):
     """从 URL 导入接口文档"""
     # 获取默认项目
-    default_project = get_default_project(db)
+    default_project = resolve_project_context(db, request.project_id)
     if not default_project:
         raise HTTPException(status_code=400, detail="没有可用的项目，请先创建并启用一个项目")
 
@@ -345,7 +347,7 @@ async def import_from_text(
 ):
     """从文本粘贴导入接口文档"""
     # 获取默认项目
-    default_project = get_default_project(db)
+    default_project = resolve_project_context(db, request.project_id)
     if not default_project:
         raise HTTPException(status_code=400, detail="没有可用的项目，请先创建并启用一个项目")
 
@@ -521,6 +523,7 @@ async def import_md_file(
     file: UploadFile = File(...),
     service_name: Optional[str] = Form(None),
     base_url: Optional[str] = Form(None),
+    project_id: Optional[int] = Form(None),
     db: Session = Depends(get_db)
 ):
     """上传 Markdown 接口文件到 MinIO 并解析入库"""
@@ -533,7 +536,7 @@ async def import_md_file(
     file_size = len(content_bytes)
 
     # 获取默认项目
-    default_project = get_default_project(db)
+    default_project = resolve_project_context(db, project_id)
     if not default_project:
         raise HTTPException(status_code=400, detail="没有可用的项目，请先创建并启用一个项目")
 
