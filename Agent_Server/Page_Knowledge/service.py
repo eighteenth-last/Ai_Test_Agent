@@ -9,6 +9,7 @@ RAG 记忆层入口：
   5. 为任务树规划提供 RAG 上下文
 """
 import asyncio
+import copy
 import json
 import logging
 from datetime import datetime, timedelta
@@ -422,17 +423,20 @@ class PageKnowledgeService:
             f"(severity={diff_result.severity}, changes={len(diff_result.changes)})"
         )
 
-        # 更新版本
-        new_knowledge.version = old_knowledge.version + 1
-        result = await PageKnowledgeService.store(new_knowledge, db, project_id=project_id)
+        # 智能合并：将新探索结果 merge 到旧知识上，而非全文覆盖
+        # 旧知识中未被新探索覆盖到的部分会被保留，只补充缺失、更新已变化的部分
+        merged_knowledge = PageKnowledgeService._merge_knowledge(old_knowledge, new_knowledge, diff_result)
+        merged_knowledge.version = old_knowledge.version + 1
+        result = await PageKnowledgeService.store(merged_knowledge, db, project_id=project_id)
 
         return {
             "action": "updated",
             "diff": diff_result,
-            "knowledge": new_knowledge,
+            "knowledge": merged_knowledge,
             "store_result": result,
             "old_version": old_knowledge.version,
-            "new_version": new_knowledge.version,
+            "new_version": merged_knowledge.version,
+            "merged_changes": len(diff_result.changes),
         }
 
     # ═══════════════════════════════════════════════
@@ -644,6 +648,171 @@ class PageKnowledgeService:
     # ═══════════════════════════════════════════════
     # 内部方法
     # ═══════════════════════════════════════════════
+
+    @staticmethod
+    def _merge_knowledge(
+        old: PageKnowledge,
+        new: PageKnowledge,
+        diff: "DiffResult",
+    ) -> PageKnowledge:
+        """
+        智能合并两个版本的页面知识（surgical merge，而非全文覆盖）
+
+        策略：
+          - 新探索发现了旧知识没有的元素 → 补充进去（填充缺口）
+          - 两边都有但属性有变化的元素   → 以新值更新（修复过时内容）
+          - 旧知识有但新探索未发现的元素 → 保留（探索可能未覆盖，不视为删除）
+          - 页面级布尔属性              → OR 合并（只增不减），auth_required 取新值
+          - 文本描述 / 标题 / 类型      → 有新值就更新，无则保留旧值
+
+        注意：
+          旧知识中的元素不会因为「新探索没发现」而被删除。
+          真正的删除只能通过 /knowledge/delete 接口手动触发，
+          或在老化检测后由运营人员确认。
+        """
+        merged = copy.deepcopy(old)
+
+        # ── 1. 合并 forms ─────────────────────────────────────────────
+        old_form_map = {f.name: f for f in merged.forms}
+        for new_form in new.forms:
+            if new_form.name not in old_form_map:
+                # 新增表单 → 直接追加
+                merged.forms.append(copy.deepcopy(new_form))
+                old_form_map[new_form.name] = merged.forms[-1]
+            else:
+                # 已有表单 → 做字段级 merge
+                old_form = old_form_map[new_form.name]
+                old_field_map = {f.name: f for f in old_form.fields}
+                for new_field in new_form.fields:
+                    if new_field.name not in old_field_map:
+                        # 新增字段
+                        old_form.fields.append(copy.deepcopy(new_field))
+                        old_field_map[new_field.name] = old_form.fields[-1]
+                    else:
+                        # 已有字段 → 更新变化的属性
+                        old_f = old_field_map[new_field.name]
+                        old_f.field_type = new_field.field_type
+                        old_f.required = new_field.required
+                        if new_field.label:
+                            old_f.label = new_field.label
+                        if new_field.placeholder:
+                            old_f.placeholder = new_field.placeholder
+                        if new_field.options:
+                            old_f.options = new_field.options
+                # 更新提交按钮 / method（若新探索有值）
+                if new_form.submit_button:
+                    old_form.submit_button = new_form.submit_button
+                if new_form.method:
+                    old_form.method = new_form.method
+
+        # ── 2. 合并 tables ────────────────────────────────────────────
+        old_table_map = {t.name: t for t in merged.tables}
+        for new_table in new.tables:
+            if new_table.name not in old_table_map:
+                # 新增表格
+                merged.tables.append(copy.deepcopy(new_table))
+                old_table_map[new_table.name] = merged.tables[-1]
+            else:
+                # 已有表格 → 合并列（取并集）
+                old_table = old_table_map[new_table.name]
+                old_cols = set(old_table.columns)
+                for col in new_table.columns:
+                    if col not in old_cols:
+                        old_table.columns.append(col)
+                        old_cols.add(col)
+                # 功能标记：OR 合并（只要曾探索到，就保留）
+                old_table.has_pagination = old_table.has_pagination or new_table.has_pagination
+                old_table.has_search = old_table.has_search or new_table.has_search
+                old_table.has_sort = old_table.has_sort or new_table.has_sort
+                # 合并行操作（取并集）
+                old_actions = set(old_table.row_actions)
+                for action in new_table.row_actions:
+                    if action not in old_actions:
+                        old_table.row_actions.append(action)
+                        old_actions.add(action)
+
+        # ── 3. 合并 buttons（字符串集合取并集）───────────────────────
+        old_btn_set = set(str(b) for b in merged.buttons)
+        for btn in new.buttons:
+            btn_str = str(btn)
+            if btn_str not in old_btn_set:
+                merged.buttons.append(btn_str)
+                old_btn_set.add(btn_str)
+
+        # ── 4. 合并 page_sections（取并集）────────────────────────────
+        old_sec_set = set(merged.page_sections)
+        for sec in new.page_sections:
+            if sec not in old_sec_set:
+                merged.page_sections.append(sec)
+                old_sec_set.add(sec)
+
+        # ── 5. 合并 links（取并集）────────────────────────────────────
+        old_link_set = set(merged.links)
+        for link in new.links:
+            if link not in old_link_set:
+                merged.links.append(link)
+                old_link_set.add(link)
+
+        # ── 6. 合并 dynamic_elements（取并集）─────────────────────────
+        old_dyn_set = set(merged.dynamic_elements)
+        for de in new.dynamic_elements:
+            if de not in old_dyn_set:
+                merged.dynamic_elements.append(de)
+                old_dyn_set.add(de)
+
+        # ── 7. 页面级布尔属性 ──────────────────────────────────────────
+        # 功能标记：OR 合并（只要曾经发现过，就保留；避免因探索覆盖不全而误删能力）
+        merged.has_file_upload = merged.has_file_upload or new.has_file_upload
+        merged.has_export = merged.has_export or new.has_export
+        merged.has_import = merged.has_import or new.has_import
+        merged.has_search = merged.has_search or new.has_search
+        merged.has_pagination = merged.has_pagination or new.has_pagination
+        # 认证要求：取新值（当次探索的登录状态最可信）
+        merged.auth_required = new.auth_required
+
+        # ── 8. 文本描述更新 ────────────────────────────────────────────
+        if new.summary:
+            merged.summary = new.summary
+        if new.description:
+            merged.description = new.description
+        if new.page_title:
+            merged.page_title = new.page_title
+        # page_type：非 mixed（模糊默认值）时才覆盖
+        if new.page_type and new.page_type != "mixed":
+            merged.page_type = new.page_type
+
+        # ── 9. 合并 roles / tags / security_surface（取并集）──────────
+        old_roles = set(merged.roles)
+        for role in new.roles:
+            if role not in old_roles:
+                merged.roles.append(role)
+                old_roles.add(role)
+
+        old_tags = set(merged.tags)
+        for tag in new.tags:
+            if tag not in old_tags:
+                merged.tags.append(tag)
+                old_tags.add(tag)
+
+        old_surfaces = set(merged.security_surface)
+        for surface in new.security_surface:
+            if surface not in old_surfaces:
+                merged.security_surface.append(surface)
+                old_surfaces.add(surface)
+
+        # ── 10. 元数据 ─────────────────────────────────────────────────
+        if new.module_name:
+            merged.module_name = new.module_name
+        if new.domain:
+            merged.domain = new.domain
+
+        logger.info(
+            f"[PageKB] 🔀 智能合并完成: url={old.url} "
+            f"forms={len(merged.forms)}, buttons={len(merged.buttons)}, "
+            f"tables={len(merged.tables)}, sections={len(merged.page_sections)}, "
+            f"diff_changes={len(diff.changes) if diff else 0}"
+        )
+        return merged
 
     @staticmethod
     def _is_fresh(knowledge: PageKnowledge) -> bool:

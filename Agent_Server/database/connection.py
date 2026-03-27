@@ -3,10 +3,9 @@
 
 作者: 程序员Eighteen
 """
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON, inspect, or_
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON, inspect
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects.mysql import LONGTEXT
 from datetime import datetime
 import os
@@ -564,11 +563,11 @@ class Skill(Base):
 # ============================================
 
 def init_db():
-    """初始化数据库表"""
+    """Initialize tables and run non-destructive schema upgrades."""
     try:
         inspector = inspect(engine)
         existing_tables = inspector.get_table_names()
-        
+
         tables_to_create = {
             'projects': Project,
             'execution_cases': ExecutionCase,
@@ -598,34 +597,20 @@ def init_db():
             'project_platform_config': ProjectPlatformConfig,
             'case_template_config': CaseTemplateConfig,
         }
-        
+
         for table_name in tables_to_create:
             if table_name not in existing_tables:
                 Base.metadata.tables[table_name].create(bind=engine, checkfirst=True)
-                print(f"✓ 表 '{table_name}' 创建成功")
+                print(f"[DB] created table '{table_name}'")
             else:
-                print(f"✓ 表 '{table_name}' 已存在，跳过创建")
+                print(f"[DB] table '{table_name}' already exists")
 
-        # 自动迁移：为已有表添加缺失的列
+        # Apply lightweight schema upgrades for existing deployments.
         _upgrade_existing_tables(inspector)
-        
-        # 创建默认项目
-        _create_default_project()
-        
-        print("\n数据库初始化完成！")
-    except IntegrityError:
-        db.rollback()
-        existing = db.query(Project).filter(
-            or_(Project.code == 'default', Project.name == '榛樿椤圭洰')
-        ).order_by(Project.id.asc()).first()
-        if existing:
-            if existing.is_default != 1:
-                existing.is_default = 1
-            if existing.is_active != 1:
-                existing.is_active = 1
-            db.commit()
+
+        print("\n[DB] initialization complete")
     except Exception as e:
-        print(f"数据库初始化出错：{str(e)}")
+        print(f"[DB] initialization failed: {e}")
         raise
 
 
@@ -693,42 +678,6 @@ def _upgrade_existing_tables(inspector):
                 print(f"  ⚠ 添加列 {table_name}.{col_name} 失败: {e}")
 
 
-def _create_default_project():
-    """创建默认项目"""
-    db = SessionLocal()
-    try:
-        # 检查是否已有项目
-        named_default = db.query(Project).filter(
-            or_(Project.code == 'default', Project.name == '榛樿椤圭洰')
-        ).order_by(Project.id.asc()).first()
-        existing = named_default or db.query(Project).order_by(Project.id.asc()).first()
-        if not existing:
-            # 创建默认项目
-            default_project = Project(
-                name='默认项目',
-                code='default',
-                description='系统默认项目',
-                is_default=1,
-                is_active=1
-            )
-            db.add(default_project)
-            db.commit()
-            print("  ✓ 已创建默认项目")
-        else:
-            # 确保至少有一个默认项目
-            default = db.query(Project).filter(Project.is_default == 1).order_by(Project.id.asc()).first()
-            if not default:
-                # 将第一个项目设为默认
-                existing.is_default = 1
-                db.commit()
-                print(f"  ✓ 已将项目 '{existing.name}' 设为默认项目")
-    except Exception as e:
-        print(f"  ⚠ 创建默认项目失败: {e}")
-        db.rollback()
-    finally:
-        db.close()
-
-
 def get_db():
     """获取数据库会话（FastAPI依赖注入）"""
     db = SessionLocal()
@@ -740,29 +689,16 @@ def get_db():
 
 def get_default_project(db: Session):
     """
-    获取默认项目。
+    Return the active default project only.
 
-    这是一个纯查询函数，严禁在读接口里隐式创建、更新或提交项目记录。
-    解析顺序：
-    1. 启用状态的默认项目
-    2. 任意启用项目（按默认标记、ID 升序兜底）
-    3. 返回 None
-
-    默认项目初始化职责只保留在启动初始化流程 `_create_default_project()`。
+    This is a pure read helper. It must not create, repair, or promote
+    projects implicitly. A project is treated as the default only when
+    both `is_default = 1` and `is_active = 1`.
     """
-    default_project = db.query(Project).filter(
+    return db.query(Project).filter(
         Project.is_default == 1,
         Project.is_active == 1,
     ).order_by(Project.id.asc()).first()
-    if default_project:
-        return default_project
-
-    return db.query(Project).filter(
-        Project.is_active == 1
-    ).order_by(
-        Project.is_default.desc(),
-        Project.id.asc(),
-    ).first()
 
 
 def get_active_project_by_id(db: Session, project_id: int):
@@ -779,17 +715,15 @@ def get_active_project_by_id(db: Session, project_id: int):
 
 def resolve_project_context(db: Session, project_id: int = None, required: bool = False):
     """
-    缁熶竴瑙ｆ瀽褰撳墠涓婁笅鏂囬」鐩€?
+    Resolve the current project context without mutating project data.
 
-    瑙ｆ瀽椤哄簭锛?
-    1. 濡傛灉浼犲叆浜?project_id锛屼粎杩斿洖瀵瑰簲鐨勫惎鐢ㄩ」鐩?
-    2. 鍚﹀垯鍥為€€鍒?get_default_project(db)
-
-    杩欐槸涓€涓函鏌ヨ鍏ュ彛锛屼弗绂佸湪璇诲彇涓婁笅鏂囨椂闅愬紡鍒涘缓銆佹洿鏂版垨鎻愪氦椤圭洰璁板綍銆?
+    Priority:
+    1. If `project_id` is provided, return that project only when it is active.
+    2. Otherwise return the active default project.
     """
     project = get_active_project_by_id(db, project_id) if project_id is not None else get_default_project(db)
     if required and project is None:
-        raise ValueError("娌℃湁鍙敤鐨勯」鐩紝璇峰厛鍒涘缓骞跺惎鐢ㄤ竴涓」鐩?")
+        raise ValueError("No active default project is configured")
     return project
 
 

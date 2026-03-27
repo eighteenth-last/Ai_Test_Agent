@@ -69,9 +69,41 @@ class ExplorationState:
         logger.info("[ExplorationState] initialized")
 
     def _cache_page_key(self, page_id: str) -> str:
+        page_id = str(page_id or "").strip()
         if self.session_id:
+            prefix = f"{self.session_id}:"
+            if page_id.startswith(prefix):
+                return page_id
             return f"{self.session_id}:{page_id}"
         return page_id
+
+    def _page_id_from_cache_page_key(self, page_key: str) -> str:
+        page_key = str(page_key or "").strip()
+        if self.session_id:
+            prefix = f"{self.session_id}:"
+            if page_key.startswith(prefix):
+                return page_key[len(prefix):]
+        return page_key
+
+    def _resolve_cache_page_key(self, page_id: str = "", task_id: str = "") -> str:
+        raw_page_id = str(page_id or "").strip()
+        if raw_page_id:
+            return self._cache_page_key(raw_page_id)
+
+        if self.cache_service and task_id:
+            task_result = self.cache_service.get_task_result(task_id)
+            saved_page_key = str(task_result.get("page_key") or "").strip()
+            if saved_page_key:
+                return saved_page_key
+
+        if self.cache_service and self.session_id:
+            session_page_key = str(self.cache_service.get_session(self.session_id).get("current_page_key") or "").strip()
+            if session_page_key:
+                return session_page_key
+
+        if self.current_page_id:
+            return self._cache_page_key(self.current_page_id)
+        return ""
 
     def record_page(
         self,
@@ -80,25 +112,26 @@ class ExplorationState:
         url: str,
         dom_summary: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        cache_page_key = self._cache_page_key(page_id)
+        cache_page_key = self._resolve_cache_page_key(page_id)
+        resolved_page_id = self._page_id_from_cache_page_key(cache_page_key)
         if self.dispatcher and not self.dispatcher.can_record_page(self.session_id, cache_page_key):
             return {
                 "success": False,
                 "message": "session is restoring validation context; do not record_page yet",
             }
 
-        if page_id not in self.pages:
-            self.pages[page_id] = PageInfo(page_id=page_id, url=url)
+        if resolved_page_id not in self.pages:
+            self.pages[resolved_page_id] = PageInfo(page_id=resolved_page_id, url=url)
 
-        page = self.pages[page_id]
+        page = self.pages[resolved_page_id]
         summary = dom_summary or {}
-        interactive = elements or summary.get("interactive_elements") or []
+        interactive = summary.get("interactive_elements") or elements or []
         page.url = url or page.url
         page.title = str(summary.get("title") or page.title or "")
         page.elements = interactive
         page.dom_summary = summary
         page.is_recorded = True
-        self.current_page_id = page_id
+        self.current_page_id = resolved_page_id
 
         current_depth = len(self.exploration_stack)
         if current_depth > self.max_depth:
@@ -137,6 +170,7 @@ class ExplorationState:
                 cache_page_key,
                 {
                     "page_id": page_id,
+                    "resolved_page_id": resolved_page_id,
                     "page_key": cache_page_key,
                     "title": page.title,
                     "url": page.url,
@@ -338,12 +372,12 @@ class ExplorationState:
         page_id: str,
         artifact: Dict[str, Any],
     ) -> Dict[str, Any]:
-        resolved_page_id = page_id or self.current_page_id or ""
-        if not task_id or not resolved_page_id:
+        cache_page_key = self._resolve_cache_page_key(page_id, task_id)
+        resolved_page_id = self._page_id_from_cache_page_key(cache_page_key)
+        if not task_id or not cache_page_key or not resolved_page_id:
             return {"success": False, "message": "task_id and page_id are required"}
 
         if self.cache_service and self.session_id:
-            cache_page_key = self._cache_page_key(resolved_page_id)
             if self.dispatcher:
                 dispatch_result = self.dispatcher.accept_task_result(
                     session_id=self.session_id,
@@ -367,6 +401,8 @@ class ExplorationState:
                     }
 
                 self.page_tasks[cache_page_key] = self.cache_service.get_page_tasks(cache_page_key)
+                dispatch_result.setdefault("resolved_page_key", cache_page_key)
+                dispatch_result.setdefault("resolved_page_id", resolved_page_id)
                 logger.info(
                     "[ExplorationState] report_task_artifact accepted session_id=%s page_key=%s task_id=%s status=%s effect=%s session_status=%s",
                     self.session_id,
@@ -426,11 +462,11 @@ class ExplorationState:
         return {"success": True, "message": "task artifact recorded"}
 
     def dispatch_next_task(self, page_id: str = "") -> Dict[str, Any]:
-        resolved_page_id = page_id or self.current_page_id or ""
-        if not self.dispatcher or not self.session_id or not resolved_page_id:
+        cache_page_key = self._resolve_cache_page_key(page_id)
+        resolved_page_id = self._page_id_from_cache_page_key(cache_page_key)
+        if not self.dispatcher or not self.session_id or not cache_page_key or not resolved_page_id:
             return {"success": False, "message": "dispatcher or page context unavailable"}
 
-        cache_page_key = self._cache_page_key(resolved_page_id)
         if not self.dispatcher.can_dispatch_next_task(self.session_id, cache_page_key):
             return {
                 "success": False,
@@ -439,6 +475,8 @@ class ExplorationState:
         result = self.dispatcher.dispatch_next_task(self.session_id, cache_page_key)
         if result.get("success"):
             self.page_tasks[cache_page_key] = self.cache_service.get_page_tasks(cache_page_key)
+            result.setdefault("resolved_page_key", cache_page_key)
+            result.setdefault("resolved_page_id", resolved_page_id)
             logger.info(
                 "[ExplorationState] dispatch_next_task session_id=%s page_key=%s has_task=%s session_status=%s",
                 self.session_id,

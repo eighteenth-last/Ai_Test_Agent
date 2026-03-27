@@ -1,9 +1,12 @@
 import asyncio
+import json
 import logging
 from typing import Any, Dict, List
 
 from pydantic import BaseModel, Field
 from Exploration.browser_use_runtime import ensure_browser_use_runtime_env
+from Exploration.dom_manager_prompts import build_dom_manager_prompt
+from llm import get_llm_client
 
 ensure_browser_use_runtime_env()
 
@@ -46,6 +49,95 @@ class ExplorationController(Tools):
             f"success_criteria={len(task.get('success_criteria', []) or [])}"
         )
 
+    @staticmethod
+    def _parse_llm_json(text: str) -> Dict[str, Any]:
+        if not text:
+            return {}
+        try:
+            return json.loads(text)
+        except Exception:
+            try:
+                from json_repair import repair_json
+
+                repaired = repair_json(text, return_objects=True)
+                return repaired if isinstance(repaired, dict) else {}
+            except Exception:
+                return {}
+
+    async def _resolve_interactive_elements(
+        self,
+        page_id: str,
+        dom_summary: Dict[str, Any],
+        fallback_elements: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        candidates = list(dom_summary.get("dom_candidates") or dom_summary.get("interactive_elements") or [])
+        if not candidates:
+            return list(fallback_elements or [])
+
+        llm = get_llm_client()
+        snapshot = {
+            "page_id": page_id,
+            "title": dom_summary.get("title", ""),
+            "url": dom_summary.get("url", ""),
+            "dialogs": dom_summary.get("dialogs") or [],
+            "page_sections": dom_summary.get("page_sections") or [],
+            "forms": dom_summary.get("forms") or [],
+            "tables": dom_summary.get("tables") or [],
+            "candidate_count": len(candidates),
+        }
+        prompt = build_dom_manager_prompt(
+            goal=self.exploration_state.goal or "整理当前页面可交互元素",
+            snapshot=snapshot,
+            candidates=candidates,
+        )
+
+        try:
+            content = await llm.achat(
+                messages=[
+                    {"role": "system", "content": "你只输出 JSON。"},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.0,
+                max_tokens=4000,
+                response_format={"type": "json_object"},
+                source="dom_interactive_filter",
+            )
+            payload = self._parse_llm_json(content)
+        except Exception as exc:
+            logger.warning("[ExplorationController] failed to resolve interactive elements with llm: %s", exc)
+            payload = {}
+
+        selected = payload.get("interactive_elements") if isinstance(payload, dict) else []
+        candidate_map = {
+            str(item.get("candidate_id") or "").strip(): dict(item)
+            for item in candidates
+            if str(item.get("candidate_id") or "").strip()
+        }
+        resolved: List[Dict[str, Any]] = []
+        seen_ids = set()
+        for item in selected or []:
+            candidate_id = str((item or {}).get("candidate_id") or "").strip()
+            base = candidate_map.get(candidate_id)
+            if not base or candidate_id in seen_ids:
+                continue
+            merged = dict(base)
+            label_override = str((item or {}).get("label_override") or "").strip()
+            if label_override:
+                merged["label"] = label_override
+            interaction_type = str((item or {}).get("interaction_type") or "").strip()
+            if interaction_type:
+                merged["interaction_type"] = interaction_type
+            merged["llm_confidence"] = float((item or {}).get("confidence") or 0.0)
+            merged["llm_reason"] = str((item or {}).get("reason") or "").strip()
+            resolved.append(merged)
+            seen_ids.add(candidate_id)
+
+        if resolved:
+            return resolved
+        if fallback_elements:
+            return list(fallback_elements)
+        return candidates
+
     def _register_exploration_actions(self):
         class RecordPageParams(BaseModel):
             page_id: str = Field(description="Stable page identifier")
@@ -70,20 +162,30 @@ class ExplorationController(Tools):
 
             dom_mode_hint = ""
             dom_summary: Dict[str, Any] = {}
+            interactive_elements = list(params.elements or [])
 
             try:
                 from Exploration.browser_use_tools import extract_dom_summary
 
                 dom_summary = await extract_dom_summary(browser_session)
-                interactive = len(dom_summary.get("interactive_elements") or params.elements)
+                interactive_elements = await self._resolve_interactive_elements(
+                    page_id=params.page_id,
+                    dom_summary=dom_summary,
+                    fallback_elements=interactive_elements,
+                )
+                dom_summary["interactive_elements"] = interactive_elements
+                interactive = len(interactive_elements)
                 total = int(dom_summary.get("total_dom_nodes") or 0)
-                dom_mode_hint = f" DOM primary: interactive={interactive}, total={total}, mode=dom"
+                candidates = len(dom_summary.get("dom_candidates") or [])
+                dom_mode_hint = (
+                    f" DOM primary: candidates={candidates}, interactive={interactive}, total={total}, mode=dom+llm"
+                )
             except Exception as exc:
                 logger.warning("[ExplorationController] failed to extract DOM summary: %s", exc)
 
             result = self.exploration_state.record_page(
                 page_id=params.page_id,
-                elements=params.elements,
+                elements=interactive_elements,
                 url=current_url,
                 dom_summary=dom_summary,
             )
@@ -100,7 +202,7 @@ class ExplorationController(Tools):
             title = str(dom_summary.get("title") or params.page_id)
             msg = (
                 f"Recorded page '{params.page_id}' ({title}) with "
-                f"{len(dom_summary.get('interactive_elements') or params.elements)} interactive elements."
+                f"{len(interactive_elements)} interactive elements."
                 f"{dom_mode_hint}"
             )
             next_task_result = self.exploration_state.dispatch_next_task(params.page_id)
@@ -299,7 +401,12 @@ class ExplorationController(Tools):
                     include_in_memory=True,
                 )
             dispatch_result = result.get("dispatch_result") or {}
-            page_id = params.page_id or self.exploration_state.current_page_id or ""
+            page_id = (
+                dispatch_result.get("resolved_page_id")
+                or params.page_id
+                or self.exploration_state.current_page_id
+                or ""
+            )
             if dispatch_result.get("page_completed"):
                 return ActionResult(
                     extracted_content=(
@@ -314,8 +421,8 @@ class ExplorationController(Tools):
                     extracted_content=(
                         f"Validation task '{params.task_id}' is not committed yet because the session/context "
                         "has not been restored. Restore the previous session first, then call "
-                        "`report_task_artifact()` again for the same task_id. Do not call `record_page()` or "
-                        "`dispatch_next_task()` yet. "
+                        f"`report_task_artifact()` again for the same task_id and page_id='{page_id}'. "
+                        "Do not call `record_page()` or `dispatch_next_task()` yet. "
                         f"session_status={dispatch_result.get('session_status', '')}"
                     ),
                     include_in_memory=True,

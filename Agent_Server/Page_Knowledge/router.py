@@ -179,6 +179,7 @@ async def knowledge_check_update(req: StoreRequest, db: Session = Depends(get_db
                 "diff": diff_data,
                 "version": result["knowledge"].version,
                 "hash": result["knowledge"].hash_signature,
+                "merged_changes": result.get("merged_changes", 0),
             }
         }
     except Exception as e:
@@ -191,7 +192,7 @@ async def knowledge_list(domain: str = "", page_type: str = "", limit: int = 100
     """列出所有页面知识"""
     try:
         from database.connection import get_active_project_by_id
-        
+
         # 如果未指定项目，使用默认项目
         if project_id is None:
             project = resolve_project_context(db, project_id)
@@ -205,7 +206,7 @@ async def knowledge_list(domain: str = "", page_type: str = "", limit: int = 100
             if not project:
                 # 项目未启用，返回空列表
                 return {"success": True, "data": {"items": [], "total": 0}}
-        
+
         items = await PageKnowledgeService.list_all(
             domain=domain, page_type=page_type, limit=limit, project_id=project.id,
         )
@@ -498,17 +499,17 @@ def _resolve_project_id(req: ExplorePageRequest, db: Session) -> Optional[int]:
 async def explore_page(req: ExplorePageRequest, db: Session = Depends(get_db)):
     """
     专用页面探索接口：启动浏览器探索页面，并将结果存入知识库
-    
+
     流程：
     1. 使用 Browser-Use 探索页面
     2. 提取页面能力
     3. 存入 Qdrant 知识库
-    
+
     支持中止：返回 task_id，可通过 /knowledge/stop-explore 中止
     """
     try:
         import asyncio
-        
+
         # 构建探索环境信息
         env_info = _resolve_explore_environment(req, db)
         project_id = _resolve_project_id(req, db)
@@ -517,7 +518,7 @@ async def explore_page(req: ExplorePageRequest, db: Session = Depends(get_db)):
         target_url = env_info.get("target_url", "")
         if not target_url:
             return {"success": False, "message": "未找到目标 URL，请选择测试环境或手动填写 URL"}
-        
+
         # 创建临时会话（用于探索）
         from database.connection import OneclickSession
         temp_session = OneclickSession(
@@ -529,7 +530,7 @@ async def explore_page(req: ExplorePageRequest, db: Session = Depends(get_db)):
         db.add(temp_session)
         db.commit()
         db.refresh(temp_session)
-        
+
         # 生成任务 ID 并注册取消事件
         task_id = f"explore_{temp_session.id}_{int(time.time())}"
         cancel_event = asyncio.Event()
@@ -544,14 +545,14 @@ async def explore_page(req: ExplorePageRequest, db: Session = Depends(get_db)):
             "events": [],
             "artifact_summary": None,
         }
-        
+
         # 启动后台探索任务
         asyncio.create_task(
             _background_explore_task(
                 task_id, temp_session.id, req, env_info, cancel_event
             )
         )
-        
+
         return {
             "success": True,
             "message": "页面探索已启动",
@@ -563,7 +564,7 @@ async def explore_page(req: ExplorePageRequest, db: Session = Depends(get_db)):
                 "project_id": project_id,
             }
         }
-        
+
     except Exception as e:
         logger.error(f"[PageKB API] explore_page 启动失败: {e}")
         import traceback
@@ -581,7 +582,7 @@ async def _background_explore_task(
     """后台执行探索任务 - 使用精准探索模式"""
     from database.connection import SessionLocal
     from OneClick_Test.service import OneClickService
-    
+
     db = SessionLocal()
     temp_session = None
     try:
@@ -632,7 +633,7 @@ async def _background_explore_task(
             explore_result = await OneClickService._explore_page_with_precision(
                 db, temp_session, req.user_goal or f"探索页面: {req.url}", env_info
             )
-        
+
         # 检查是否被取消
         if cancel_event.is_set():
             logger.info(f"[PageKB API] 探索已取消: {task_id}")
@@ -643,7 +644,7 @@ async def _background_explore_task(
             db.delete(temp_session)
             db.commit()
             return
-        
+
         if not explore_result.get("success"):
             _explore_tasks[task_id]["status"] = "failed"
             _explore_tasks[task_id]["error"] = explore_result.get('message', '未知错误')
@@ -653,17 +654,17 @@ async def _background_explore_task(
             db.delete(temp_session)
             db.commit()
             return
-        
+
         page_data = explore_result.get("page_data", {})
         exploration_session_id = str(
             explore_result.get("exploration_session_id")
             or _explore_tasks[task_id].get("exploration_session_id")
             or ""
         )
-        
+
         # 精准模式：直接使用 page_data 作为 capabilities
         page_capabilities = page_data
-        
+
         # 检查是否被取消
         if cancel_event.is_set():
             logger.info(f"[PageKB API] 探索已取消: {task_id}")
@@ -673,7 +674,7 @@ async def _background_explore_task(
             db.delete(temp_session)
             db.commit()
             return
-        
+
         # 存入知识库
         logger.info(f"[PageKB API] 正在存入知识库...")
         if use_queue and exploration_session_id:
@@ -695,11 +696,11 @@ async def _background_explore_task(
                 db=db,
                 project_id=temp_session.project_id,
             )
-        
+
         action = kb_result.get('action', 'created')
         knowledge = kb_result.get('knowledge')
         diff = kb_result.get('diff')
-        
+
         # 更新任务状态
         _explore_tasks[task_id]["status"] = "completed"
         _explore_tasks[task_id]["result"] = {
@@ -716,13 +717,13 @@ async def _background_explore_task(
             "artifact_summary": _explore_tasks[task_id].get("artifact_summary"),
             "exploration_session_id": exploration_session_id,
         }
-        
+
         # 清理临时会话
         db.delete(temp_session)
         db.commit()
-        
+
         logger.info(f"[PageKB API] 精准探索完成: {task_id}")
-        
+
     except Exception as e:
         logger.error(f"[PageKB API] 后台探索任务失败: {e}")
         import traceback
@@ -749,19 +750,19 @@ async def stop_explore(req: StopExploreRequest):
     """
     try:
         task_id = req.task_id
-        
+
         if task_id not in _explore_tasks:
             return {"success": False, "message": "任务不存在或已完成"}
-        
+
         task_info = _explore_tasks[task_id]
-        
+
         if task_info["status"] in ("completed", "failed", "cancelled"):
             return {"success": False, "message": f"任务已{task_info['status']}，无法中止"}
-        
+
         # 设置取消事件
         cancel_event = task_info["cancel_event"]
         cancel_event.set()
-        
+
         # 如果有浏览器会话，尝试关闭
         browser_session = task_info.get("browser_session")
         if browser_session:
@@ -770,20 +771,20 @@ async def stop_explore(req: StopExploreRequest):
                 logger.info(f"[PageKB API] 已关闭浏览器: {task_id}")
             except Exception as e:
                 logger.warning(f"[PageKB API] 关闭浏览器失败: {e}")
-        
+
         task_info["status"] = "cancelled"
         exploration_session_id = str(task_info.get("exploration_session_id") or "")
         if exploration_session_id:
             ExplorationFinalizer().cleanup_session_cache(exploration_session_id)
-        
+
         logger.info(f"[PageKB API] 已中止探索任务: {task_id}")
-        
+
         return {
             "success": True,
             "message": "探索任务已中止",
             "data": {"task_id": task_id, "status": "cancelled"}
         }
-        
+
     except Exception as e:
         logger.error(f"[PageKB API] stop_explore 失败: {e}")
         return {"success": False, "message": str(e)}
@@ -797,7 +798,7 @@ async def get_explore_status(task_id: str):
     try:
         if task_id not in _explore_tasks:
             return {"success": False, "message": "任务不存在"}
-        
+
         task_info = _explore_tasks[task_id]
         exploration_session_id = str(task_info.get("exploration_session_id", "") or "")
         cache_debug: Dict[str, Any] = {}
@@ -805,7 +806,7 @@ async def get_explore_status(task_id: str):
             dispatcher = ExplorationDispatcherService(ExplorationCacheService())
             cache_debug = dispatcher.get_session_snapshot(exploration_session_id)
             cache_debug["session_completion"] = dispatcher.finalize_session_if_ready(exploration_session_id)
-        
+
         response = {
             "success": True,
             "data": {
@@ -820,17 +821,17 @@ async def get_explore_status(task_id: str):
                 "cache_debug": cache_debug,
             }
         }
-        
+
         # 如果已完成，返回结果
         if task_info["status"] == "completed":
             response["data"]["result"] = task_info.get("result", {})
-        
+
         # 如果失败，返回错误信息
         if task_info["status"] == "failed":
             response["data"]["error"] = task_info.get("error", "未知错误")
-        
+
         return response
-        
+
     except Exception as e:
         logger.error(f"[PageKB API] get_explore_status 失败: {e}")
         return {"success": False, "message": str(e)}

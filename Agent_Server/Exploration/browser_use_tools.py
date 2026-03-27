@@ -64,6 +64,7 @@ _DOM_SUMMARY_SCRIPT = """
 
   function getLabel(el) {
     return cleanText(
+      el.getAttribute('data-testid') ||
       el.innerText ||
       el.textContent ||
       el.getAttribute('aria-label') ||
@@ -115,20 +116,55 @@ _DOM_SUMMARY_SCRIPT = """
     );
   }
 
-  const allInteractive = Array.from(document.querySelectorAll(
-    'button, a[href], input, select, textarea, summary, [role="button"], [role="link"], [role="menuitem"], [onclick], [tabindex]:not([tabindex="-1"])'
-  ))
-    .filter(visible)
+  function candidateType(el) {
+    const tag = (el.tagName || '').toLowerCase();
+    const role = (el.getAttribute('role') || '').toLowerCase();
+    const elementType = (el.getAttribute('type') || '').toLowerCase();
+    const href = el.getAttribute('href') || '';
+    const onclick = !!el.getAttribute('onclick');
+    const tabindex = el.getAttribute('tabindex');
+    const cursor = (window.getComputedStyle(el).cursor || '').toLowerCase();
+
+    if (href || tag === 'a' || role === 'link') return 'link';
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return 'form_field';
+    if (tag === 'button' || role === 'button' || role === 'menuitem') return 'button';
+    if (role === 'tab') return 'tab';
+    if (onclick || tabindex === '0' || cursor === 'pointer') return 'clickable';
+    if (elementType === 'submit' || elementType === 'reset') return 'submit';
+    return 'other';
+  }
+
+  function isCandidate(el) {
+    if (!visible(el)) return false;
+    const tag = (el.tagName || '').toLowerCase();
+    const role = (el.getAttribute('role') || '').toLowerCase();
+    const href = el.getAttribute('href') || '';
+    const onclick = !!el.getAttribute('onclick');
+    const tabindex = el.getAttribute('tabindex');
+    const cursor = (window.getComputedStyle(el).cursor || '').toLowerCase();
+    const hasText = !!getLabel(el);
+    const interactiveRole = ['button', 'link', 'menuitem', 'tab', 'checkbox', 'radio', 'switch', 'option'].includes(role);
+    const interactiveTag = ['button', 'a', 'input', 'select', 'textarea', 'summary', 'label'].includes(tag);
+    const interactiveAttr = onclick || tabindex === '0' || el.getAttribute('contenteditable') === 'true';
+    const pointerLike = cursor === 'pointer';
+    const hasSignal = hasText || !!href || !!el.getAttribute('aria-label') || !!el.getAttribute('title');
+    return hasSignal && (interactiveRole || interactiveTag || interactiveAttr || pointerLike);
+  }
+
+  const domCandidates = Array.from(document.querySelectorAll('body *'))
+    .filter(isCandidate)
     .slice(0, %d)
     .map((el, idx) => {
       const rect = el.getBoundingClientRect();
       return {
         candidate_id: 'c' + (idx + 1),
         label: getLabel(el),
+        text: cleanText(el.innerText || el.textContent || ''),
         selector: cssPath(el),
         tag: (el.tagName || '').toLowerCase(),
         role: el.getAttribute('role') || '',
         element_type: el.getAttribute('type') || '',
+        candidate_type: candidateType(el),
         section: sectionName(el),
         href: el.getAttribute('href') || '',
         x: Math.round(rect.x),
@@ -138,7 +174,13 @@ _DOM_SUMMARY_SCRIPT = """
         placeholder: cleanText(el.getAttribute('placeholder') || ''),
         title: cleanText(el.getAttribute('title') || ''),
         aria_label: cleanText(el.getAttribute('aria-label') || ''),
-        name: cleanText(el.getAttribute('name') || '')
+        name: cleanText(el.getAttribute('name') || ''),
+        tabindex: cleanText(el.getAttribute('tabindex') || ''),
+        data_testid: cleanText(el.getAttribute('data-testid') || ''),
+        aria_expanded: cleanText(el.getAttribute('aria-expanded') || ''),
+        aria_controls: cleanText(el.getAttribute('aria-controls') || ''),
+        disabled: !!(el.disabled || el.getAttribute('aria-disabled') === 'true'),
+        has_onclick: !!el.getAttribute('onclick')
       };
     });
 
@@ -181,7 +223,8 @@ _DOM_SUMMARY_SCRIPT = """
     title: document.title || '',
     url: location.href,
     total_dom_nodes: document.querySelectorAll('*').length,
-    interactive_elements: allInteractive,
+    dom_candidates: domCandidates,
+    interactive_elements: domCandidates,
     forms,
     tables,
     dialogs,
